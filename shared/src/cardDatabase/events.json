@@ -1,0 +1,1387 @@
+{
+  "BSG1-009": {
+    "id": "BSG1-009",
+    "subtitle": "Act Of Contrition",
+    "type": "event",
+    "image": "images/cards/BSG1_009-175.jpg",
+    "set": "BSG1",
+    "number": 9,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Target player reveals his or her hand. Choose a card from it. That player discards that card.",
+    "flavorText": "\"Now, get up and walk out of this cabin while you still can.\" —Cmdr. Adama"
+  },
+  "BSG1-010": {
+    "id": "BSG1-010",
+    "subtitle": "Advanced Planning",
+    "type": "event",
+    "image": "images/cards/BSG1_010-175.jpg",
+    "set": "BSG1",
+    "number": 10,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 1
+    },
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Expedite (When you pay a cost and have [logistics] excess resources, you may play this card.) Look at the top five cards of your deck. Put one on top of your deck, and the other four on the bottom in any order.",
+    "flavorText": "\"We'll have to Jump to another sector... start the search all over again. Needle in a haystack.\" —Cmdr. Adama"
+  },
+  "BSG1-011": {
+    "id": "BSG1-011",
+    "subtitle": "Angry",
+    "type": "event",
+    "image": "images/cards/BSG1_011-175.jpg",
+    "set": "BSG1",
+    "number": 11,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "mysticValue": 4,
+    "cylonThreat": 4,
+    "abilityText": "When you play this event, you may commit and exhaust target personnel you control. If you do, defeat target personnel.",
+    "flavorText": "\"You wouldn't like me when I'm angry.\" —Number Six"
+  },
+  "BSG1-012": {
+    "id": "BSG1-012",
+    "subtitle": "Bingo Fuel",
+    "type": "event",
+    "image": "images/cards/BSG1_012-175.jpg",
+    "set": "BSG1",
+    "number": 12,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Put target alert ship into its owner's hand.",
+    "flavorText": "\"Roger, Apollo. Return to base.\" —PO 2nd Class Dualla"
+  },
+  "BSG1-013": {
+    "id": "BSG1-013",
+    "subtitle": "Catastrophe",
+    "type": "event",
+    "image": "images/cards/BSG1_013-175.jpg",
+    "set": "BSG1",
+    "number": 13,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "abilityText": "Defeat target persistent mission."
+  },
+  "BSG1-014": {
+    "id": "BSG1-014",
+    "subtitle": "Channel The Lords Of Kobol",
+    "type": "event",
+    "image": "images/cards/BSG1_014-175.jpg",
+    "set": "BSG1",
+    "number": 14,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2
+    },
+    "traits": ["Political"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Expedite (When you pay a cost and have [persuasion] [persuasion] excess resources, you may play this card.) The next time you would reveal a mystic value for a challenge this turn, do so twice and add those mystic values together.",
+    "flavorText": "\"It's the right place. But we're not the first ones here.\" —Cmdr. Adama"
+  },
+  "BSG1-015": {
+    "id": "BSG1-015",
+    "subtitle": "Condition One",
+    "type": "event",
+    "image": "images/cards/BSG1_015-175.jpg",
+    "set": "BSG1",
+    "number": 15,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "mysticValue": 4,
+    "cylonThreat": 3,
+    "abilityText": "Ready target unit.",
+    "flavorText": "\"Launch the alert fighters. Set Condition One throughout the fleet.\" —Col. Tigh"
+  },
+  "BSG1-016": {
+    "id": "BSG1-016",
+    "subtitle": "Condition Two",
+    "type": "event",
+    "image": "images/cards/BSG1_016-175.jpg",
+    "set": "BSG1",
+    "number": 16,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Commit target unit.",
+    "flavorText": "\"I know what you mean. We'll go to Condition Two.\" —Cmdr. Adama"
+  },
+  "BSG1-017": {
+    "id": "BSG1-017",
+    "subtitle": "Crackdown",
+    "type": "event",
+    "image": "images/cards/BSG1_017-175.jpg",
+    "set": "BSG1",
+    "number": 17,
+    "rarity": "common",
+    "cost": {
+      "security": 1
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Expedite (When you pay a cost and have [security] excess resources, you may play this card.) Target opponent chooses and discards a card."
+  },
+  "BSG1-018": {
+    "id": "BSG1-018",
+    "subtitle": "Cylon Computer Virus",
+    "type": "event",
+    "image": "images/cards/BSG1_018-175.jpg",
+    "set": "BSG1",
+    "number": 18,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 1,
+      "security": 1
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 3,
+    "cylonThreat": 3,
+    "abilityText": "All players discard their hands and then draw cards equal to their starting hand size.",
+    "flavorText": "\"Cylon virus spawned in the subsystems before we broke the network.\" —Lt. Gaeta"
+  },
+  "BSG1-019": {
+    "id": "BSG1-019",
+    "subtitle": "Cylon Missile Battery",
+    "type": "event",
+    "image": "images/cards/BSG1_019-175.jpg",
+    "set": "BSG1",
+    "number": 19,
+    "rarity": "common",
+    "cost": {
+      "logistics": 1
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 4,
+    "cylonThreat": 3,
+    "abilityText": "Expedite (When you pay a cost and have [logistics] excess resources, you may play this card.) Target Cylon unit gets +2 power.",
+    "flavorText": "DEFEATING THE CYLON MISSILE: 1) SEE IT! 2) Put it on your 3-9 line. 3) Countermeasures. 4) Turn Hard INTO it. 5) Pray. —Ready room whiteboard"
+  },
+  "BSG1-020": {
+    "id": "BSG1-020",
+    "subtitle": "Cylons Look Like Humans",
+    "type": "event",
+    "image": "images/cards/BSG1_020-175.jpg",
+    "set": "BSG1",
+    "number": 20,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "All players put a card from the top of their decks into their discard piles for each Cylon unit or Cylon mission they control.",
+    "flavorText": "\"The Cylons...have the ability to mimic the human form.\" —President Roslin"
+  },
+  "BSG1-021": {
+    "id": "BSG1-021",
+    "subtitle": "Decoys",
+    "type": "event",
+    "image": "images/cards/BSG1_021-175.jpg",
+    "set": "BSG1",
+    "number": 21,
+    "rarity": "rare",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "When you play this event, you may commit any number of units you control. If you do, target unit gets +2 power for each unit you commit.",
+    "flavorText": "\"We'll need three civilian freighters to use as decoys.\" —Lt. Thrace"
+  },
+  "BSG1-022": {
+    "id": "BSG1-022",
+    "subtitle": "Dissension",
+    "type": "event",
+    "image": "images/cards/BSG1_022-175.jpg",
+    "set": "BSG1",
+    "number": 22,
+    "rarity": "rare",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Exhaust all reserve cards.",
+    "flavorText": "\"We've got fights breaking out on some ships over water rations.\" —Capt. Adama"
+  },
+  "BSG1-023": {
+    "id": "BSG1-023",
+    "subtitle": "Distraction",
+    "type": "event",
+    "image": "images/cards/BSG1_023-175.jpg",
+    "set": "BSG1",
+    "number": 23,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 4,
+    "cylonThreat": 4,
+    "abilityText": "When you play this event, you may commit a personnel you control. If you do, commit and exhaust target unit.",
+    "flavorText": "\"Miss Godfrey...I really should get back to...my duties.\" —Cmdr. Adama"
+  },
+  "BSG1-024": {
+    "id": "BSG1-024",
+    "subtitle": "Downed Pilot",
+    "type": "event",
+    "image": "images/cards/BSG1_024-175.jpg",
+    "set": "BSG1",
+    "number": 24,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "traits": ["Crisis", "Military"],
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Target opponent chooses one—Commit a ship that player controls; or sacrifice a personnel.",
+    "flavorText": "\"Get to high ground. Then they see you. Then they rescue you.\" —Lt. Thrace"
+  },
+  "BSG1-025": {
+    "id": "BSG1-025",
+    "subtitle": "Endless Task",
+    "type": "event",
+    "image": "images/cards/BSG1_025-175.jpg",
+    "set": "BSG1",
+    "number": 25,
+    "rarity": "common",
+    "cost": {
+      "security": 1
+    },
+    "traits": ["Crisis"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target player chooses one—Commit a unit he or she controls; or exhaust a unit he or she controls.",
+    "flavorText": "\"Eleven hours to test each sample for Cylon indicators.\" —Dr. Baltar \"That'll take a while.\" —Number Six"
+  },
+  "BSG1-026": {
+    "id": "BSG1-026",
+    "subtitle": "Executive Privilege",
+    "type": "event",
+    "image": "images/cards/BSG1_026-175.jpg",
+    "set": "BSG1",
+    "number": 26,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "traits": ["Political"],
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Prevent all influence loss this phase.",
+    "flavorText": "\"Do it.\" —President Roslin"
+  },
+  "BSG1-027": {
+    "id": "BSG1-027",
+    "subtitle": "Fire Support",
+    "type": "event",
+    "image": "images/cards/BSG1_027-175.jpg",
+    "set": "BSG1",
+    "number": 27,
+    "rarity": "fixed",
+    "cost": {
+      "security": 2
+    },
+    "traits": ["Military"],
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "abilityText": "Target unit gets +2 power. (A unit is a personnel or ship.)"
+  },
+  "BSG1-028": {
+    "id": "BSG1-028",
+    "subtitle": "Fury",
+    "type": "event",
+    "image": "images/cards/BSG1_028-175.jpg",
+    "set": "BSG1",
+    "number": 28,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target unit gets +X power, where X is that unit's mystic value. (A unit is a personnel or ship.)",
+    "flavorText": "\"No. Sharon wouldn't give up without a much harder fight.\" —Number Six"
+  },
+  "BSG1-029": {
+    "id": "BSG1-029",
+    "subtitle": "Grounded",
+    "type": "event",
+    "image": "images/cards/BSG1_029-175.jpg",
+    "set": "BSG1",
+    "number": 29,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "traits": ["Crisis", "Political"],
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Target opponent chooses one—Commit a ship he or she controls; or commit all personnel he or she controls.",
+    "flavorText": "\"C'mon—let's go—out-out—now!\" —Lt. Quartararo"
+  },
+  "BSG1-030": {
+    "id": "BSG1-030",
+    "subtitle": "Hangar Deck Fire",
+    "type": "event",
+    "image": "images/cards/BSG1_030-175.jpg",
+    "set": "BSG1",
+    "number": 30,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 2,
+      "security": 1
+    },
+    "traits": ["Crisis"],
+    "mysticValue": 4,
+    "cylonThreat": 2,
+    "abilityText": "Target opponent chooses one—Sacrifice a ship; or sacrifice a supply card.",
+    "flavorText": "\"Attention: Fire on the Port Hangar Deck. Away the fire and rescue team. Fire on the Port Hangar Deck.\" —PO 2nd Class Dualla"
+  },
+  "BSG1-031": {
+    "id": "BSG1-031",
+    "subtitle": "High Stakes Game",
+    "type": "event",
+    "image": "images/cards/BSG1_031-175.jpg",
+    "set": "BSG1",
+    "number": 31,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "All players reveal their hands. The players who have the most cards that have the highest mystic values each gain 2 influence.",
+    "flavorText": "\"Thank you—thank you all for a most pleasant evening.\" —Dr. Baltar"
+  },
+  "BSG1-032": {
+    "id": "BSG1-032",
+    "subtitle": "Martial Law",
+    "type": "event",
+    "image": "images/cards/BSG1_032-175.jpg",
+    "set": "BSG1",
+    "number": 32,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 2
+    },
+    "traits": ["Military"],
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Politicians can't defend this phase.",
+    "flavorText": "\"I have decided to dissolve the Quorum of Twelve, and as of this moment, I have declared martial law.\" —Col. Tigh"
+  },
+  "BSG1-033": {
+    "id": "BSG1-033",
+    "subtitle": "Military Coup",
+    "type": "event",
+    "image": "images/cards/BSG1_033-175.jpg",
+    "set": "BSG1",
+    "number": 33,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 1
+    },
+    "traits": ["Military"],
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "When you play this event, you may exhaust target personnel you control. If you do, exhaust target personnel an opponent controls.",
+    "flavorText": "\"Miss Roslin, this is Colonel Tigh. No one needs to get hurt here.\" —Col. Tigh"
+  },
+  "BSG1-034": {
+    "id": "BSG1-034",
+    "subtitle": "Network Hacking",
+    "type": "event",
+    "image": "images/cards/BSG1_034-175.jpg",
+    "set": "BSG1",
+    "number": 34,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "traits": ["Crisis", "Cylon"],
+    "mysticValue": 2,
+    "cylonThreat": 4,
+    "abilityText": "Each player chooses one—Commit a Cylon unit he or she controls; or commit all ships he or she controls.",
+    "flavorText": "\"The Cylons are hacking our network.\" —Lt. Gaeta"
+  },
+  "BSG1-035": {
+    "id": "BSG1-035",
+    "subtitle": "Networked Computers",
+    "type": "event",
+    "image": "images/cards/BSG1_035-175.jpg",
+    "set": "BSG1",
+    "number": 35,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 3
+    },
+    "traits": ["Military"],
+    "mysticValue": 1,
+    "cylonThreat": 4,
+    "abilityText": "Each player reveals a mystic value. The player who has the highest mystic value chooses a card from his or her discard pile and puts that card into his or her hand. (If the mystic values are tied, reveal again.)"
+  },
+  "BSG1-036": {
+    "id": "BSG1-036",
+    "subtitle": "Outmaneuvered",
+    "type": "event",
+    "image": "images/cards/BSG1_036-175.jpg",
+    "set": "BSG1",
+    "number": 36,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 1
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target ship gets -2 power.",
+    "flavorText": "\"Frak.\" —Lt. Thrace"
+  },
+  "BSG1-037": {
+    "id": "BSG1-037",
+    "subtitle": "Painful Recovery",
+    "type": "event",
+    "image": "images/cards/BSG1_037-175.jpg",
+    "set": "BSG1",
+    "number": 37,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 1
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 3,
+    "cylonThreat": 4,
+    "abilityText": "When you play this event, you may put target Cylon unit you control on top of its owner's deck. If you do, commit and exhaust target personnel.",
+    "flavorText": "\"Tell me what's happening on my ship.\" —Cmdr. Adama"
+  },
+  "BSG1-038": {
+    "id": "BSG1-038",
+    "subtitle": "Power Of Prayer",
+    "type": "event",
+    "image": "images/cards/BSG1_038-175.jpg",
+    "set": "BSG1",
+    "number": 38,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 1
+    },
+    "traits": ["Political"],
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Reveal a mystic value. Target unit gets +X power, where X is that mystic value.",
+    "flavorText": "\"I knew you, of all people, wouldn't abandon me. Thank you, thank you.\" —Dr. Baltar"
+  },
+  "BSG1-039": {
+    "id": "BSG1-039",
+    "subtitle": "Presidential Candidate",
+    "type": "event",
+    "image": "images/cards/BSG1_039-175.jpg",
+    "set": "BSG1",
+    "number": 39,
+    "rarity": "fixed",
+    "cost": {
+      "persuasion": 1
+    },
+    "traits": ["Political"],
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Target defending Politician gets +2 power.",
+    "flavorText": "\"You're missing an intriguing opportunity.\" —Number Six"
+  },
+  "BSG1-040": {
+    "id": "BSG1-040",
+    "subtitle": "Reformat",
+    "type": "event",
+    "image": "images/cards/BSG1_040-175.jpg",
+    "set": "BSG1",
+    "number": 40,
+    "rarity": "common",
+    "cost": {
+      "logistics": 1,
+      "security": 1
+    },
+    "traits": ["Political"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Discard X cards and then draw X cards.",
+    "flavorText": "\"Wipe the hard drives, now!\" —Lt. Valerii"
+  },
+  "BSG1-041": {
+    "id": "BSG1-041",
+    "subtitle": "Setback",
+    "type": "event",
+    "image": "images/cards/BSG1_041-175.jpg",
+    "set": "BSG1",
+    "number": 41,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 2
+    },
+    "traits": ["Crisis"],
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Target player chooses one—Exhaust an alert unit he or she controls; or exhaust a reserve unit he or she controls."
+  },
+  "BSG1-042": {
+    "id": "BSG1-042",
+    "subtitle": "Sick Bay",
+    "type": "event",
+    "image": "images/cards/BSG1_042-175.jpg",
+    "set": "BSG1",
+    "number": 42,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Put target alert personnel into its owner's hand.",
+    "flavorText": "\"That was three G's, Starbuck. Not six. I'm sorry. I know it'll be tough, but you're staying home.\" —Cmdr. Adama"
+  },
+  "BSG1-043": {
+    "id": "BSG1-043",
+    "subtitle": "Sneak Attack",
+    "type": "event",
+    "image": "images/cards/BSG1_043-175.jpg",
+    "set": "BSG1",
+    "number": 43,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 1
+    },
+    "mysticValue": 4,
+    "cylonThreat": 3,
+    "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Commit all Fighters.",
+    "flavorText": "\"Well, they found us. It was only a matter of time.\" —Col. Tigh"
+  },
+  "BSG1-044": {
+    "id": "BSG1-044",
+    "subtitle": "Standoff",
+    "type": "event",
+    "image": "images/cards/BSG1_044-175.jpg",
+    "set": "BSG1",
+    "number": 44,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "traits": ["Military"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Prevent all influence gain this phase.",
+    "flavorText": "\"I get the feeling you don't really like the press, Commander.\" —D'Anna Biers"
+  },
+  "BSG1-045": {
+    "id": "BSG1-045",
+    "subtitle": "Still No Contact",
+    "type": "event",
+    "image": "images/cards/BSG1_045-175.jpg",
+    "set": "BSG1",
+    "number": 45,
+    "rarity": "rare",
+    "cost": {
+      "security": 2
+    },
+    "traits": ["Crisis", "Military"],
+    "mysticValue": 4,
+    "cylonThreat": 3,
+    "abilityText": "Target opponent chooses one—Commit a personnel he or she controls; or sacrifice a personnel.",
+    "flavorText": "\"So she survived the initial hits. She could still be alive.\" —Lt. Valerii"
+  },
+  "BSG1-046": {
+    "id": "BSG1-046",
+    "subtitle": "Stims",
+    "type": "event",
+    "image": "images/cards/BSG1_046-175.jpg",
+    "set": "BSG1",
+    "number": 46,
+    "rarity": "rare",
+    "cost": {
+      "security": 1
+    },
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Target challenging Pilot gets +4 power. At the end of that challenge, exhaust that Pilot.",
+    "flavorText": "\"I don't fly with stims. They blunt your reflexes, reaction time.\" —Lt. Thrace"
+  },
+  "BSG1-047": {
+    "id": "BSG1-047",
+    "subtitle": "Stranded",
+    "type": "event",
+    "image": "images/cards/BSG1_047-175.jpg",
+    "set": "BSG1",
+    "number": 47,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Shuffle target reserve personnel into its owner's deck.",
+    "flavorText": "\"On the bright side, it's a lovely day for a walk.\" —Lt. Thrace"
+  },
+  "BSG1-048": {
+    "id": "BSG1-048",
+    "subtitle": "Suicide Bomber",
+    "type": "event",
+    "image": "images/cards/BSG1_048-175.jpg",
+    "set": "BSG1",
+    "number": 48,
+    "rarity": "rare",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 4,
+    "abilityText": "When you play this event, you may sacrifice a Cylon personnel. If you do, defeat two target personnel.",
+    "flavorText": "\"A Cylon? Eyewitness accounts all state the bomber was a man.\" —Sgt. Hadrian"
+  },
+  "BSG1-049": {
+    "id": "BSG1-049",
+    "subtitle": "Test Of Faith",
+    "type": "event",
+    "image": "images/cards/BSG1_049-175.jpg",
+    "set": "BSG1",
+    "number": 49,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 4,
+    "cylonThreat": 2,
+    "abilityText": "Expedite (When you pay a cost and have [persuasion] [persuasion] excess resources, you may play this card.) Target player gains 1 influence.",
+    "flavorText": "\"No, you won't. You'll complete the project. Just like I told you.\" —Number Six"
+  },
+  "BSG1-050": {
+    "id": "BSG1-050",
+    "subtitle": "Them Or Us",
+    "type": "event",
+    "image": "images/cards/BSG1_050-175.jpg",
+    "set": "BSG1",
+    "number": 50,
+    "rarity": "rare",
+    "cost": {
+      "security": 1
+    },
+    "traits": ["Military"],
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "When you play this event, you may sacrifice a ship. If you do, defeat target personnel.",
+    "flavorText": "\"Killing is killing, Madame President. The labels only matter to the living. The dead are just as dead.\" —Cmdr. Adama"
+  },
+  "BSG1-051": {
+    "id": "BSG1-051",
+    "subtitle": "Under Arrest",
+    "type": "event",
+    "image": "images/cards/BSG1_051-175.jpg",
+    "set": "BSG1",
+    "number": 51,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "traits": ["Military"],
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Put target personnel on top of its owner's deck.",
+    "flavorText": "\"Take him to the brig.\" —Cmdr. Adama"
+  },
+  "BSG1-052": {
+    "id": "BSG1-052",
+    "subtitle": "Vision Of Serpents",
+    "type": "event",
+    "image": "images/cards/BSG1_052-175.jpg",
+    "set": "BSG1",
+    "number": 52,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target personnel gets -2 power.",
+    "flavorText": "\"And unto the leader they gave a vision, of serpents numbering two and ten, as a sign of things to come.\" —Elosha"
+  },
+  "BSG1-053": {
+    "id": "BSG1-053",
+    "subtitle": "Winning Hand",
+    "type": "event",
+    "image": "images/cards/BSG1_053-175.jpg",
+    "set": "BSG1",
+    "number": 53,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 1
+    },
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Target challenging personnel gets +2 power.",
+    "flavorText": "\"Thirty to me, huh, Doc? Why not.\" —Capt. Adama"
+  },
+  "BSG1-054": {
+    "id": "BSG1-054",
+    "subtitle": "Wounded In Action",
+    "type": "event",
+    "image": "images/cards/BSG1_054-175.jpg",
+    "set": "BSG1",
+    "number": 54,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Target unit challenging you while you have no defender gets -2 power. (A unit is a ship or personnel.)",
+    "flavorText": "\"She's not going to be walking, much less flying, anytime soon.\" —Dr. Cottle"
+  },
+  "BSG1-055": {
+    "id": "BSG1-055",
+    "subtitle": "You Gave Yourself Over",
+    "type": "event",
+    "image": "images/cards/BSG1_055-175.jpg",
+    "set": "BSG1",
+    "number": 55,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 1
+    },
+    "traits": ["Civilian"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Target Civilian unit gets +2 power.",
+    "flavorText": "\"I...am...an instrument of God.\" —Dr. Baltar"
+  },
+  "BSG2-007": {
+    "id": "BSG2-007",
+    "subtitle": "Anti-Radiation Dosage",
+    "type": "event",
+    "image": "images/cards/BSG2_007-165.gif",
+    "set": "BSG2",
+    "number": 7,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 1
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target unit can't be the target of effects that change its power.",
+    "flavorText": "\"You been taking your radiation meds?\" —Lt. Karl \"Helo\" Agathon"
+  },
+  "BSG2-008": {
+    "id": "BSG2-008",
+    "subtitle": "Boarding Party",
+    "type": "event",
+    "image": "images/cards/BSG2_008-165.gif",
+    "set": "BSG2",
+    "number": 8,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target ship gains Scramble. (This unit can defend as a personnel or a ship.)\n\nDraw a card.",
+    "flavorText": "\"We've got five Raptors with Marine fireteams standing by to board the Astral Queen.\" —Col. Saul Tigh"
+  },
+  "BSG2-009": {
+    "id": "BSG2-009",
+    "subtitle": "Concentrated Firepower",
+    "type": "event",
+    "image": "images/cards/BSG2_009-165.gif",
+    "set": "BSG2",
+    "number": 9,
+    "rarity": "rare",
+    "cost": {
+      "security": 2
+    },
+    "traits": ["Military"],
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Target unit gets +X power, where X is the number of supply cards in target resource stack you control.",
+    "flavorText": "\"Galactica has overwhelming firepower.\" —Capt. Lee \"Apollo\" Adama"
+  },
+  "BSG2-010": {
+    "id": "BSG2-010",
+    "subtitle": "Covering Fire",
+    "type": "event",
+    "image": "images/cards/BSG2_010-165.gif",
+    "set": "BSG2",
+    "number": 10,
+    "rarity": "common",
+    "cost": {
+      "logistics": 1
+    },
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Commit target unit you control: Target other unit gets +2 power.",
+    "flavorText": "\"Don't see any shiny metal out there. Think we're dealing with the human variety.\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-011": {
+    "id": "BSG2-011",
+    "subtitle": "Crushing Reality",
+    "type": "event",
+    "image": "images/cards/BSG2_011-165.gif",
+    "set": "BSG2",
+    "number": 11,
+    "rarity": "common",
+    "cost": {
+      "security": 1
+    },
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "abilityText": "Exhaust target mission.",
+    "flavorText": "\"Look at the buildings.\" —President Laura Roslin\n\n\"Buildings?\" —Billy Keikeya"
+  },
+  "BSG2-012": {
+    "id": "BSG2-012",
+    "subtitle": "Cylon Surprise",
+    "type": "event",
+    "image": "images/cards/BSG2_012-165.gif",
+    "set": "BSG2",
+    "number": 12,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 1
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target Cylon Machine gets +2 power."
+  },
+  "BSG2-013": {
+    "id": "BSG2-013",
+    "subtitle": "Cylons On The Brain",
+    "type": "event",
+    "image": "images/cards/BSG2_013-165.gif",
+    "set": "BSG2",
+    "number": 13,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Target personnel gains the Cylon trait until the end of the turn.",
+    "flavorText": "\"Comfy?\" —Number Six"
+  },
+  "BSG2-014": {
+    "id": "BSG2-014",
+    "subtitle": "Determination",
+    "type": "event",
+    "image": "images/cards/BSG2_014-165.gif",
+    "set": "BSG2",
+    "number": 14,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 1
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Restore target unit.",
+    "flavorText": "\"Lords of Kobol, help me.\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-015": {
+    "id": "BSG2-015",
+    "subtitle": "Discourage Pursuit",
+    "type": "event",
+    "image": "images/cards/BSG2_015-165.gif",
+    "set": "BSG2",
+    "number": 15,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2
+    },
+    "traits": ["Military"],
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "abilityText": "Exhaust target defending personnel: It is not defeated if it loses the challenge. If the challenger wins, defeat the challenger."
+  },
+  "BSG2-016": {
+    "id": "BSG2-016",
+    "subtitle": "Double Trouble",
+    "type": "event",
+    "image": "images/cards/BSG2_016-165.gif",
+    "set": "BSG2",
+    "number": 16,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "abilityText": "Take target singular Cylon personnel you control from its unit stack and put it into your reserve area."
+  },
+  "BSG2-017": {
+    "id": "BSG2-017",
+    "subtitle": "Everyone's Green",
+    "type": "event",
+    "image": "images/cards/BSG2_017-165.gif",
+    "set": "BSG2",
+    "number": 17,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target Cylon personnel without the Machine trait loses the Cylon trait.\n\nDraw a card.",
+    "flavorText": "\"If only they knew that everyone passes these days.\" —Number Six"
+  },
+  "BSG2-018": {
+    "id": "BSG2-018",
+    "subtitle": "Fallout Shelter",
+    "type": "event",
+    "image": "images/cards/BSG2_018-165.gif",
+    "set": "BSG2",
+    "number": 18,
+    "rarity": "rare",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Target unit can't be the target of effects."
+  },
+  "BSG2-019": {
+    "id": "BSG2-019",
+    "subtitle": "False Sense Of Security",
+    "type": "event",
+    "image": "images/cards/BSG2_019-165.gif",
+    "set": "BSG2",
+    "number": 19,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "abilityText": "The next time target opponent reveals a mystic value for a challenge this turn, he or she reveals an additional mystic value. You choose which mystic value he or she uses."
+  },
+  "BSG2-020": {
+    "id": "BSG2-020",
+    "subtitle": "Full Disclosure",
+    "type": "event",
+    "image": "images/cards/BSG2_020-165.gif",
+    "set": "BSG2",
+    "number": 20,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "traits": ["Political"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Each player reveals his or her hand.",
+    "flavorText": "\"They look like us now.\" —President Laura Roslin"
+  },
+  "BSG2-021": {
+    "id": "BSG2-021",
+    "subtitle": "Full System Malfunction",
+    "type": "event",
+    "image": "images/cards/BSG2_021-165.gif",
+    "set": "BSG2",
+    "number": 21,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Each player discards his or her hand.",
+    "flavorText": "\"They said it was like someone just turned off a switch.\" —PO 2nd Class Anastasia \"Dee\" Dualla"
+  },
+  "BSG2-022": {
+    "id": "BSG2-022",
+    "subtitle": "Left Behind",
+    "type": "event",
+    "image": "images/cards/BSG2_022-165.gif",
+    "set": "BSG2",
+    "number": 22,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2,
+      "security": 3
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Defeat all units.",
+    "flavorText": "\"That little girl you saw today? Cami? Her ship can't make the jump.\" —Billy Keikeya"
+  },
+  "BSG2-023": {
+    "id": "BSG2-023",
+    "subtitle": "Lest We Forget",
+    "type": "event",
+    "image": "images/cards/BSG2_023-165.gif",
+    "set": "BSG2",
+    "number": 23,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 4,
+    "cylonThreat": 1,
+    "abilityText": "Target unit gets +2 power when challenging a Cylon threat.\n\nDraw a card."
+  },
+  "BSG2-024": {
+    "id": "BSG2-024",
+    "subtitle": "Like a Ghost Town",
+    "type": "event",
+    "image": "images/cards/BSG2_024-165.gif",
+    "set": "BSG2",
+    "number": 24,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "abilityText": "Defeat all Civilian units.",
+    "flavorText": "\"The ones who weren't killed outright probably ran into the hills. Won't do any good.\" —Lt. Karl \"Helo\" Agathon"
+  },
+  "BSG2-025": {
+    "id": "BSG2-025",
+    "subtitle": "Massive Assault",
+    "type": "event",
+    "image": "images/cards/BSG2_025-165.gif",
+    "set": "BSG2",
+    "number": 25,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 3,
+      "security": 1
+    },
+    "traits": ["Military"],
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Ready all Capital Ships and Fighters.",
+    "flavorText": "\"With all respect, this is hardly the time to attack a superior force.\" —Col. Saul Tigh\n\n\"This is exactly the time.\" —Cmdr. William Adama"
+  },
+  "BSG2-026": {
+    "id": "BSG2-026",
+    "subtitle": "Out of Sight",
+    "type": "event",
+    "image": "images/cards/BSG2_026-165.gif",
+    "set": "BSG2",
+    "number": 26,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target personnel gains Scramble. (This unit can defend as a personnel or a ship.)\n\nDraw a card.",
+    "flavorText": "\"We gotta find another way.\" —Lt. Sharon \"Boomer\" Valerii"
+  },
+  "BSG2-027": {
+    "id": "BSG2-027",
+    "subtitle": "Raiding Farms",
+    "type": "event",
+    "image": "images/cards/BSG2_027-165.gif",
+    "set": "BSG2",
+    "number": 27,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 3
+    },
+    "traits": ["Military"],
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Defeat target asset that has no supply cards.",
+    "flavorText": "\"If I have to die here, I'm gonna take out every one of those frakking 'farms' before I do.\" —Samuel Anders"
+  },
+  "BSG2-028": {
+    "id": "BSG2-028",
+    "subtitle": "Resupply",
+    "type": "event",
+    "image": "images/cards/BSG2_028-165.gif",
+    "set": "BSG2",
+    "number": 28,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 2
+    },
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "abilityText": "Draw X cards, where X is the number of supply cards in target unexhausted resource stack you control."
+  },
+  "BSG2-029": {
+    "id": "BSG2-029",
+    "subtitle": "Showdown",
+    "type": "event",
+    "image": "images/cards/BSG2_029-165.gif",
+    "set": "BSG2",
+    "number": 29,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "abilityText": "Play this event only during the execution phase. No player can declare challenges.",
+    "flavorText": "\"Kara, I think these guys might really be human.\" —Lt. Karl \"Helo\" Agathon"
+  },
+  "BSG2-030": {
+    "id": "BSG2-030",
+    "subtitle": "Site of Betrayal",
+    "type": "event",
+    "image": "images/cards/BSG2_030-165.gif",
+    "set": "BSG2",
+    "number": 30,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Defeat all unresolved missions.",
+    "flavorText": "\"Humanity's children are returning home. Today.\" —Number Six"
+  },
+  "BSG2-031": {
+    "id": "BSG2-031",
+    "subtitle": "Special Delivery",
+    "type": "event",
+    "image": "images/cards/BSG2_031-165.gif",
+    "set": "BSG2",
+    "number": 31,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "abilityText": "Target personnel gets +1 power and gains Scramble. (This unit can defend as a personnel or a ship.)\n\nDraw a card.",
+    "flavorText": "\"Mission accomplished! The Base Ship is history!\" —Lt. Sharon \"Boomer\" Valerii"
+  },
+  "BSG2-032": {
+    "id": "BSG2-032",
+    "subtitle": "Spot Judgment",
+    "type": "event",
+    "image": "images/cards/BSG2_032-165.gif",
+    "set": "BSG2",
+    "number": 32,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "The next time you reveal a mystic value for a challenge this turn, reveal an additional mystic value and choose which you use.",
+    "flavorText": "\"Don't!\" —President Laura Roslin"
+  },
+  "BSG2-033": {
+    "id": "BSG2-033",
+    "subtitle": "Strafing Run",
+    "type": "event",
+    "image": "images/cards/BSG2_033-165.gif",
+    "set": "BSG2",
+    "number": 33,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 2
+    },
+    "traits": ["Military"],
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "abilityText": "Target ship gets +1 power and gains Strafe. (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)\n\nDraw a card."
+  },
+  "BSG2-034": {
+    "id": "BSG2-034",
+    "subtitle": "Strange Wingman",
+    "type": "event",
+    "image": "images/cards/BSG2_034-165.gif",
+    "set": "BSG2",
+    "number": 34,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 1
+    },
+    "traits": ["Military"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target Fighter you control gets +X power, where X is the number of Cylon ships you control.",
+    "flavorText": "\"Bring her home.\" —Cmdr. William Adama"
+  },
+  "BSG2-035": {
+    "id": "BSG2-035",
+    "subtitle": "Swearing In",
+    "type": "event",
+    "image": "images/cards/BSG2_035-165.gif",
+    "set": "BSG2",
+    "number": 35,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 1
+    },
+    "traits": ["Political"],
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "abilityText": "Target Politician gets +2 power.",
+    "flavorText": "\"I, Laura Roslin, do now avow and affirm . . .\" —Laura Roslin"
+  },
+  "BSG2-036": {
+    "id": "BSG2-036",
+    "subtitle": "There Are Many Copies",
+    "type": "event",
+    "image": "images/cards/BSG2_036-165.gif",
+    "set": "BSG2",
+    "number": 36,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Take target Cylon personnel card from your discard pile and put it into your hand."
+  },
+  "BSG2-037": {
+    "id": "BSG2-037",
+    "subtitle": "This Tribunal Is Over",
+    "type": "event",
+    "image": "images/cards/BSG2_037-165.gif",
+    "set": "BSG2",
+    "number": 37,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "abilityText": "Defeat target mission.",
+    "flavorText": "\"This is my ship. I won't have a witch hunt.\" —Cmdr. William Adama"
+  },
+  "BSG2-038": {
+    "id": "BSG2-038",
+    "subtitle": "To The Victor",
+    "type": "event",
+    "image": "images/cards/BSG2_038-165.gif",
+    "set": "BSG2",
+    "number": 38,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "abilityText": "Exhaust target personnel.",
+    "flavorText": "\"Pretty, isn't it?\" —Number Six"
+  },
+  "BSG2-039": {
+    "id": "BSG2-039",
+    "subtitle": "Top Off The Tank",
+    "type": "event",
+    "image": "images/cards/BSG2_039-165.gif",
+    "set": "BSG2",
+    "number": 39,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "abilityText": "Put this card beneath your base or an asset you control as a supply card. Don't put this card into your discard pile after its ability takes effect."
+  },
+  "BSG2-040": {
+    "id": "BSG2-040",
+    "subtitle": "Treacherous Toaster",
+    "type": "event",
+    "image": "images/cards/BSG2_040-165.gif",
+    "set": "BSG2",
+    "number": 40,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Target Cylon threat gets +2 power.\n\nDraw a card.",
+    "flavorText": "\"Ding!\""
+  },
+  "BSG2-041": {
+    "id": "BSG2-041",
+    "subtitle": "Unexpected...",
+    "type": "event",
+    "image": "images/cards/BSG2_041-165.gif",
+    "set": "BSG2",
+    "number": 41,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 1
+    },
+    "mysticValue": 1,
+    "cylonThreat": 4,
+    "abilityText": "Expedite (When you pay a cost and have [security] excess resources, you can play this card.)\n\nTarget Cylon ship loses the Cylon trait until the end of the turn.",
+    "flavorText": "\"It's Starbuck!\" —Capt. Lee \"Apollo\" Adama"
+  },
+  "BSG2-042": {
+    "id": "BSG2-042",
+    "subtitle": "...Sign",
+    "type": "event",
+    "image": "images/cards/BSG2_042-165.gif",
+    "set": "BSG2",
+    "number": 42,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "abilityText": "Play only during a challenge between two ships. The challenge ends, and both ships are committed.",
+    "flavorText": "\"Galactica, repeat—Cylon Raider is marked 'Starbuck.'\" —Capt. Lee \"Apollo\" Adama"
+  },
+  "BSG2-043": {
+    "id": "BSG2-043",
+    "subtitle": "Unwelcome Visitor",
+    "type": "event",
+    "image": "images/cards/BSG2_043-165.gif",
+    "set": "BSG2",
+    "number": 43,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 1
+    },
+    "traits": ["Cylon"],
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Target challenging Cylon personnel gets +4 power. When the challenge ends, defeat the target.",
+    "flavorText": "\"Hit the deck!\" —Cmdr. William Adama"
+  },
+  "BSG2-044": {
+    "id": "BSG2-044",
+    "subtitle": "Vulnerable Supplies",
+    "type": "event",
+    "image": "images/cards/BSG2_044-165.gif",
+    "set": "BSG2",
+    "number": 44,
+    "rarity": "rare",
+    "cost": {
+      "security": 2
+    },
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "abilityText": "Target opposing unit gets -X power, where X is the number of assets that have no supply cards that its controller controls."
+  }
+}

@@ -1,0 +1,1885 @@
+{
+  "BSG1-098": {
+    "id": "BSG1-098",
+    "title": "Apollo",
+    "subtitle": "Ace Pilot",
+    "type": "personnel",
+    "image": "images/cards/BSG1_098-175.jpg",
+    "set": "BSG1",
+    "number": 98,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Pilot"],
+    "abilityText": "Scramble (This personnel can defend as though it were a ship.)",
+    "flavorText": "\"...this is my job and don't think for one moment that I won't get it done.\" —Capt. Adama"
+  },
+  "BSG1-099": {
+    "id": "BSG1-099",
+    "title": "Apollo",
+    "subtitle": "Commander Air Group",
+    "type": "personnel",
+    "image": "images/cards/BSG1_099-175.jpg",
+    "set": "BSG1",
+    "number": 99,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Pilot"],
+    "abilityText": "All other Pilots you control get +1 power.",
+    "flavorText": "\"You know the drill, people. Scatter formation, keep 'em off the civvies, and don't stray beyond the recovery line.\" —Capt. Adama"
+  },
+  "BSG1-100": {
+    "id": "BSG1-100",
+    "title": "Apollo",
+    "subtitle": "Political Liaison",
+    "type": "personnel",
+    "image": "images/cards/BSG1_100-175.jpg",
+    "set": "BSG1",
+    "number": 100,
+    "rarity": "common",
+    "cost": {
+      "security": 4
+    },
+    "power": 3,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Officer", "Politician"],
+    "abilityText": "All other Officers you control gain the Politician trait.",
+    "flavorText": "\"As leaders, don't we have an obligation to question our actions, to make sure the decisions that we make are the right decisions?\" —Capt. Adama"
+  },
+  "BSG1-101": {
+    "id": "BSG1-101",
+    "title": "Billy Keikeya",
+    "subtitle": "Presidential Aide",
+    "type": "personnel",
+    "image": "images/cards/BSG1_101-175.jpg",
+    "set": "BSG1",
+    "number": 101,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "When this card enters play as a personnel, gain 1 influence.",
+    "flavorText": "\"If this could've waited a few more months until the presidential election, we could've hand-picked a candidate to run on our ticket.\" —Billy Keikeya"
+  },
+  "BSG1-102": {
+    "id": "BSG1-102",
+    "title": "Billy Keikeya",
+    "subtitle": "Press Secretary",
+    "type": "personnel",
+    "image": "images/cards/BSG1_102-175.jpg",
+    "set": "BSG1",
+    "number": 102,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "While defending, this personnel gets +2 power.",
+    "flavorText": "\"And thank you for making my first official press conference a relatively bloodless affair.\" —Billy Keikeya"
+  },
+  "BSG1-103": {
+    "id": "BSG1-103",
+    "title": "Boomer",
+    "subtitle": "Hell Of A Pilot",
+    "type": "personnel",
+    "image": "images/cards/BSG1_103-175.jpg",
+    "set": "BSG1",
+    "number": 103,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Cylon", "Pilot"],
+    "abilityText": "Scramble (This personnel can defend as though it were a ship.)",
+    "flavorText": "\"Don't ask questions, just follow your pilot.\" —Lt. Valerii"
+  },
+  "BSG1-104": {
+    "id": "BSG1-104",
+    "title": "Boomer",
+    "subtitle": "Raptor Pilot",
+    "type": "personnel",
+    "image": "images/cards/BSG1_104-175.jpg",
+    "set": "BSG1",
+    "number": 104,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Cylon", "Pilot"],
+    "abilityText": "When this card enters play as a personnel, draw a card.",
+    "cylonThreatText": "Each player discards a card.",
+    "flavorText": "\"Plans B, C, D, and E are the same as plan A: get off the planet and get back to the ship.\" —Lt. Valerii"
+  },
+  "BSG1-105": {
+    "id": "BSG1-105",
+    "title": "Boomer",
+    "subtitle": "Saboteur",
+    "type": "personnel",
+    "image": "images/cards/BSG1_105-175.jpg",
+    "set": "BSG1",
+    "number": 105,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "security",
+    "traits": ["Cylon", "Pilot"],
+    "abilityText": "Commit: All players lose 1 influence.",
+    "cylonThreatText": "Each player loses 1 influence.",
+    "flavorText": "\"What the frak...?\" —Lt. Valerii"
+  },
+  "BSG1-106": {
+    "id": "BSG1-106",
+    "subtitle": "Centurion Ambusher",
+    "type": "personnel",
+    "image": "images/cards/BSG1_106-175.jpg",
+    "set": "BSG1",
+    "number": 106,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 4
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "Commit: Target Cylon threat gets +2 power.",
+    "cylonThreatText": "Each player sacrifices a reserve ship."
+  },
+  "BSG1-107": {
+    "id": "BSG1-107",
+    "subtitle": "Centurion Assassin",
+    "type": "personnel",
+    "image": "images/cards/BSG1_107-175.jpg",
+    "set": "BSG1",
+    "number": 107,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "logistics",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "",
+    "cylonThreatText": "Each player puts the top card of his or her deck into his or her discard pile."
+  },
+  "BSG1-108": {
+    "id": "BSG1-108",
+    "subtitle": "Centurion Slayer",
+    "type": "personnel",
+    "image": "images/cards/BSG1_108-175.jpg",
+    "set": "BSG1",
+    "number": 108,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "Sniper (Each time this personnel challenges, you may choose the defender.)",
+    "cylonThreatText": "Each player sacrifices a unit."
+  },
+  "BSG1-109": {
+    "id": "BSG1-109",
+    "title": "Crashdown",
+    "subtitle": "Alex Quartararo",
+    "type": "personnel",
+    "image": "images/cards/BSG1_109-175.jpg",
+    "set": "BSG1",
+    "number": 109,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "",
+    "flavorText": "\"Beginning dradis two sweep. So I say we give this lovely little rock of nothing a name. I'm thinking...Kimiko.\" —Lt. Quartararo"
+  },
+  "BSG1-110": {
+    "id": "BSG1-110",
+    "title": "Crashdown",
+    "subtitle": "Expert ECO",
+    "type": "personnel",
+    "image": "images/cards/BSG1_110-175.jpg",
+    "set": "BSG1",
+    "number": 110,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 3
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Choose target other unit. If that unit is challenging, it gets +2 power.",
+    "flavorText": "\"You're the boss.\" —Lt. Quartararo"
+  },
+  "BSG1-111": {
+    "id": "BSG1-111",
+    "title": "Crashdown",
+    "subtitle": "Sensor Operator",
+    "type": "personnel",
+    "image": "images/cards/BSG1_111-175.jpg",
+    "set": "BSG1",
+    "number": 111,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Officer"],
+    "abilityText": "Commit and exhaust: Put target card from your discard pile into your hand.",
+    "flavorText": "\"Crashdown/Galactica. We've completed our search. Positive water findings. Repeat: We found water!\" —Lt. Quartararo"
+  },
+  "BSG1-112": {
+    "id": "BSG1-112",
+    "subtitle": "Cylon Centurion",
+    "type": "personnel",
+    "image": "images/cards/BSG1_112-175.jpg",
+    "set": "BSG1",
+    "number": 112,
+    "rarity": "common",
+    "cost": {
+      "security": 2,
+      "logistics": 2
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "security",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "While challenging, this personnel gets +2 power.",
+    "cylonThreatText": "Each player sacrifices a reserve personnel.",
+    "flavorText": "The Cylons were created by man. They rebelled. They evolved."
+  },
+  "BSG1-113": {
+    "id": "BSG1-113",
+    "title": "D'Anna Biers",
+    "subtitle": "Fleet News Service",
+    "type": "personnel",
+    "image": "images/cards/BSG1_113-175.jpg",
+    "set": "BSG1",
+    "number": 113,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 1,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "Commit: Choose target other unit. If that unit is challenging, it gets +2 power.",
+    "cylonThreatText": "Each player exhausts a personnel he or she controls.",
+    "flavorText": "\"Is this a social call or are we on the verge of another coup?\" —D'Anna Biers"
+  },
+  "BSG1-114": {
+    "id": "BSG1-114",
+    "title": "D'Anna Biers",
+    "subtitle": "Reporter",
+    "type": "personnel",
+    "image": "images/cards/BSG1_114-175.jpg",
+    "set": "BSG1",
+    "number": 114,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "This personnel cannot challenge. (This personnel can defend.)",
+    "cylonThreatText": "Each player commits a personnel he or she controls.",
+    "flavorText": "\"I take it I'm here because you're unhappy with my report on the Gideon Massacre.\" —D'Anna Biers"
+  },
+  "BSG1-115": {
+    "id": "BSG1-115",
+    "title": "Dee",
+    "subtitle": "Dradis Operator",
+    "type": "personnel",
+    "image": "images/cards/BSG1_115-175.jpg",
+    "set": "BSG1",
+    "number": 115,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Enlisted"],
+    "abilityText": "During the Cylon phase, this personnel gets +2 power.",
+    "flavorText": "\"Contact! Dradis contact! Incoming, bearing zero-six-zero, carom three-zero-eight.\" —PO 2nd Class Dualla"
+  },
+  "BSG1-116": {
+    "id": "BSG1-116",
+    "title": "Dee",
+    "subtitle": "Security Advisor",
+    "type": "personnel",
+    "image": "images/cards/BSG1_116-175.jpg",
+    "set": "BSG1",
+    "number": 116,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Enlisted"],
+    "abilityText": "Commit: Target other personnel gets +2 power.",
+    "flavorText": "\"How about Dee? Petty Officer 2nd Class Dualla. She works in CIC...\" —Billy Keikeya"
+  },
+  "BSG1-117": {
+    "id": "BSG1-117",
+    "title": "Dr. Baltar",
+    "subtitle": "Award Winner",
+    "type": "personnel",
+    "image": "images/cards/BSG1_117-175.jpg",
+    "set": "BSG1",
+    "number": 117,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Civilian"],
+    "abilityText": "Commit and exhaust: Put target personnel card from your discard pile into your hand.",
+    "flavorText": "World-famous winner of three Magnate Prizes, and best known for his controversial views on computer technology."
+  },
+  "BSG1-118": {
+    "id": "BSG1-118",
+    "title": "Dr. Baltar",
+    "subtitle": "Science Advisor",
+    "type": "personnel",
+    "image": "images/cards/BSG1_118-175.jpg",
+    "set": "BSG1",
+    "number": 118,
+    "rarity": "common",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Civilian"],
+    "abilityText": "Commit: Defeat target exhausted personnel.",
+    "flavorText": "\"I am not on anybody's side.\" —Dr. Baltar"
+  },
+  "BSG1-119": {
+    "id": "BSG1-119",
+    "title": "Dr. Baltar",
+    "subtitle": "Vice President",
+    "type": "personnel",
+    "image": "images/cards/BSG1_119-175.jpg",
+    "set": "BSG1",
+    "number": 119,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "Commit: Move target mission to its owner's reserve area. Commit: Ready target mission.",
+    "flavorText": "\"Mr. Vice President if you please, Lieutenant. Some decorum is called for after all. Not a pirate ship you're running here, is it?\" —Dr. Baltar"
+  },
+  "BSG1-120": {
+    "id": "BSG1-120",
+    "title": "Galen Tyrol",
+    "subtitle": "CPO",
+    "type": "personnel",
+    "image": "images/cards/BSG1_120-175.jpg",
+    "set": "BSG1",
+    "number": 120,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Enlisted"],
+    "abilityText": "Commit: Ready target ship.",
+    "flavorText": "\"Show's over. We got work to do.\" —CPO Tyrol"
+  },
+  "BSG1-121": {
+    "id": "BSG1-121",
+    "title": "Galen Tyrol",
+    "subtitle": "The Chief",
+    "type": "personnel",
+    "image": "images/cards/BSG1_121-175.jpg",
+    "set": "BSG1",
+    "number": 121,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Enlisted"],
+    "abilityText": "Each time a ship you control enters play, you may commit this personnel to ready that ship.",
+    "flavorText": "\"Here's what you gotta do: First, you're gonna have to remove my size 12 shoe from your ass.\" —CPO Tyrol"
+  },
+  "BSG1-122": {
+    "id": "BSG1-122",
+    "title": "Helo",
+    "subtitle": "Flight Officer",
+    "type": "personnel",
+    "image": "images/cards/BSG1_122-175.jpg",
+    "set": "BSG1",
+    "number": 122,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 3
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Target Pilot gets +2 power.",
+    "flavorText": "\"Sharon, we've made it this far. We're gonna make it all the way.\" —Lt. Agathon"
+  },
+  "BSG1-123": {
+    "id": "BSG1-123",
+    "title": "Helo",
+    "subtitle": "Karl Agathon",
+    "type": "personnel",
+    "image": "images/cards/BSG1_123-175.jpg",
+    "set": "BSG1",
+    "number": 123,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 0,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "",
+    "flavorText": "\"Sleep a little longer. Who knows when we'll find clean sheets again? I'll go topside and make breakfast.\" —Lt. Agathon"
+  },
+  "BSG1-124": {
+    "id": "BSG1-124",
+    "title": "Helo",
+    "subtitle": "Raptor ECO",
+    "type": "personnel",
+    "image": "images/cards/BSG1_124-175.jpg",
+    "set": "BSG1",
+    "number": 124,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "This personnel gets +3 power while challenging a Cylon personnel.",
+    "flavorText": "\"Never send a pilot to do an ECO's job.\" —Lt. Agathon"
+  },
+  "BSG1-125": {
+    "id": "BSG1-125",
+    "title": "Laura Roslin",
+    "subtitle": "Colonial President",
+    "type": "personnel",
+    "image": "images/cards/BSG1_125-175.jpg",
+    "set": "BSG1",
+    "number": 125,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Politician"],
+    "abilityText": "Commit: Draw a card.",
+    "flavorText": "\"You need to understand that my responsibility as president is, first and foremost, to preserve and protect the people of this fleet.\" —President Roslin"
+  },
+  "BSG1-126": {
+    "id": "BSG1-126",
+    "title": "Laura Roslin",
+    "subtitle": "Leader Of Prophecy",
+    "type": "personnel",
+    "image": "images/cards/BSG1_126-175.jpg",
+    "set": "BSG1",
+    "number": 126,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 5
+    },
+    "power": 4,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "Each time you reveal a card for its mystic value, that card gets +1 to its mystic value.",
+    "flavorText": "\"She also wrote that the leader suffered a wasting disease and would not live to enter the new land. But you're not dying. Are you?\" —Elosha"
+  },
+  "BSG1-127": {
+    "id": "BSG1-127",
+    "title": "Laura Roslin",
+    "subtitle": "Madame President",
+    "type": "personnel",
+    "image": "images/cards/BSG1_127-175.jpg",
+    "set": "BSG1",
+    "number": 127,
+    "rarity": "fixed",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 3,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "Commit: Gain 1 influence.",
+    "flavorText": "\"I am committed to providing a future for our people.\" —President Roslin"
+  },
+  "BSG1-128": {
+    "id": "BSG1-128",
+    "title": "Mr. Gaeta",
+    "subtitle": "Senior Officer Of The Watch",
+    "type": "personnel",
+    "image": "images/cards/BSG1_128-175.jpg",
+    "set": "BSG1",
+    "number": 128,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "Each time this personnel challenges, you may ready it when that challenge ends. Play this ability only once each turn.",
+    "flavorText": "\"Gun captains report weapons manned and ready.\" —Lt. Gaeta"
+  },
+  "BSG1-129": {
+    "id": "BSG1-129",
+    "title": "Mr. Gaeta",
+    "subtitle": "Tactical Officer",
+    "type": "personnel",
+    "image": "images/cards/BSG1_129-175.jpg",
+    "set": "BSG1",
+    "number": 129,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Choose target other unit. If that unit is challenging a Cylon threat, it gets +2 power.",
+    "flavorText": "\"Dradis contact—strike that, multiple contacts. It's the Cylons.\" —Lt. Gaeta"
+  },
+  "BSG1-130": {
+    "id": "BSG1-130",
+    "title": "Number Six",
+    "subtitle": "Agent Provocateur",
+    "type": "personnel",
+    "image": "images/cards/BSG1_130-175.jpg",
+    "set": "BSG1",
+    "number": 130,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 0,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Cylon"],
+    "abilityText": "Vision (This personnel can't challenge or defend.) Commit and sacrifice: Take an extra two actions after this one.",
+    "cylonThreatText": "Each player exhausts his or her base.",
+    "flavorText": "\"Have you always been able to multitask like this?\" —Number Six"
+  },
+  "BSG1-131": {
+    "id": "BSG1-131",
+    "title": "Number Six",
+    "subtitle": "Caprican Operative",
+    "type": "personnel",
+    "image": "images/cards/BSG1_131-175.jpg",
+    "set": "BSG1",
+    "number": 131,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "Commit and exhaust: Ready target other Cylon personnel.",
+    "cylonThreatText": "Each player exhausts an asset he or she controls.",
+    "flavorText": "\"I hope you're more convincing than that with him.\" —Number Six"
+  },
+  "BSG1-132": {
+    "id": "BSG1-132",
+    "title": "Number Six",
+    "subtitle": "Secret Companion",
+    "type": "personnel",
+    "image": "images/cards/BSG1_132-175.jpg",
+    "set": "BSG1",
+    "number": 132,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 4
+    },
+    "power": 0,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Cylon"],
+    "abilityText": "Vision (This personnel can't challenge or defend.) Commit: Exhaust target other personnel.",
+    "cylonThreatText": "Each player commits a personnel he or she controls.",
+    "flavorText": "\"Parties full of young women drawn to men of power...\" —Number Six"
+  },
+  "BSG1-133": {
+    "id": "BSG1-133",
+    "title": "Saul Tigh",
+    "subtitle": "Colonial Colonel",
+    "type": "personnel",
+    "image": "images/cards/BSG1_133-175.jpg",
+    "set": "BSG1",
+    "number": 133,
+    "rarity": "common",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 3,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "",
+    "flavorText": "\"Well, they found us. It was only a matter of time.\" —Col. Tigh"
+  },
+  "BSG1-134": {
+    "id": "BSG1-134",
+    "title": "Saul Tigh",
+    "subtitle": "Executive Officer",
+    "type": "personnel",
+    "image": "images/cards/BSG1_134-175.jpg",
+    "set": "BSG1",
+    "number": 134,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "Each time you are challenged, you may ready this personnel. When that challenge ends, commit and exhaust this personnel.",
+    "flavorText": "\"With all due respect, Madame President, this is damned lunacy.\" —Col. Tigh"
+  },
+  "BSG1-135": {
+    "id": "BSG1-135",
+    "title": "Shelley Godfrey",
+    "subtitle": "Systems Analyst",
+    "type": "personnel",
+    "image": "images/cards/BSG1_135-175.jpg",
+    "set": "BSG1",
+    "number": 135,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "Commit: Target opponent reveals his or her hand. You choose a personnel card in it. Put that card on top of its owner's deck.",
+    "cylonThreatText": "Each player puts one card from the top of his or her deck into his or her discard pile.",
+    "flavorText": "\"Doctor Amarak told me he had evidence that Doctor Baltar was involved in the sneak attack.\" —Shelley Godfrey"
+  },
+  "BSG1-136": {
+    "id": "BSG1-136",
+    "title": "Starbuck",
+    "subtitle": "Hotshot Pilot",
+    "type": "personnel",
+    "image": "images/cards/BSG1_136-175.jpg",
+    "set": "BSG1",
+    "number": 136,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Pilot"],
+    "abilityText": "This personnel gets +1 power for each other Pilot you control.",
+    "flavorText": "\"Pilots call me 'Starbuck'; you may refer to me as 'God.'\" —Lt. Thrace"
+  },
+  "BSG1-137": {
+    "id": "BSG1-137",
+    "title": "Starbuck",
+    "subtitle": "Risk Taker",
+    "type": "personnel",
+    "image": "images/cards/BSG1_137-175.jpg",
+    "set": "BSG1",
+    "number": 137,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 3,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Pilot"],
+    "abilityText": "Each time you reveal a mystic value, you may commit this personnel. If you do, ignore that mystic value and reveal another instead.",
+    "flavorText": "\"No guts, no glory, Doctor. See your five. Raise twenty.\" —Lt. Thrace"
+  },
+  "BSG1-138": {
+    "id": "BSG1-138",
+    "title": "Starbuck",
+    "subtitle": "Sharpshooter",
+    "type": "personnel",
+    "image": "images/cards/BSG1_138-175.jpg",
+    "set": "BSG1",
+    "number": 138,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 5
+    },
+    "power": 4,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Sniper (Each time this personnel challenges, you may choose the defender.)",
+    "flavorText": "\"Constellation. Two. Armed. Ten o'clock. Bottom.\" —Lt. Thrace"
+  },
+  "BSG1-139": {
+    "id": "BSG1-139",
+    "title": "Tom Zarek",
+    "subtitle": "Political Prisoner",
+    "type": "personnel",
+    "image": "images/cards/BSG1_139-175.jpg",
+    "set": "BSG1",
+    "number": 139,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Civilian"],
+    "abilityText": "When this card enters play as a personnel, defeat target personnel.",
+    "flavorText": "\"Always better when the oppressed don't fight back, isn't it? Only the government gets to use force.\" —Tom Zarek"
+  },
+  "BSG1-140": {
+    "id": "BSG1-140",
+    "title": "Tom Zarek",
+    "subtitle": "Sagittaron Representative",
+    "type": "personnel",
+    "image": "images/cards/BSG1_140-175.jpg",
+    "set": "BSG1",
+    "number": 140,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "Manipulate (Each time this personnel challenges and there is no defender, you may gain influence equal to its power instead.)",
+    "flavorText": "\"The chair recognizes Sagittaron.\" —President Roslin"
+  },
+  "BSG1-141": {
+    "id": "BSG1-141",
+    "title": "William Adama",
+    "subtitle": "Colonial Commander",
+    "type": "personnel",
+    "image": "images/cards/BSG1_141-175.jpg",
+    "set": "BSG1",
+    "number": 141,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 5
+    },
+    "power": 4,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Officer"],
+    "abilityText": "Manipulate (Each time this personnel challenges and there is no defender, you may gain influence equal to its power instead of your opponent losing influence.)",
+    "flavorText": "\"You did your job to the best of your ability. That's all I can ask.\" —Cmdr. Adama"
+  },
+  "BSG1-142": {
+    "id": "BSG1-142",
+    "title": "William Adama",
+    "subtitle": "Patriotic Soldier",
+    "type": "personnel",
+    "image": "images/cards/BSG1_142-175.jpg",
+    "set": "BSG1",
+    "number": 142,
+    "rarity": "fixed",
+    "cost": {
+      "security": 5
+    },
+    "power": 3,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Choose target other unit. If that unit is challenging, it gets +2 power.",
+    "flavorText": "\"I've given all of us a fighting chance to survive.\" —Cmdr. Adama"
+  },
+  "BSG1-143": {
+    "id": "BSG1-143",
+    "title": "William Adama",
+    "subtitle": "The Old Man",
+    "type": "personnel",
+    "image": "images/cards/BSG1_143-175.jpg",
+    "set": "BSG1",
+    "number": 143,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Officer"],
+    "abilityText": "While you control another alert personnel, this personnel gets +2 power.",
+    "flavorText": "\"...gotta make the Old Man look good.\" —Col. Tigh \"I always look good.\" —Cmdr. Adama"
+  },
+  "BSG2-113": {
+    "id": "BSG2-113",
+    "title": "Helo",
+    "subtitle": "Prisoner Of The Cylons",
+    "type": "personnel",
+    "image": "images/cards/BSG2_113-165.gif",
+    "set": "BSG2",
+    "number": 113,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 0,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "When this personnel is defeated, gain 2 influence.",
+    "flavorText": "\"Agathon, Karl C. Lieutenant, junior grade, Colonial fleet.\" —Lt. Karl \"Helo\" Agathon"
+  },
+  "BSG2-122": {
+    "id": "BSG2-122",
+    "title": "Number Six",
+    "subtitle": "Temptress",
+    "type": "personnel",
+    "image": "images/cards/BSG2_122-165.gif",
+    "set": "BSG2",
+    "number": 122,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 5
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "persuasion",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "Manipulate (Each time this unit challenges and there is no defender, you can gain influence equal to its power instead of your opponent losing influence.)",
+    "cylonThreatText": "Each player commits and exhausts a personnel he or she controls."
+  },
+  "BSG2-083": {
+    "id": "BSG2-083",
+    "title": "Anders",
+    "subtitle": "Caprican Buccaneer",
+    "type": "personnel",
+    "image": "images/cards/BSG2_083-165.gif",
+    "set": "BSG2",
+    "number": 83,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 0,
+    "resource": "persuasion",
+    "traits": ["Civilian"],
+    "abilityText": "",
+    "flavorText": "\"There are some things one cannot live without.\" —Samuel Anders"
+  },
+  "BSG2-084": {
+    "id": "BSG2-084",
+    "title": "Anders",
+    "subtitle": "Resistance Leader",
+    "type": "personnel",
+    "image": "images/cards/BSG2_084-165.gif",
+    "set": "BSG2",
+    "number": 84,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 4
+    },
+    "power": 3,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Civilian"],
+    "abilityText": "All other Civilian units you control get +1 power.",
+    "flavorText": "\"I want to blow these Cylons away before they ever knew what hit 'em.\" —Samuel Anders"
+  },
+  "BSG2-085": {
+    "id": "BSG2-085",
+    "title": "Apollo",
+    "subtitle": "Distant Son",
+    "type": "personnel",
+    "image": "images/cards/BSG2_085-165.gif",
+    "set": "BSG2",
+    "number": 85,
+    "rarity": "common",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Pilot"],
+    "abilityText": "Commit: Target other personnel gains Strafe. (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)",
+    "flavorText": "\"I'm glad to hear that, sir; will that be all?\" —Capt. Lee \"Apollo\" Adama"
+  },
+  "BSG2-086": {
+    "id": "BSG2-086",
+    "title": "Apollo",
+    "subtitle": "Man Of The Hour",
+    "type": "personnel",
+    "image": "images/cards/BSG2_086-165.gif",
+    "set": "BSG2",
+    "number": 86,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Put target Cylon threat into its owner's discard pile. The challenge ends. Commit the challenger."
+  },
+  "BSG2-087": {
+    "id": "BSG2-087",
+    "title": "Boomer",
+    "subtitle": "Cylon Conspirator",
+    "type": "personnel",
+    "image": "images/cards/BSG2_087-165.gif",
+    "set": "BSG2",
+    "number": 87,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "persuasion",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "This personnel counts as 1 Civilian unit and 1 Cylon unit for the purpose of resolving a mission.",
+    "cylonThreatText": "Each player exhausts a personnel he or she controls.",
+    "flavorText": "\"She's good.\" —Aaron Doral"
+  },
+  "BSG2-088": {
+    "id": "BSG2-088",
+    "title": "Boomer",
+    "subtitle": "Human-Lover",
+    "type": "personnel",
+    "image": "images/cards/BSG2_088-165.gif",
+    "set": "BSG2",
+    "number": 88,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Cylon"],
+    "abilityText": "While you control an alert Helo, this personnel gets +1 power.",
+    "cylonThreatText": "Each player commits a Cylon unit he or she controls.",
+    "flavorText": "\"Because I love you, Helo. No other reason.\" —Lt. Sharon \"Boomer\" Valerii"
+  },
+  "BSG2-089": {
+    "id": "BSG2-089",
+    "title": "Boomer",
+    "subtitle": "Savior",
+    "type": "personnel",
+    "image": "images/cards/BSG2_089-165.gif",
+    "set": "BSG2",
+    "number": 89,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Cylon", "Pilot"],
+    "abilityText": "Commit and exhaust: Search your deck for a personnel card, reveal it, and then put it into your hand.",
+    "flavorText": "\"All right, the kids go . . . and we can take three more people.\" —Lt. Sharon \"Boomer\" Valerii"
+  },
+  "BSG2-090": {
+    "id": "BSG2-090",
+    "title": "Cally",
+    "subtitle": "Cheerful Mechanic",
+    "type": "personnel",
+    "image": "images/cards/BSG2_090-165.gif",
+    "set": "BSG2",
+    "number": 90,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Enlisted"],
+    "abilityText": "Commit: Restore target ship."
+  },
+  "BSG2-091": {
+    "id": "BSG2-091",
+    "subtitle": "Centurion Guardian",
+    "type": "personnel",
+    "image": "images/cards/BSG2_091-165.gif",
+    "set": "BSG2",
+    "number": 91,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "Vulnerable (Personnel and ships can defend against this unit.)",
+    "cylonThreatText": "Each player exhausts an asset that he or she controls that has no supply cards."
+  },
+  "BSG2-092": {
+    "id": "BSG2-092",
+    "subtitle": "Centurion Harasser",
+    "type": "personnel",
+    "image": "images/cards/BSG2_092-165.gif",
+    "set": "BSG2",
+    "number": 92,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "Commit: Commit target personnel.",
+    "cylonThreatText": "Each player chooses target opponent. That opponent sacrifices a personnel he or she controls."
+  },
+  "BSG2-093": {
+    "id": "BSG2-093",
+    "subtitle": "Centurion Hunter",
+    "type": "personnel",
+    "image": "images/cards/BSG2_093-165.gif",
+    "set": "BSG2",
+    "number": 93,
+    "rarity": "rare",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "Commit target other Cylon personnel you control: This personnel gets +2 power. Play this ability only once each turn.",
+    "cylonThreatText": "Each player discards a card."
+  },
+  "BSG2-094": {
+    "id": "BSG2-094",
+    "subtitle": "Centurion Tracker",
+    "type": "personnel",
+    "image": "images/cards/BSG2_094-165.gif",
+    "set": "BSG2",
+    "number": 94,
+    "rarity": "common",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 4,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "logistics",
+    "traits": ["Cylon", "Machine"],
+    "abilityText": "Each time this personnel challenges, sacrifice it when that challenge ends.",
+    "cylonThreatText": "Each player exhausts a personnel he or she controls."
+  },
+  "BSG2-095": {
+    "id": "BSG2-095",
+    "title": "Doral",
+    "subtitle": "Overseer",
+    "type": "personnel",
+    "image": "images/cards/BSG2_095-165.gif",
+    "set": "BSG2",
+    "number": 95,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Cylon"],
+    "abilityText": "All Cylon threats get +1 power.",
+    "flavorText": "\"If he flees, he dies.\" —Aaron Doral"
+  },
+  "BSG2-096": {
+    "id": "BSG2-096",
+    "title": "Doral",
+    "subtitle": "Public Relations",
+    "type": "personnel",
+    "image": "images/cards/BSG2_096-165.gif",
+    "set": "BSG2",
+    "number": 96,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "persuasion",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "Manipulate (Each time this unit challenges and there is no defender, you can gain influence equal to its power instead of your opponent losing influence.)",
+    "cylonThreatText": "Each player loses 1 influence.",
+    "flavorText": "\"My name is Aaron Doral; I'm from Public Relations.\" —Aaron Doral"
+  },
+  "BSG2-097": {
+    "id": "BSG2-097",
+    "title": "Doral",
+    "subtitle": "Tour Guide",
+    "type": "personnel",
+    "image": "images/cards/BSG2_097-165.gif",
+    "set": "BSG2",
+    "number": 97,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "Commit: Exhaust target ship.",
+    "cylonThreatText": "All Politicians get -1 power.",
+    "flavorText": "\"There's a saying in the Colonial fleet that you can jam every sensor but the human brain.\" —Aaron Doral"
+  },
+  "BSG2-098": {
+    "id": "BSG2-098",
+    "title": "Dr. Baltar",
+    "subtitle": "Defense Contractor",
+    "type": "personnel",
+    "image": "images/cards/BSG2_098-165.gif",
+    "set": "BSG2",
+    "number": 98,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Civilian"],
+    "abilityText": "Commit target other personnel you control: This personnel gets +1 power.",
+    "flavorText": "\"I did not plant a bomb in the defense mainframe, and I did not conspire with the Cylons.\" —Dr. Gaius Baltar"
+  },
+  "BSG2-099": {
+    "id": "BSG2-099",
+    "title": "Dr. Baltar",
+    "subtitle": "Refugee",
+    "type": "personnel",
+    "image": "images/cards/BSG2_099-165.gif",
+    "set": "BSG2",
+    "number": 99,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Civilian"],
+    "abilityText": "",
+    "flavorText": "\"Hey, aren't you Gaius Baltar?\" —Lt. Karl \"Helo\" Agathon"
+  },
+  "BSG2-100": {
+    "id": "BSG2-100",
+    "title": "Dr. Baltar",
+    "subtitle": "Survivor",
+    "type": "personnel",
+    "image": "images/cards/BSG2_100-165.gif",
+    "set": "BSG2",
+    "number": 100,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Civilian"],
+    "abilityText": "Sacrifice target alert personnel: This personnel gets +3 power. Play this ability only once each turn.",
+    "flavorText": "\"I have a highly developed sense of survival.\" —Dr. Gaius Baltar"
+  },
+  "BSG2-101": {
+    "id": "BSG2-101",
+    "title": "Dr. Cottle",
+    "subtitle": "Bearer Of Bad News",
+    "type": "personnel",
+    "image": "images/cards/BSG2_101-165.gif",
+    "set": "BSG2",
+    "number": 101,
+    "rarity": "common",
+    "cost": {
+      "security": 3
+    },
+    "power": 1,
+    "mysticValue": 0,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Target personnel gets -2 power.",
+    "flavorText": "\"It's too damned late to operate; the cancer's too advanced.\" —Dr. Cottle"
+  },
+  "BSG2-102": {
+    "id": "BSG2-102",
+    "title": "Dr. Cottle",
+    "subtitle": "Doc",
+    "type": "personnel",
+    "image": "images/cards/BSG2_102-165.gif",
+    "set": "BSG2",
+    "number": 102,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Officer"],
+    "abilityText": "Commit and exhaust: Put target personnel from your discard pile into your hand.",
+    "flavorText": "\"This is the sick bay of a battlestar. I patch up wounded and send 'em home.\" —Dr. Cottle"
+  },
+  "BSG2-103": {
+    "id": "BSG2-103",
+    "title": "Dr. Cottle",
+    "subtitle": "Military Surgeon",
+    "type": "personnel",
+    "image": "images/cards/BSG2_103-165.gif",
+    "set": "BSG2",
+    "number": 103,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Officer"],
+    "abilityText": "Commit this personnel during a challenge: The unit that loses the challenge is exhausted instead of defeated.",
+    "flavorText": "\"You have a ship's doctor aboard Galactica?\" —President Laura Roslin\n\"Major Cottle.\" —Cmdr. William Adama"
+  },
+  "BSG2-104": {
+    "id": "BSG2-104",
+    "title": "Ellen Tigh",
+    "subtitle": "High Society Player",
+    "type": "personnel",
+    "image": "images/cards/BSG2_104-165.gif",
+    "set": "BSG2",
+    "number": 104,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 1,
+    "mysticValue": 0,
+    "cylonThreat": 0,
+    "resource": "persuasion",
+    "traits": ["Civilian"],
+    "abilityText": "Manipulate (Each time this unit challenges and there is no defender, you can gain influence equal to its power instead of your opponent losing influence.)",
+    "flavorText": "\"You're clearly a well-connected, well-informed woman.\" —Tom Zarek"
+  },
+  "BSG2-105": {
+    "id": "BSG2-105",
+    "title": "Ellen Tigh",
+    "subtitle": "Power Behind The XO",
+    "type": "personnel",
+    "image": "images/cards/BSG2_105-165.gif",
+    "set": "BSG2",
+    "number": 105,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Civilian"],
+    "abilityText": "Commit: Target Officer gets +2 power.",
+    "flavorText": "\"Well, if being the XO's wife doesn't have some privileges, what's the point?\" —Ellen Tigh"
+  },
+  "BSG2-106": {
+    "id": "BSG2-106",
+    "title": "Elosha",
+    "subtitle": "Council Member",
+    "type": "personnel",
+    "image": "images/cards/BSG2_106-165.gif",
+    "set": "BSG2",
+    "number": 106,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "",
+    "flavorText": "\"So say we all.\" —Elosha"
+  },
+  "BSG2-107": {
+    "id": "BSG2-107",
+    "title": "Elosha",
+    "subtitle": "Guide To The Prophet",
+    "type": "personnel",
+    "image": "images/cards/BSG2_107-165.gif",
+    "set": "BSG2",
+    "number": 107,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 4,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Civilian"],
+    "abilityText": "Commit: Reveal the top card of your deck. Target other unit gets +X power, where X is the revealed card's mystic value.",
+    "flavorText": "\"The scriptures tell us that Kobol points the way to Earth.\" —Elosha"
+  },
+  "BSG2-108": {
+    "id": "BSG2-108",
+    "title": "Elosha",
+    "subtitle": "Priestess",
+    "type": "personnel",
+    "image": "images/cards/BSG2_108-165.gif",
+    "set": "BSG2",
+    "number": 108,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 1,
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Civilian"],
+    "abilityText": "Commit during a challenge: When you reveal a mystic value this challenge, reveal an additional mystic value. Your mystic value is the sum of these two mystic values."
+  },
+  "BSG2-109": {
+    "id": "BSG2-109",
+    "title": "Galen Tyrol",
+    "subtitle": "Crew Chief",
+    "type": "personnel",
+    "image": "images/cards/BSG2_109-165.gif",
+    "set": "BSG2",
+    "number": 109,
+    "rarity": "common",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Enlisted"],
+    "abilityText": "When this card enters play as a personnel, ready a ship you control.",
+    "flavorText": "\"Morning, sir. Chief Tyrol—I'll be your crew chief while you're aboard.\" —Chief Galen Tyrol"
+  },
+  "BSG2-110": {
+    "id": "BSG2-110",
+    "title": "Hadrian",
+    "subtitle": "Head Of Tribunal",
+    "type": "personnel",
+    "image": "images/cards/BSG2_110-165.gif",
+    "set": "BSG2",
+    "number": 110,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Enlisted"],
+    "abilityText": "Commit: Commit and exhaust target personnel with power 2 or less.",
+    "flavorText": "\"A tribunal has been formed to look into the Cylon penetration of our defenses.\" —Sgt. Hadrian"
+  },
+  "BSG2-111": {
+    "id": "BSG2-111",
+    "title": "Hadrian",
+    "subtitle": "Investigator",
+    "type": "personnel",
+    "image": "images/cards/BSG2_111-165.gif",
+    "set": "BSG2",
+    "number": 111,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Enlisted"],
+    "abilityText": "Commit: Commit and exhaust target Enlisted or Cylon personnel.",
+    "flavorText": "\"I'll need statements from you and the rest of your deck gang.\" —Sgt. Hadrian"
+  },
+  "BSG2-112": {
+    "id": "BSG2-112",
+    "title": "Hadrian",
+    "subtitle": "Master-At-Arms",
+    "type": "personnel",
+    "image": "images/cards/BSG2_112-165.gif",
+    "set": "BSG2",
+    "number": 112,
+    "rarity": "common",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 0,
+    "resource": "security",
+    "traits": ["Enlisted"],
+    "abilityText": "The fleet defense level gets +1.",
+    "flavorText": "\"As master-at-arms, she'll be investigating this incident.\" —Cmdr. William Adama"
+  },
+  "BSG2-114": {
+    "id": "BSG2-114",
+    "title": "Helo",
+    "subtitle": "Protector",
+    "type": "personnel",
+    "image": "images/cards/BSG2_114-165.gif",
+    "set": "BSG2",
+    "number": 114,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Target other defending personnel gets +2 power.",
+    "flavorText": "\"I'm not gonna let you kill her!\" —Lt. Karl \"Helo\" Agathon"
+  },
+  "BSG2-115": {
+    "id": "BSG2-115",
+    "title": "Helo",
+    "subtitle": "Toaster-Lover",
+    "type": "personnel",
+    "image": "images/cards/BSG2_115-165.gif",
+    "set": "BSG2",
+    "number": 115,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "Each time this personnel challenges while you control an alert Boomer, you can ready this personnel when the challenge ends. Play this ability only once each turn."
+  },
+  "BSG2-116": {
+    "id": "BSG2-116",
+    "title": "Laura Roslin",
+    "subtitle": "Instigator",
+    "type": "personnel",
+    "image": "images/cards/BSG2_116-165.gif",
+    "set": "BSG2",
+    "number": 116,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 3,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Politician"],
+    "abilityText": "Commit: Ready target mission.",
+    "flavorText": "\"If you bring me the Arrow, I will show us the way.\" —President Laura Roslin"
+  },
+  "BSG2-117": {
+    "id": "BSG2-117",
+    "title": "Laura Roslin",
+    "subtitle": "Secretary of Education",
+    "type": "personnel",
+    "image": "images/cards/BSG2_117-165.gif",
+    "set": "BSG2",
+    "number": 117,
+    "rarity": "common",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Politician"],
+    "abilityText": "Commit: Target other personnel gets +2 power.",
+    "flavorText": "\"We're in the middle of a war, and you want to take orders from a school teacher?\" —Cmdr. William Adama"
+  },
+  "BSG2-118": {
+    "id": "BSG2-118",
+    "title": "Leoben",
+    "subtitle": "Snake in the Grass",
+    "type": "personnel",
+    "image": "images/cards/BSG2_118-165.gif",
+    "set": "BSG2",
+    "number": 118,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Civilian", "Cylon"],
+    "abilityText": "Commit: Target personnel gains the Cylon trait.",
+    "cylonThreatText": "All Officers get -1 power.",
+    "flavorText": "\"Adama is a Cylon.\" —Leoben Conoy"
+  },
+  "BSG2-119": {
+    "id": "BSG2-119",
+    "title": "Mr. Gaeta",
+    "subtitle": "Brilliant Officer",
+    "type": "personnel",
+    "image": "images/cards/BSG2_119-165.gif",
+    "set": "BSG2",
+    "number": 119,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Cylon threat of target card gets -1 until the end of the turn.",
+    "flavorText": "\"Damned nice work, Lieutenant.\" —Col. Saul Tigh"
+  },
+  "BSG2-120": {
+    "id": "BSG2-120",
+    "title": "Number Six",
+    "subtitle": "Huntress",
+    "type": "personnel",
+    "image": "images/cards/BSG2_120-165.gif",
+    "set": "BSG2",
+    "number": 120,
+    "rarity": "common",
+    "cost": {
+      "security": 4
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Cylon"],
+    "abilityText": "Sniper (Each time this unit challenges, you can choose the defender.)",
+    "cylonThreatText": "Each player exhausts target resource stack he or she controls."
+  },
+  "BSG2-121": {
+    "id": "BSG2-121",
+    "title": "Number Six",
+    "subtitle": "Seductress",
+    "type": "personnel",
+    "image": "images/cards/BSG2_121-165.gif",
+    "set": "BSG2",
+    "number": 121,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 0,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Cylon"],
+    "abilityText": "Vision (This unit can't challenge or defend.)\nEach time a personnel challenges and there is no defender, you can commit this personnel. If you do, the challenger gets +2 power.",
+    "cylonThreatText": "Each player discards a card."
+  },
+  "BSG2-123": {
+    "id": "BSG2-123",
+    "title": "Saul Tigh",
+    "subtitle": "Disciplinarian",
+    "type": "personnel",
+    "image": "images/cards/BSG2_123-165.gif",
+    "set": "BSG2",
+    "number": 123,
+    "rarity": "rare",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit and exhaust: Commit and exhaust target personnel.",
+    "flavorText": "\"Do your job or get back to the brig.\" —Col. Saul Tigh"
+  },
+  "BSG2-124": {
+    "id": "BSG2-124",
+    "title": "Simon",
+    "subtitle": "Caring Doctor",
+    "type": "personnel",
+    "image": "images/cards/BSG2_124-165.gif",
+    "set": "BSG2",
+    "number": 124,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 0,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Civilian"],
+    "abilityText": "Commit: Restore target personnel.",
+    "cylonThreatText": "Each player exhausts a personnel he or she controls.",
+    "flavorText": "\"I'm Simon. Can you tell me your name?\" —Simon"
+  },
+  "BSG2-125": {
+    "id": "BSG2-125",
+    "title": "Simon",
+    "subtitle": "Cylon Scientist",
+    "type": "personnel",
+    "image": "images/cards/BSG2_125-165.gif",
+    "set": "BSG2",
+    "number": 125,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "persuasion",
+    "traits": ["Cylon"],
+    "abilityText": "Manipulate (Each time this unit challenges and there is no defender, you can gain influence equal to its power instead of your opponent losing influence.)",
+    "cylonThreatText": "Each player puts the top card of his or her deck into his or her discard pile."
+  },
+  "BSG2-126": {
+    "id": "BSG2-126",
+    "title": "Starbuck",
+    "subtitle": "Maverick",
+    "type": "personnel",
+    "image": "images/cards/BSG2_126-165.gif",
+    "set": "BSG2",
+    "number": 126,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Pilot"],
+    "abilityText": "Commit and exhaust: Put target alert personnel into its owner's hand.",
+    "flavorText": "\"You should go. I'm getting the urge to hit another superior asshole.\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-127": {
+    "id": "BSG2-127",
+    "title": "Starbuck",
+    "subtitle": "Resistance Fighter",
+    "type": "personnel",
+    "image": "images/cards/BSG2_127-165.gif",
+    "set": "BSG2",
+    "number": 127,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 5
+    },
+    "power": 4,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Officer"],
+    "abilityText": "Commit and exhaust: Exhaust target resource stack.",
+    "flavorText": "\"We could use some professional advice.\" —Samuel Anders"
+  },
+  "BSG2-128": {
+    "id": "BSG2-128",
+    "title": "Starbuck",
+    "subtitle": "Uncooperative Patient",
+    "type": "personnel",
+    "image": "images/cards/BSG2_128-165.gif",
+    "set": "BSG2",
+    "number": 128,
+    "rarity": "common",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit and exhaust: Defeat target Cylon personnel.",
+    "flavorText": "\"I never told you my callsign was 'Starbuck.'\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-129": {
+    "id": "BSG2-129",
+    "title": "William Adama",
+    "subtitle": "Husker",
+    "type": "personnel",
+    "image": "images/cards/BSG2_129-165.gif",
+    "set": "BSG2",
+    "number": 129,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 5
+    },
+    "power": 4,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Pilot"],
+    "abilityText": "Scramble (This unit can defend as a personnel or a ship.)",
+    "flavorText": "\"He ever tell you what he did for his thousandth landing?\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-130": {
+    "id": "BSG2-130",
+    "title": "William Adama",
+    "subtitle": "Tactician",
+    "type": "personnel",
+    "image": "images/cards/BSG2_130-165.gif",
+    "set": "BSG2",
+    "number": 130,
+    "rarity": "common",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Officer"],
+    "abilityText": "Commit: Target other personnel gains Sniper. (Each time this unit challenges, you can choose the defender.)"
+  }
+}

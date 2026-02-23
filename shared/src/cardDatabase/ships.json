@@ -1,0 +1,1289 @@
+{
+  "BSG1-144": {
+    "id": "BSG1-144",
+    "title": "Astral Queen",
+    "subtitle": "Prison Ship",
+    "type": "ship",
+    "image": "images/cards/BSG1_144-175.jpg",
+    "set": "BSG1",
+    "number": 144,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "All defending personnel you control gain +1 power.",
+    "flavorText": "\"The prisoners have full control of the Astral Queen.... It's their ship.\" —Capt. Adama"
+  },
+  "BSG1-145": {
+    "id": "BSG1-145",
+    "subtitle": "Cruise Ship",
+    "type": "ship",
+    "image": "images/cards/BSG1_145-175.jpg",
+    "set": "BSG1",
+    "number": 145,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "Each time you lose influence, you may commit this ship to reduce that loss by 1.",
+    "flavorText": "\"Live, from Cloud 9, the most luxurious cruise ship in the fleet, it's The Colonial Gang!\" —James McManus"
+  },
+  "BSG1-146": {
+    "id": "BSG1-146",
+    "subtitle": "Colonial Shuttle",
+    "type": "ship",
+    "image": "images/cards/BSG1_146-175.jpg",
+    "set": "BSG1",
+    "number": 146,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 1,
+    "cylonThreat": 0,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": ""
+  },
+  "BSG1-147": {
+    "id": "BSG1-147",
+    "subtitle": "Colonial Viper 113",
+    "type": "ship",
+    "image": "images/cards/BSG1_147-175.jpg",
+    "set": "BSG1",
+    "number": 147,
+    "rarity": "fixed",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "A pilot unprepared for the enormous acceleration potential of the Colonial Viper could easily apply control inputs that result in maneuvers that would pulverize his or her body."
+  },
+  "BSG1-148": {
+    "id": "BSG1-148",
+    "subtitle": "Colonial Viper 229",
+    "type": "ship",
+    "image": "images/cards/BSG1_148-175.jpg",
+    "set": "BSG1",
+    "number": 148,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "Flight instructors often warn new Colonial Viper pilots, \"This thing can kill you.\""
+  },
+  "BSG1-149": {
+    "id": "BSG1-149",
+    "subtitle": "Colonial Viper 315",
+    "type": "ship",
+    "image": "images/cards/BSG1_149-175.jpg",
+    "set": "BSG1",
+    "number": 149,
+    "rarity": "rare",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "Sniper (Each time this ship challenges, you may choose the defender.)",
+    "flavorText": "The Colonial Viper's thrust-to-weight ratio is beyond impressive—it's actually dangerous."
+  },
+  "BSG1-150": {
+    "id": "BSG1-150",
+    "subtitle": "Colonial Viper 442",
+    "type": "ship",
+    "image": "images/cards/BSG1_150-175.jpg",
+    "set": "BSG1",
+    "number": 150,
+    "rarity": "common",
+    "cost": {
+      "security": 4
+    },
+    "power": 3,
+    "mysticValue": 3,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "Most of Galactica's Mark VII Colonial Vipers were lost to Cylon cyber-attacks during the sneak attack on the Twelve Colonies of Kobol."
+  },
+  "BSG1-151": {
+    "id": "BSG1-151",
+    "subtitle": "Colonial Viper 516",
+    "type": "ship",
+    "image": "images/cards/BSG1_151-175.jpg",
+    "set": "BSG1",
+    "number": 151,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 3,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "The Colonial Viper Mark VII is designed for ultrafast maneuvering in both space and atmospheric environments."
+  },
+  "BSG1-152": {
+    "id": "BSG1-152",
+    "subtitle": "Colonial Viper 670",
+    "type": "ship",
+    "image": "images/cards/BSG1_152-175.jpg",
+    "set": "BSG1",
+    "number": 152,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "power": 3,
+    "mysticValue": 3,
+    "cylonThreat": 4,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "Sniper (Each time this ship challenges, you may choose the defender.)",
+    "flavorText": "The Colonial Viper Mark VII is a high-performance fighter."
+  },
+  "BSG1-153": {
+    "id": "BSG1-153",
+    "subtitle": "Colonial Viper 762",
+    "type": "ship",
+    "image": "images/cards/BSG1_153-175.jpg",
+    "set": "BSG1",
+    "number": 153,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 3,
+    "mysticValue": 1,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Fighter"],
+    "abilityText": "Each time this ship challenges, you may commit target Pilot you control. If you do, this ship gets +3 power.",
+    "flavorText": "Battlestar Galactica currently has very few operational Mark VII Colonial Vipers."
+  },
+  "BSG1-154": {
+    "id": "BSG1-154",
+    "subtitle": "Colonial Viper Squadron 800",
+    "type": "ship",
+    "image": "images/cards/BSG1_154-175.jpg",
+    "set": "BSG1",
+    "number": 154,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "power": 4,
+    "mysticValue": 1,
+    "cylonThreat": 4,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "\"The CAP is the fleet's only defense. If all our Vipers are frakking around on the moon when the Cylons come calling, we're maggot meat.\" —Col. Tigh"
+  },
+  "BSG1-155": {
+    "id": "BSG1-155",
+    "subtitle": "Colonial Viper Squadron 900",
+    "type": "ship",
+    "image": "images/cards/BSG1_155-175.jpg",
+    "set": "BSG1",
+    "number": 155,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 6
+    },
+    "power": 4,
+    "mysticValue": 3,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "\"Sir, alert Vipers away. Gun captains report weapons manned and ready.\" —Lt. Gaeta"
+  },
+  "BSG1-156": {
+    "id": "BSG1-156",
+    "subtitle": "Freighter",
+    "type": "ship",
+    "image": "images/cards/BSG1_156-175.jpg",
+    "set": "BSG1",
+    "number": 156,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "Commit and exhaust: Put target Cylon card from your discard pile into your hand.",
+    "flavorText": "\"There's an urgent call from the captain of the Gemenon Traveller.... He says they've found a Cylon on board.\" —Billy Keikeya"
+  },
+  "BSG1-157": {
+    "id": "BSG1-157",
+    "subtitle": "Hunting Raider",
+    "type": "ship",
+    "image": "images/cards/BSG1_157-175.jpg",
+    "set": "BSG1",
+    "number": 157,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "power": 4,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Cylon", "Fighter"],
+    "abilityText": "Sniper (Each time this ship challenges, you may choose the defender.)",
+    "cylonThreatText": "Each player puts the top card of his or her deck into his or her discard pile."
+  },
+  "BSG1-158": {
+    "id": "BSG1-158",
+    "subtitle": "Luxury Liner",
+    "type": "ship",
+    "image": "images/cards/BSG1_158-175.jpg",
+    "set": "BSG1",
+    "number": 158,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 0,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "",
+    "flavorText": "These vessels rank among the poshest ways to travel between the Twelve Colonies."
+  },
+  "BSG1-159": {
+    "id": "BSG1-159",
+    "subtitle": "Mining Ship",
+    "type": "ship",
+    "image": "images/cards/BSG1_159-175.jpg",
+    "set": "BSG1",
+    "number": 159,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "Commit: Reveal the top two cards of your deck. Target opponent chooses one to go on the bottom of your deck. Put the other into your hand."
+  },
+  "BSG1-160": {
+    "id": "BSG1-160",
+    "subtitle": "Doomed Liner",
+    "type": "ship",
+    "image": "images/cards/BSG1_160-175.jpg",
+    "set": "BSG1",
+    "number": 160,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Cylon", "Transport"],
+    "abilityText": "Exhaust: Return target Cylon unit you control to its owner's hand.",
+    "cylonThreatText": "Each player commits a ship he or she controls.",
+    "flavorText": "\"Olympic Carrier/Boomer. I've been directed to ask how you escaped from the Cylons.\" —Lt. Valerii"
+  },
+  "BSG1-161": {
+    "id": "BSG1-161",
+    "subtitle": "Ordnance Freighter",
+    "type": "ship",
+    "image": "images/cards/BSG1_161-175.jpg",
+    "set": "BSG1",
+    "number": 161,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 3
+    },
+    "power": 0,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Transport"],
+    "abilityText": "Each time you spend a resource stack, you may commit this ship. If you do, generate [security]."
+  },
+  "BSG1-162": {
+    "id": "BSG1-162",
+    "subtitle": "Passenger Cruiser",
+    "type": "ship",
+    "image": "images/cards/BSG1_162-175.jpg",
+    "set": "BSG1",
+    "number": 162,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "",
+    "flavorText": "\"The captain of the Rising Star was...a little puzzled as to how you got aboard.\" —Cmdr. Adama"
+  },
+  "BSG1-163": {
+    "id": "BSG1-163",
+    "subtitle": "Raptor 101",
+    "type": "ship",
+    "image": "images/cards/BSG1_163-175.jpg",
+    "set": "BSG1",
+    "number": 163,
+    "rarity": "fixed",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 1,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Scout"],
+    "abilityText": "",
+    "flavorText": "This dynamic craft has demonstrated an adaptability that far exceeds its original design specifications."
+  },
+  "BSG1-164": {
+    "id": "BSG1-164",
+    "subtitle": "Raptor 227",
+    "type": "ship",
+    "image": "images/cards/BSG1_164-175.jpg",
+    "set": "BSG1",
+    "number": 164,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Scout"],
+    "abilityText": "",
+    "flavorText": "The Colonial Raptor has been used as a troop carrier for ship-to-ship boarding operations."
+  },
+  "BSG1-165": {
+    "id": "BSG1-165",
+    "subtitle": "Raptor 342",
+    "type": "ship",
+    "image": "images/cards/BSG1_165-175.jpg",
+    "set": "BSG1",
+    "number": 165,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Scout"],
+    "abilityText": "Manipulate (Each time this ship challenges and there is no defender, you may gain influence equal to its power instead of your opponent losing influence.)",
+    "flavorText": "Raptors are crewed by a pilot and an electronic countermeasures officer (ECO)."
+  },
+  "BSG1-166": {
+    "id": "BSG1-166",
+    "subtitle": "Raptor 478",
+    "type": "ship",
+    "image": "images/cards/BSG1_166-175.jpg",
+    "set": "BSG1",
+    "number": 166,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Scout"],
+    "abilityText": "Manipulate (Each time this ship challenges and there is no defender, you may gain influence equal to its power instead of your opponent losing influence.)",
+    "flavorText": "Two Person Crew Carrier Based Stealth Scout Ship —Raptor specifications"
+  },
+  "BSG1-167": {
+    "id": "BSG1-167",
+    "subtitle": "Raptor 563",
+    "type": "ship",
+    "image": "images/cards/BSG1_167-175.jpg",
+    "set": "BSG1",
+    "number": 167,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Scout"],
+    "abilityText": "",
+    "flavorText": "Vertical Take Off and Landing Capable —Raptor specifications"
+  },
+  "BSG1-168": {
+    "id": "BSG1-168",
+    "subtitle": "Raptor 689",
+    "type": "ship",
+    "image": "images/cards/BSG1_168-175.jpg",
+    "set": "BSG1",
+    "number": 168,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Scout"],
+    "abilityText": "Scramble (This ship can defend as though it were a personnel.)",
+    "flavorText": "Short FTL Jump Engines —Raptor specifications"
+  },
+  "BSG1-169": {
+    "id": "BSG1-169",
+    "subtitle": "Raptor 757",
+    "type": "ship",
+    "image": "images/cards/BSG1_169-175.jpg",
+    "set": "BSG1",
+    "number": 169,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Scout"],
+    "abilityText": "Manipulate (Each time this ship challenges and there is no defender, you may gain influence equal to its power instead of your opponent losing influence.)",
+    "flavorText": "Full Electronics Suite —Raptor specifications"
+  },
+  "BSG1-170": {
+    "id": "BSG1-170",
+    "subtitle": "Raptor 816",
+    "type": "ship",
+    "image": "images/cards/BSG1_170-175.jpg",
+    "set": "BSG1",
+    "number": 170,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Scout"],
+    "abilityText": "While defending, this ship gets +1 power.",
+    "flavorText": "Full Sensor Kit DRADIS Array —Raptor specifications"
+  },
+  "BSG1-171": {
+    "id": "BSG1-171",
+    "subtitle": "Scouting Raider",
+    "type": "ship",
+    "image": "images/cards/BSG1_171-175.jpg",
+    "set": "BSG1",
+    "number": 171,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "power": 4,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Cylon", "Fighter"],
+    "abilityText": "When this card enters play as a ship, look at the top card of target deck.",
+    "cylonThreatText": "Each player puts a card from his or her hand on top of his or her deck."
+  },
+  "BSG1-172": {
+    "id": "BSG1-172",
+    "subtitle": "Skirmishing Raider",
+    "type": "ship",
+    "image": "images/cards/BSG1_172-175.jpg",
+    "set": "BSG1",
+    "number": 172,
+    "rarity": "common",
+    "cost": {
+      "security": 3
+    },
+    "power": 4,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "security",
+    "traits": ["Cylon", "Fighter"],
+    "abilityText": "Each time this ship challenges, sacrifice it when that challenge ends.",
+    "cylonThreatText": "Each player discards a card."
+  },
+  "BSG1-173": {
+    "id": "BSG1-173",
+    "subtitle": "Space Park",
+    "type": "ship",
+    "image": "images/cards/BSG1_173-175.jpg",
+    "set": "BSG1",
+    "number": 173,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "Commit: Look at the top card of your deck. You may put that card on the bottom of your deck.",
+    "flavorText": "This early luxury-liner design was so successful that it was also adapted for scientific and military uses."
+  },
+  "BSG1-174": {
+    "id": "BSG1-174",
+    "subtitle": "Supply Freighter",
+    "type": "ship",
+    "image": "images/cards/BSG1_174-175.jpg",
+    "set": "BSG1",
+    "number": 174,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 0,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "Each time you spend a resource stack, you may commit this ship. If you do, generate [logistics]."
+  },
+  "BSG1-175": {
+    "id": "BSG1-175",
+    "subtitle": "Troop Freighter",
+    "type": "ship",
+    "image": "images/cards/BSG1_175-175.jpg",
+    "set": "BSG1",
+    "number": 175,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 0,
+    "mysticValue": 3,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "Each time you spend a resource stack, you may commit this ship. If you do, generate [persuasion]."
+  },
+  "BSG2-156": {
+    "id": "BSG2-156",
+    "subtitle": "Pouncing Raider",
+    "type": "ship",
+    "image": "images/cards/BSG2_156-165.gif",
+    "set": "BSG2",
+    "number": 156,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Cylon", "Fighter"],
+    "abilityText": "Scramble (This unit can defend as a personnel or a ship.)",
+    "cylonThreatText": "Each player exhausts a reserve unit he or she controls.",
+    "flavorText": "\"Action stations, action stations: Cylon Raider approaching.\" —PO 2nd Class Anastasia \"Dee\" Dualla"
+  },
+  "BSG2-131": {
+    "id": "BSG2-131",
+    "subtitle": "Assault Heavy Raider",
+    "type": "ship",
+    "image": "images/cards/BSG2_131-165.gif",
+    "set": "BSG2",
+    "number": 131,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Cylon", "Scout"],
+    "abilityText": "Manipulate (Each time this unit challenges and there is no defender, you can gain influence equal to its power instead of your opponent losing influence.)",
+    "cylonThreatText": "Each player sacrifices a personnel.",
+    "flavorText": "\"Apollo reports Heavy Raider impact on starboard flight pod.\" —PO 2nd Class Anastasia \"Dee\" Dualla"
+  },
+  "BSG2-132": {
+    "id": "BSG2-132",
+    "title": "Astral Queen",
+    "subtitle": "Hitch in the Plan",
+    "type": "ship",
+    "image": "images/cards/BSG2_132-165.gif",
+    "set": "BSG2",
+    "number": 132,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "Commit: Commit and exhaust target unresolved mission.",
+    "flavorText": "\"Thank you for your offer. We respectfully decline.\" —Tom Zarek"
+  },
+  "BSG2-133": {
+    "id": "BSG2-133",
+    "title": "Astral Queen",
+    "subtitle": "Platform for Revolution",
+    "type": "ship",
+    "image": "images/cards/BSG2_133-165.gif",
+    "set": "BSG2",
+    "number": 133,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "Commit and exhaust: Exhaust two target personnel.",
+    "flavorText": "\"The crew are my prisoners. They will not be harmed, but I have two conditions before I release my captives.\" —Tom Zarek"
+  },
+  "BSG2-134": {
+    "id": "BSG2-134",
+    "title": "Captured Heavy Raider",
+    "subtitle": "Boomer's Ride",
+    "type": "ship",
+    "image": "images/cards/BSG2_134-165.gif",
+    "set": "BSG2",
+    "number": 134,
+    "rarity": "rare",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Scout"],
+    "abilityText": "Strafe (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)",
+    "cylonThreatText": "Each player chooses a personnel card from his or her discard pile and puts that card into his or her hand."
+  },
+  "BSG2-135": {
+    "id": "BSG2-135",
+    "title": "Captured Raider",
+    "subtitle": "Kara's Pet",
+    "type": "ship",
+    "image": "images/cards/BSG2_135-165.gif",
+    "set": "BSG2",
+    "number": 135,
+    "rarity": "rare",
+    "cost": {
+      "security": 4
+    },
+    "power": 3,
+    "mysticValue": 3,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "While you control an alert Starbuck, this ship gets +1 power.",
+    "cylonThreatText": "Each player readies a ship he or she controls.",
+    "flavorText": "\"Worth a try, sir. I mean, it did fly for you—and hasn't made so much as a grunt since.\" —Chief Galen Tyrol"
+  },
+  "BSG2-136": {
+    "id": "BSG2-136",
+    "title": "Cloud 9",
+    "subtitle": "Transport Hub",
+    "type": "ship",
+    "image": "images/cards/BSG2_136-165.gif",
+    "set": "BSG2",
+    "number": 136,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "Commit: Commit and exhaust target defending personnel you control. The challenge ends and the challenger is committed.",
+    "flavorText": "\"Sir, if they dock, we may lose them.\" —Lt. Felix Gaeta"
+  },
+  "BSG2-137": {
+    "id": "BSG2-137",
+    "title": "Cloud 9",
+    "subtitle": "Vacation Ship",
+    "type": "ship",
+    "image": "images/cards/BSG2_137-165.gif",
+    "set": "BSG2",
+    "number": 137,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 1,
+    "mysticValue": 3,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "All Civilian units you control get +1 power.",
+    "flavorText": "\"Live, from Cloud 9, the most luxurious cruise ship in the fleet.\" —James McManus"
+  },
+  "BSG2-138": {
+    "id": "BSG2-138",
+    "title": "Colonial One",
+    "subtitle": "Administration Headquarters",
+    "type": "ship",
+    "image": "images/cards/BSG2_138-165.gif",
+    "set": "BSG2",
+    "number": 138,
+    "rarity": "rare",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "All Politicians you control get +1 power."
+  },
+  "BSG2-139": {
+    "id": "BSG2-139",
+    "title": "Colonial One",
+    "subtitle": "The President's Ship",
+    "type": "ship",
+    "image": "images/cards/BSG2_139-165.gif",
+    "set": "BSG2",
+    "number": 139,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 4
+    },
+    "power": 3,
+    "mysticValue": 3,
+    "cylonThreat": 3,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "This ship cannot challenge. (This ship can defend.)\n\nCommit: Target player gains 1 influence.",
+    "flavorText": "\"This is Colonial Heavy 798—no, strike that. This is Colonial One.\" —Pilot, Colonial One"
+  },
+  "BSG2-140": {
+    "id": "BSG2-140",
+    "subtitle": "Colonial Viper 0205",
+    "type": "ship",
+    "image": "images/cards/BSG2_140-165.gif",
+    "set": "BSG2",
+    "number": 140,
+    "rarity": "rare",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 1,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "Commit: Target other ship gets +2 power.",
+    "flavorText": "\"Never leave your leader.\" —Brendan \"Hot Dog\" Costanza"
+  },
+  "BSG2-141": {
+    "id": "BSG2-141",
+    "subtitle": "Colonial Viper 1026",
+    "type": "ship",
+    "image": "images/cards/BSG2_141-165.gif",
+    "set": "BSG2",
+    "number": 141,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "\"I want all Vipers manned and ready.\" —Cmdr. William Adama"
+  },
+  "BSG2-142": {
+    "id": "BSG2-142",
+    "subtitle": "Colonial Viper 1104",
+    "type": "ship",
+    "image": "images/cards/BSG2_142-165.gif",
+    "set": "BSG2",
+    "number": 142,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Fighter"],
+    "abilityText": "During the Cylon phase, this ship gets +2 power.",
+    "flavorText": "\"Apollo. Tally two Cylon Raiders, close formation.\" —Capt. Lee \"Apollo\" Adama"
+  },
+  "BSG2-143": {
+    "id": "BSG2-143",
+    "subtitle": "Colonial Viper 1110",
+    "type": "ship",
+    "image": "images/cards/BSG2_143-165.gif",
+    "set": "BSG2",
+    "number": 143,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 3,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Fighter"],
+    "abilityText": "Scramble (This unit can defend as a personnel or a ship.)",
+    "flavorText": "\"All Vipers, report back to Galactica.\" —Capt. George Birch"
+  },
+  "BSG2-144": {
+    "id": "BSG2-144",
+    "subtitle": "Colonial Viper 2220",
+    "type": "ship",
+    "image": "images/cards/BSG2_144-165.gif",
+    "set": "BSG2",
+    "number": 144,
+    "rarity": "common",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "",
+    "flavorText": "\"As maneuverable as a jackrabbit and can flip end for end in point-three-five seconds.\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-145": {
+    "id": "BSG2-145",
+    "subtitle": "Colonial Viper 4267",
+    "type": "ship",
+    "image": "images/cards/BSG2_145-165.gif",
+    "set": "BSG2",
+    "number": 145,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Fighter"],
+    "abilityText": "While defending, this ship gets +1 power.",
+    "flavorText": "\"Without the CAP, isn't the fleet defenseless?\" —President Laura Roslin"
+  },
+  "BSG2-146": {
+    "id": "BSG2-146",
+    "subtitle": "Colonial Viper 7961",
+    "type": "ship",
+    "image": "images/cards/BSG2_146-165.gif",
+    "set": "BSG2",
+    "number": 146,
+    "rarity": "rare",
+    "cost": {
+      "security": 5
+    },
+    "power": 3,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Fighter"],
+    "abilityText": "Sniper (Each time this unit challenges, you can choose the defender.)\nStrafe (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)",
+    "flavorText": "\"Vipers, weapons free. Engage!\" —Capt. Lee \"Apollo\" Adama"
+  },
+  "BSG2-147": {
+    "id": "BSG2-147",
+    "subtitle": "Cruising Heavy Raider",
+    "type": "ship",
+    "image": "images/cards/BSG2_147-165.gif",
+    "set": "BSG2",
+    "number": 147,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Cylon", "Scout"],
+    "abilityText": "",
+    "cylonThreatText": "Each player commits a ship he or she controls.",
+    "flavorText": "\"A Heavy Raider makes a regular refueling stop every afternoon, like clockwork.\" —Samuel Anders"
+  },
+  "BSG2-148": {
+    "id": "BSG2-148",
+    "title": "Galactica",
+    "subtitle": "Defender of the Fleet",
+    "type": "ship",
+    "image": "images/cards/BSG2_148-165.gif",
+    "set": "BSG2",
+    "number": 148,
+    "rarity": "common",
+    "cost": {
+      "security": 6
+    },
+    "power": 4,
+    "mysticValue": 3,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Capital Ship"],
+    "abilityText": "All Cylon threats get -1 power.",
+    "flavorText": "\"They're all so immensely grateful to all of you on Galactica. You're literally our saviors.\" —Ellen Tigh"
+  },
+  "BSG2-149": {
+    "id": "BSG2-149",
+    "title": "Galactica",
+    "subtitle": "Launch Platform",
+    "type": "ship",
+    "image": "images/cards/BSG2_149-165.gif",
+    "set": "BSG2",
+    "number": 149,
+    "rarity": "rare",
+    "cost": {
+      "security": 6
+    },
+    "power": 4,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Capital Ship"],
+    "abilityText": "All Fighters you control get +1 power.",
+    "flavorText": "\"Galactica, send the cavalry.\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-150": {
+    "id": "BSG2-150",
+    "title": "Gideon",
+    "subtitle": "Rebellious Transport",
+    "type": "ship",
+    "image": "images/cards/BSG2_150-165.gif",
+    "set": "BSG2",
+    "number": 150,
+    "rarity": "uncommon",
+    "cost": {
+      "persuasion": 3
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "Commit: Commit target ship.",
+    "flavorText": "\"Seven other container ships are refusing to release their supplies as well.\" —Lt. Felix Gaeta"
+  },
+  "BSG2-151": {
+    "id": "BSG2-151",
+    "subtitle": "Heavy Transport",
+    "type": "ship",
+    "image": "images/cards/BSG2_151-165.gif",
+    "set": "BSG2",
+    "number": 151,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "",
+    "flavorText": "\"Colonial Movers — we move anywhere.\" —Colonial Movers Corporation slogan"
+  },
+  "BSG2-152": {
+    "id": "BSG2-152",
+    "subtitle": "Menacing Raider",
+    "type": "ship",
+    "image": "images/cards/BSG2_152-165.gif",
+    "set": "BSG2",
+    "number": 152,
+    "rarity": "common",
+    "cost": {
+      "security": 4
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "security",
+    "traits": ["Cylon", "Fighter"],
+    "abilityText": "Sniper (Each time this unit challenges, you can choose the defender.)\nStrafe (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)",
+    "cylonThreatText": "Each player commits a unit he or she controls."
+  },
+  "BSG2-153": {
+    "id": "BSG2-153",
+    "subtitle": "Nuclear-Armed Raider",
+    "type": "ship",
+    "image": "images/cards/BSG2_153-165.gif",
+    "set": "BSG2",
+    "number": 153,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 4
+    },
+    "power": 2,
+    "mysticValue": 0,
+    "cylonThreat": 4,
+    "resource": "logistics",
+    "traits": ["Cylon", "Fighter"],
+    "abilityText": "Each time this ship wins a challenge, defeat target asset that has no supply cards.",
+    "cylonThreatText": "All ships get -1 power.",
+    "flavorText": "\"Does that mean the first wave of Raiders is ignoring the decoys and coming after us?\" —Dr. Gaius Baltar"
+  },
+  "BSG2-154": {
+    "id": "BSG2-154",
+    "title": "Olympic Carrier",
+    "subtitle": "Trojan Horse",
+    "type": "ship",
+    "image": "images/cards/BSG2_154-165.gif",
+    "set": "BSG2",
+    "number": 154,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "When you resolve a Cylon mission, you can sacrifice this ship. If you do, it meets any two of the mission's requirements.",
+    "flavorText": "\"The Olympic Carrier has been infiltrated by Cylon agents.\" —Number Six"
+  },
+  "BSG2-155": {
+    "id": "BSG2-155",
+    "subtitle": "Pan-Galactic Luxury Liner",
+    "type": "ship",
+    "image": "images/cards/BSG2_155-165.gif",
+    "set": "BSG2",
+    "number": 155,
+    "rarity": "common",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 0,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "",
+    "flavorText": "\"All civilian ships are away.\" —Lt. Felix Gaeta"
+  },
+  "BSG2-157": {
+    "id": "BSG2-157",
+    "subtitle": "Pursuing Raider",
+    "type": "ship",
+    "image": "images/cards/BSG2_157-165.gif",
+    "set": "BSG2",
+    "number": 157,
+    "rarity": "rare",
+    "cost": {
+      "logistics": 1,
+      "security": 2
+    },
+    "power": 3,
+    "mysticValue": 0,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Cylon", "Fighter"],
+    "abilityText": "",
+    "cylonThreatText": "Each player exhausts an asset he or she controls that has no supply cards.",
+    "flavorText": "\"Base Star is launching Raiders.\" —Lt. Felix Gaeta"
+  },
+  "BSG2-158": {
+    "id": "BSG2-158",
+    "subtitle": "Raptor 168",
+    "type": "ship",
+    "image": "images/cards/BSG2_158-165.gif",
+    "set": "BSG2",
+    "number": 158,
+    "rarity": "common",
+    "cost": {
+      "security": 2
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Scout"],
+    "abilityText": "",
+    "flavorText": "\"Raptor pilots sing their songs . . . I just love to drop my bombs!\" —Popular Raptor pilot song"
+  },
+  "BSG2-159": {
+    "id": "BSG2-159",
+    "subtitle": "Raptor 203",
+    "type": "ship",
+    "image": "images/cards/BSG2_159-165.gif",
+    "set": "BSG2",
+    "number": 159,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 3,
+    "cylonThreat": 2,
+    "resource": "persuasion",
+    "traits": ["Scout"],
+    "abilityText": "",
+    "flavorText": "\"Raptor pilots flying high . . . Raptor pilots flying by!\" —Popular Raptor pilot song"
+  },
+  "BSG2-160": {
+    "id": "BSG2-160",
+    "subtitle": "Raptor 312",
+    "type": "ship",
+    "image": "images/cards/BSG2_160-165.gif",
+    "set": "BSG2",
+    "number": 160,
+    "rarity": "common",
+    "cost": {
+      "logistics": 2
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 2,
+    "resource": "logistics",
+    "traits": ["Scout"],
+    "abilityText": "Vulnerable (Personnel and ships can defend against this unit.)",
+    "flavorText": "\"Three little Cylons in the air . . . watch their metal burn and flare!\" —Popular Raptor pilot song"
+  },
+  "BSG2-161": {
+    "id": "BSG2-161",
+    "subtitle": "Raptor 432",
+    "type": "ship",
+    "image": "images/cards/BSG2_161-165.gif",
+    "set": "BSG2",
+    "number": 161,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "logistics",
+    "traits": ["Scout"],
+    "abilityText": "When you are challenged by a ship, you can play this card from your hand into your reserve area. It can defend against the challenger.",
+    "flavorText": "\"We'll have Raptors prepositioned to keep an eye on the Cylons.\" —Lt. Kara \"Starbuck\" Thrace"
+  },
+  "BSG2-162": {
+    "id": "BSG2-162",
+    "subtitle": "Raptor 659",
+    "type": "ship",
+    "image": "images/cards/BSG2_162-165.gif",
+    "set": "BSG2",
+    "number": 162,
+    "rarity": "uncommon",
+    "cost": {
+      "security": 3
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "security",
+    "traits": ["Scout"],
+    "abilityText": "Commit: Target other ship gains Strafe. (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)",
+    "flavorText": "\"Raptor pilots in the sun . . . Raptor pilots out for fun!\" —Popular Raptor pilot song"
+  },
+  "BSG2-163": {
+    "id": "BSG2-163",
+    "subtitle": "Raptor 719",
+    "type": "ship",
+    "image": "images/cards/BSG2_163-165.gif",
+    "set": "BSG2",
+    "number": 163,
+    "rarity": "rare",
+    "cost": {
+      "security": 4
+    },
+    "power": 2,
+    "mysticValue": 2,
+    "cylonThreat": 3,
+    "resource": "security",
+    "traits": ["Scout"],
+    "abilityText": "Sniper (Each time this unit challenges, you can choose the defender.)\n\nStrafe (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)"
+  },
+  "BSG2-164": {
+    "id": "BSG2-164",
+    "subtitle": "Refinery Ship",
+    "type": "ship",
+    "image": "images/cards/BSG2_164-165.gif",
+    "set": "BSG2",
+    "number": 164,
+    "rarity": "uncommon",
+    "cost": {
+      "logistics": 3
+    },
+    "power": 0,
+    "mysticValue": 2,
+    "cylonThreat": 1,
+    "resource": "logistics",
+    "traits": ["Transport"],
+    "abilityText": "Commit and exhaust: Take an extra action after this one. On your next action, reduce the cost of playing a card by one of any resource.",
+    "flavorText": "\"The refinery ship will have to work overtime.\" —President Laura Roslin"
+  },
+  "BSG2-165": {
+    "id": "BSG2-165",
+    "subtitle": "Shuttle",
+    "type": "ship",
+    "image": "images/cards/BSG2_165-165.gif",
+    "set": "BSG2",
+    "number": 165,
+    "rarity": "common",
+    "cost": {
+      "persuasion": 2
+    },
+    "power": 1,
+    "mysticValue": 2,
+    "cylonThreat": 0,
+    "resource": "persuasion",
+    "traits": ["Transport"],
+    "abilityText": "",
+    "flavorText": "\"Get me a shuttle to Cloud 9.\" —President Laura Roslin"
+  }
+}
