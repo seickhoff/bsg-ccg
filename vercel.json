@@ -1,5 +1,6 @@
 {
+  "framework": "vite",
+  "installCommand": "npm ci",
   "buildCommand": "npm run build -w shared && npm run build -w client",
-  "outputDirectory": "client/dist",
-  "installCommand": "npm install"
+  "outputDirectory": "client/dist"
 }
