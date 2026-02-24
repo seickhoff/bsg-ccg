@@ -2,10 +2,10 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm run build -w shared && npm run build -w server"
+    "buildCommand": "npm run build -w @bsg/shared && npm run build -w @bsg/server"
   },
   "deploy": {
-    "startCommand": "npm run start -w server",
+    "startCommand": "npm run start -w @bsg/server",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }

@@ -1,6 +1,6 @@
 {
   "framework": "vite",
   "installCommand": "npm ci",
-  "buildCommand": "npm run build -w shared && npm run build -w client",
+  "buildCommand": "npm run build -w @bsg/shared && npm run build -w @bsg/client",
   "outputDirectory": "client/dist"
 }
