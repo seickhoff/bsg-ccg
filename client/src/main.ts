@@ -49,8 +49,17 @@ function handleDeckSubmit(submission: DeckSubmission): void {
 // --- WebSocket Connection ---
 
 function connect(): void {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  const wsUrl = import.meta.env.VITE_WS_URL;
+  let url: string;
+  if (wsUrl) {
+    // Production: connect to configured server URL
+    url = wsUrl;
+  } else {
+    // Dev: use Vite proxy on same host
+    const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    url = `${protocol}//${location.host}/ws`;
+  }
+  ws = new WebSocket(url);
 
   ws.addEventListener("open", () => {
     console.log("Connected to server");
