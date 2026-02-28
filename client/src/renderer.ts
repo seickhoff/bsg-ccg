@@ -10,8 +10,9 @@ import type {
   CardRegistry,
   OpponentView,
   CylonThreatCard,
+  ActionNotification,
 } from "@bsg/shared";
-import { setPreviewRegistry, showCardPreview } from "./card-preview.js";
+import { setPreviewRegistry, showCardPreview, showCardPreviewNav } from "./card-preview.js";
 
 // ============================================================
 // BSG CCG — Client Renderer
@@ -21,6 +22,9 @@ import { setPreviewRegistry, showCardPreview } from "./card-preview.js";
 let cardDefs: Record<string, CardDef> = {};
 let baseDefs: Record<string, BaseCardDef> = {};
 let onAction: ((action: GameAction) => void) | null = null;
+let onContinue: (() => void) | null = null;
+let currentLog: string[] = [];
+let currentPlayerIndex = 0;
 let selectMode: {
   type: string;
   callback: (id: string | number) => void;
@@ -36,6 +40,10 @@ export function setCardRegistry(registry: CardRegistry): void {
 
 export function setActionHandler(handler: (action: GameAction) => void): void {
   onAction = handler;
+}
+
+export function setContinueHandler(handler: () => void): void {
+  onContinue = handler;
 }
 
 function getCardDef(defId: string): CardDef | BaseCardDef | null {
@@ -116,24 +124,40 @@ export function renderWaiting(container: HTMLElement): void {
   `;
 }
 
+function formatLogForDisplay(entry: string, yourPlayerIndex: number): string {
+  const youLabel = `Player ${yourPlayerIndex + 1}`;
+  const oppLabel = `Player ${1 - yourPlayerIndex + 1}`;
+  return entry
+    .replace(new RegExp(youLabel, "g"), "You")
+    .replace(new RegExp(oppLabel, "g"), "Opponent");
+}
+
 export function renderGame(
   container: HTMLElement,
   state: PlayerGameView,
   validActions: ValidAction[],
   log: string[],
+  aiActing?: boolean,
+  notification?: ActionNotification,
 ): void {
   selectMode = null;
   const isYourTurn = state.activePlayerIndex === state.you.playerIndex;
+  currentLog = log;
+  currentPlayerIndex = state.you.playerIndex;
 
   container.innerHTML = `
     <div class="game-board">
       <div class="info-bar">
-        <div class="info-item">Turn ${state.turn}</div>
-        <div class="info-item phase">${formatPhase(state.phase, state.readyStep)}</div>
-        <div class="info-item ${isYourTurn ? "your-turn" : ""}">
-          ${isYourTurn ? "YOUR TURN" : "Opponent's turn"}${state.phase === "ready" && state.readyStep === 4 ? " (lowest influence first)" : ""}
+        <div class="info-bar-left">
+          <span class="info-item">T${state.turn}</span>
+          <span class="info-item phase">${formatPhase(state.phase, state.readyStep)}</span>
+          <span class="info-item ${isYourTurn ? "your-turn" : "opp-turn"}">${isYourTurn ? "YOU" : "OPP"}</span>
+          <span class="info-item">Fleet: ${state.fleetDefenseLevel}</span>
         </div>
-        <div class="info-item">Fleet Defense: ${state.fleetDefenseLevel}</div>
+        <div class="info-bar-right">
+          <button class="header-btn" id="actions-fab" style="display:none">Actions</button>
+          <button class="header-btn" id="log-btn">Log</button>
+        </div>
       </div>
 
       <div class="influence-bar">
@@ -171,20 +195,302 @@ export function renderGame(
         </div>
       </div>
 
-      ${state.challenge ? renderChallengeInfo(state) : ""}
-
       <div class="actions-bar" id="actions-bar">
-        ${renderActions(validActions, state)}
+        ${renderActions(validActions, state, aiActing)}
       </div>
 
-      <div class="log-area" id="log-area">
-        ${log.map((l) => `<div class="log-entry">${escapeHtml(l)}</div>`).join("")}
-      </div>
     </div>
   `;
 
   // Attach event listeners
   attachEventListeners(container, validActions, state);
+
+  // Show action notification modal for AI actions
+  if (notification) {
+    showActionModal(notification, log, state.you.playerIndex);
+  } else if (validActions.length > 0) {
+    // Show player action modal when it's the player's turn
+    showPlayerActionModal(validActions, state, container);
+  }
+}
+
+function showActionModal(
+  notification: ActionNotification,
+  _log: string[],
+  playerIndex: number,
+): void {
+  // Remove any existing modal
+  document.querySelector(".action-modal-overlay")?.remove();
+
+  // Build thumbnail HTML from card def IDs
+  const thumbsHtml = notification.cardDefIds
+    .map((defId: string) => {
+      const card = cardDefs[defId];
+      const base = baseDefs[defId];
+      const image = card?.image ?? base?.image;
+      if (!image) return "";
+      const isBase = !!base;
+      return `<img src="${image}" alt="" class="action-modal-thumb ${isBase ? "card-clip-landscape" : ""}" data-def-id="${defId}" />`;
+    })
+    .filter(Boolean)
+    .join("");
+
+  // Format notification text lines (replace Player labels)
+  const textLines = notification.text
+    .split("\n")
+    .map((line: string) => escapeHtml(formatLogForDisplay(line, playerIndex)))
+    .join("<br>");
+
+  const overlay = document.createElement("div");
+  overlay.className = "action-modal-overlay";
+  overlay.innerHTML = `
+    <div class="action-modal">
+      <div class="action-modal-top">
+        <div class="action-modal-text">${textLines}</div>
+        ${thumbsHtml ? `<div class="action-modal-thumbs">${thumbsHtml}</div>` : ""}
+        <button class="action-modal-continue">Continue</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Wire thumbnail clicks → card preview
+  overlay.querySelectorAll(".action-modal-thumb").forEach((thumb) => {
+    thumb.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const defId = (thumb as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
+
+  // Wire Continue button
+  overlay.querySelector(".action-modal-continue")?.addEventListener("click", () => {
+    overlay.remove();
+    if (onContinue) onContinue();
+  });
+}
+
+function showLogModal(): void {
+  // Remove any existing log modal
+  document.querySelector(".log-modal-overlay")?.remove();
+
+  const logHtml = currentLog
+    .map(
+      (l) =>
+        `<div class="log-entry">${escapeHtml(formatLogForDisplay(l, currentPlayerIndex))}</div>`,
+    )
+    .join("");
+
+  const overlay = document.createElement("div");
+  overlay.className = "log-modal-overlay";
+  overlay.innerHTML = `
+    <div class="log-modal">
+      <div class="log-modal-header">
+        <span class="log-modal-title">Action Log</span>
+        <button class="log-modal-close">&times;</button>
+      </div>
+      <div class="log-modal-body">${logHtml}</div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Close on backdrop click
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  // Close button
+  overlay.querySelector(".log-modal-close")?.addEventListener("click", () => {
+    overlay.remove();
+  });
+
+  // Scroll to bottom
+  const body = overlay.querySelector(".log-modal-body");
+  if (body) body.scrollTop = body.scrollHeight;
+}
+
+function dismissPlayerActionModal(): void {
+  document.querySelector(".player-action-overlay")?.remove();
+}
+
+/** Build a small thumbnail <img> for an action's card, or empty string if none. */
+function getActionThumbHtml(action: ValidAction): string {
+  if (!action.cardDefId) return "";
+  const card = cardDefs[action.cardDefId];
+  const base = baseDefs[action.cardDefId];
+  const image = card?.image ?? base?.image;
+  if (!image) return "";
+  const isBase = !!base;
+  return `<img src="${image}" alt="" class="action-row-thumb${isBase ? " card-clip-landscape" : ""}" data-def-id="${action.cardDefId}" />`;
+}
+
+function showPlayerActionModal(
+  validActions: ValidAction[],
+  state: PlayerGameView,
+  container: HTMLElement,
+): void {
+  // Remove any existing player action modal
+  dismissPlayerActionModal();
+
+  // Contextual header based on game state
+  let headerText = "Choose an action";
+  if (state.challenge) {
+    const isChallenger = state.challenge.challengerPlayerIndex === state.you.playerIndex;
+    const role = isChallenger ? "You are the challenger" : "You are the defender";
+    const context = state.challenge.waitingForDefender
+      ? " — Choose a defender or decline"
+      : state.challenge.step === 2
+        ? " — Play effects or pass"
+        : "";
+    headerText = `CHALLENGE: ${role}${context}`;
+  } else if (state.phase === "ready" && state.readyStep === 4) {
+    headerText = "Deploy a card to resource area";
+  } else if (state.phase === "cylon") {
+    headerText = "Cylon phase";
+  }
+
+  const buttonsHtml = validActions
+    .map((a, i) => {
+      const disabledClass = a.disabled ? " action-modal-btn--disabled" : "";
+      const thumbHtml = getActionThumbHtml(a);
+      if (thumbHtml) {
+        return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>${thumbHtml}</div>`;
+      }
+      return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>`;
+    })
+    .join("");
+
+  const overlay = document.createElement("div");
+  overlay.className = "player-action-overlay";
+  overlay.innerHTML = `
+    <div class="action-modal">
+      <div class="action-modal-top">
+        <div class="action-modal-header-row">
+          <div class="action-modal-text">${escapeHtml(headerText)}</div>
+          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
+        </div>
+        <div class="player-action-buttons">${buttonsHtml}</div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const modal = overlay.querySelector(".action-modal") as HTMLElement;
+  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
+  const headerFab = document.getElementById("actions-fab");
+
+  // Collapse: hide panel, show header button
+  toggle.addEventListener("click", () => {
+    modal.style.display = "none";
+    if (headerFab) headerFab.style.display = "";
+  });
+
+  // Expand from header button
+  if (headerFab) {
+    headerFab.addEventListener("click", () => {
+      modal.style.display = "";
+      headerFab.style.display = "none";
+    });
+  }
+
+  // Wire action buttons
+  overlay.querySelectorAll(".action-modal-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt((btn as HTMLElement).dataset.actionIndex ?? "-1");
+      const action = validActions[idx];
+      if (!action || action.disabled) return;
+
+      // Dismiss modal before handling (select modes need the board visible)
+      dismissPlayerActionModal();
+      handleActionClick(action, validActions, state, container);
+    });
+  });
+
+  // Wire thumbnail clicks → card preview (separate from action trigger)
+  overlay.querySelectorAll(".action-row-thumb").forEach((thumb) => {
+    thumb.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const defId = (thumb as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
+}
+
+/** Generic prompt modal for sub-actions (resource deploy, select mode, etc.).
+ *  Reuses the same overlay pattern as showPlayerActionModal. */
+function showPromptModal(
+  prompt: string,
+  buttons: { label: string; onClick: () => void; cancel?: boolean; cardDefId?: string }[],
+): void {
+  dismissPlayerActionModal();
+
+  const buttonsHtml = buttons
+    .map((b, i) => {
+      const btnClass = `action-modal-btn${b.cancel ? " cancel-modal-btn" : ""}${b.cardDefId ? " action-modal-btn--with-thumb" : ""}`;
+      const btnHtml = `<button class="${btnClass}" data-btn-index="${i}">${escapeHtml(b.label)}</button>`;
+      if (b.cardDefId) {
+        const card = cardDefs[b.cardDefId];
+        const base = baseDefs[b.cardDefId];
+        const image = card?.image ?? base?.image;
+        if (image) {
+          const isBase = !!base;
+          const thumbHtml = `<img src="${image}" alt="" class="action-row-thumb${isBase ? " card-clip-landscape" : ""}" data-def-id="${b.cardDefId}" />`;
+          return `<div class="action-row">${btnHtml}${thumbHtml}</div>`;
+        }
+      }
+      return btnHtml;
+    })
+    .join("");
+
+  const overlay = document.createElement("div");
+  overlay.className = "player-action-overlay";
+  overlay.innerHTML = `
+    <div class="action-modal">
+      <div class="action-modal-top">
+        <div class="action-modal-header-row">
+          <div class="action-modal-text">${escapeHtml(prompt)}</div>
+          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
+        </div>
+        <div class="player-action-buttons">${buttonsHtml}</div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const modal = overlay.querySelector(".action-modal") as HTMLElement;
+  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
+  const headerFab = document.getElementById("actions-fab");
+
+  toggle.addEventListener("click", () => {
+    modal.style.display = "none";
+    if (headerFab) {
+      headerFab.style.display = "";
+      headerFab.onclick = () => {
+        modal.style.display = "";
+        headerFab.style.display = "none";
+      };
+    }
+  });
+
+  overlay.querySelectorAll("[data-btn-index]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt((btn as HTMLElement).dataset.btnIndex ?? "-1");
+      if (buttons[idx]) buttons[idx].onClick();
+    });
+  });
+
+  // Wire thumbnail clicks → card preview
+  overlay.querySelectorAll(".action-row-thumb").forEach((thumb) => {
+    thumb.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const defId = (thumb as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
 }
 
 // ============================================================
@@ -300,13 +606,17 @@ function renderResourceStack(stack: ResourceStack, isYours: boolean, stackIndex?
       (_, i) =>
         `<img src="images/cards/bsgbetback.jpg" alt="Supply" class="resource-supply-img" style="z-index: ${-i - 1};" loading="lazy" />`,
     ).join("");
-    const displayImage = stack.exhausted ? "images/cards/bsgbetback.jpg" : image;
+    const displayImage = stack.exhausted
+      ? isBase
+        ? "images/cards/bsgbetback-landscape.jpg"
+        : "images/cards/bsgbetback-portrait.jpg"
+      : image;
     const displayAlt = stack.exhausted ? "Spent" : escapeHtml(name);
     return `
       <div class="resource-stack-wrap" data-stack-index="${stackIndex ?? ""}">
         ${supplyCards}
         <div class="resource-card-img ${isBase ? "base-card" : ""} ${exhaustedClass}" data-stack-index="${stackIndex ?? ""}" data-instance-id="${stack.topCard.instanceId}" data-def-id="${stack.topCard.defId}">
-          <img src="${displayImage}" alt="${displayAlt}" class="resource-card-thumb${isBase && !stack.exhausted ? " card-clip-landscape" : ""}${isBase && stack.exhausted ? " card-back-landscape" : ""}" loading="lazy" />
+          <img src="${displayImage}" alt="${displayAlt}" class="resource-card-thumb${isBase ? " card-clip-landscape" : ""}" loading="lazy" />
           ${stackBadge}
         </div>
       </div>
@@ -327,7 +637,7 @@ function renderResourceStack(stack: ResourceStack, isYours: boolean, stackIndex?
       <div class="resource-stack-wrap" data-stack-index="${stackIndex ?? ""}">
         ${fallbackSupply}
         <div class="resource-card-img ${exhaustedClass}" data-stack-index="${stackIndex ?? ""}" data-instance-id="${stack.topCard.instanceId}" data-def-id="${stack.topCard.defId}">
-          <img src="images/cards/bsgbetback.jpg" alt="Spent" class="resource-card-thumb" loading="lazy" />
+          <img src="images/cards/bsgbetback-portrait.jpg" alt="Spent" class="resource-card-thumb" loading="lazy" />
           ${stackBadge}
         </div>
       </div>
@@ -416,36 +726,20 @@ function renderCylonThreats(threats: CylonThreatCard[]): string {
   `;
 }
 
-function renderChallengeInfo(state: PlayerGameView): string {
-  const c = state.challenge!;
-  const isChallenger = c.challengerPlayerIndex === state.you.playerIndex;
-  return `
-    <div class="challenge-info">
-      <div class="challenge-label">CHALLENGE</div>
-      <div class="challenge-detail">
-        ${isChallenger ? "You are the challenger" : "You are the defender"}
-        ${c.waitingForDefender ? " — Choose a defender or decline" : ""}
-        ${c.step === 2 ? " — Play effects or pass" : ""}
-      </div>
-    </div>
-  `;
-}
-
-function renderActions(validActions: ValidAction[], state: PlayerGameView): string {
+function renderActions(
+  validActions: ValidAction[],
+  state: PlayerGameView,
+  aiActing?: boolean,
+): string {
   if (validActions.length === 0) {
+    if (aiActing) {
+      return '<div class="no-actions ai-acting"><div class="spinner-small"></div> Opponent is acting...</div>';
+    }
     return '<div class="no-actions">Waiting for opponent...</div>';
   }
 
-  return validActions
-    .map((a, i) => {
-      const needsTarget =
-        a.selectableInstanceIds && a.selectableInstanceIds.length > 0 && a.type === "challenge";
-      const needsCardSelect =
-        a.selectableCardIndices && a.selectableCardIndices.length > 0 && a.type === "playCard";
-
-      return `<button class="action-btn" data-action-index="${i}">${escapeHtml(a.description)}</button>`;
-    })
-    .join("");
+  // Action buttons are now shown in the player action modal
+  return "";
 }
 
 // ============================================================
@@ -457,16 +751,6 @@ function attachEventListeners(
   validActions: ValidAction[],
   state: PlayerGameView,
 ): void {
-  // Action buttons
-  container.querySelectorAll(".action-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const idx = parseInt((btn as HTMLElement).dataset.actionIndex ?? "-1");
-      const action = validActions[idx];
-      if (!action || !onAction) return;
-      handleActionClick(action, validActions, state, container);
-    });
-  });
-
   // Resource card tap-to-preview
   container.querySelectorAll(".resource-card-img[data-def-id]").forEach((el) => {
     el.addEventListener("click", () => {
@@ -488,21 +772,22 @@ function attachEventListeners(
   // Hand scroll indicators
   setupHandScrollIndicators(container);
 
-  // Hand card tap-to-preview (skip if card is in select mode)
+  // Hand card tap-to-preview with prev/next navigation
+  const handDefIds = state.you.hand.map((c) => c.defId);
   container.querySelectorAll(".hand-card").forEach((el) => {
     el.addEventListener("click", () => {
       if (el.classList.contains("selectable")) return;
       const idx = parseInt((el as HTMLElement).dataset.cardIndex ?? "-1");
-      const card = state.you.hand[idx];
-      if (card) showCardPreview(card.defId);
+      if (idx >= 0 && idx < handDefIds.length) {
+        showCardPreviewNav(handDefIds, idx);
+      }
     });
   });
 
-  // Scroll log to bottom
-  const logArea = container.querySelector("#log-area");
-  if (logArea) {
-    logArea.scrollTop = logArea.scrollHeight;
-  }
+  // Log button
+  container.querySelector("#log-btn")?.addEventListener("click", () => {
+    showLogModal();
+  });
 }
 
 function handleActionClick(
@@ -551,6 +836,8 @@ function handleActionClick(
           (idx) => {
             onAction!({ type: "playCard", cardIndex: idx as number });
           },
+          validActions,
+          state,
         );
       }
       break;
@@ -558,70 +845,81 @@ function handleActionClick(
 
     case "playToResource": {
       const indices = action.selectableCardIndices ?? [];
-      const handCards = container.querySelectorAll(".hand-card");
+      const stackIndices = action.selectableStackIndices ?? [];
 
-      // Step 1: Highlight hand cards for selection
+      // Per-card action: single selectable index, skip hand selection
+      if (indices.length === 1) {
+        const idx = indices[0];
+        const card = state.you.hand[idx];
+        if (!card) break;
+        const def = cardDefs[card.defId];
+        const hasResource = !!def?.resource;
+
+        if (hasResource && stackIndices.length > 0) {
+          showResourceDeployChoice(container, idx, stackIndices, state, validActions);
+        } else if (hasResource) {
+          onAction!({ type: "playToResource", cardIndex: idx, asSupply: false });
+        } else if (stackIndices.length > 0) {
+          promptSupplyChoice(idx, stackIndices, state, validActions);
+        }
+        break;
+      }
+
+      // Fallback: multi-card selection (legacy)
+      const handCards = container.querySelectorAll(".hand-card");
       handCards.forEach((el) => {
         const idx = parseInt((el as HTMLElement).dataset.cardIndex ?? "-1");
         if (indices.includes(idx)) {
           el.classList.add("selectable");
           el.addEventListener("click", function handler() {
             el.removeEventListener("click", handler);
-            // Remove all hand highlights
             handCards.forEach((el2) => el2.classList.remove("selectable"));
 
             const card = state.you.hand[idx];
             if (!card) return;
             const def = cardDefs[card.defId];
             const hasResource = !!def?.resource;
-            const stackIndices = action.selectableStackIndices ?? [];
 
             if (hasResource && stackIndices.length > 0) {
-              // Card has resource — offer: new pile or under existing
               showResourceDeployChoice(container, idx, stackIndices, state, validActions);
             } else if (hasResource) {
-              // Card has resource, no existing stacks — new pile only
               onAction!({ type: "playToResource", cardIndex: idx, asSupply: false });
-            } else {
-              // No resource — supply only
-              if (stackIndices.length === 1) {
-                onAction!({
-                  type: "playToResource",
-                  cardIndex: idx,
-                  asSupply: true,
-                  targetStackIndex: stackIndices[0],
-                });
-              } else if (stackIndices.length > 1) {
-                promptStackSelection(container, idx, stackIndices, state, validActions);
-              }
+            } else if (stackIndices.length > 0) {
+              promptSupplyChoice(idx, stackIndices, state, validActions);
             }
           });
         }
       });
 
-      // Show prompt in actions bar
-      const actionsBar = container.querySelector("#actions-bar");
-      if (actionsBar) {
-        actionsBar.innerHTML = `
-          <div class="select-prompt">Select a card to deploy as a resource</div>
-          <button class="action-btn cancel-btn" id="cancel-select">Cancel</button>`;
-        document.getElementById("cancel-select")?.addEventListener("click", () => {
-          handCards.forEach((el) => el.classList.remove("selectable"));
-          restoreActionsBar(container, validActions, state);
-        });
-      }
+      showPromptModal("Select a card to deploy as a resource", [
+        {
+          label: "Cancel",
+          cancel: true,
+          onClick: () => {
+            handCards.forEach((el) => el.classList.remove("selectable"));
+            restoreActionsBar(container, validActions, state);
+          },
+        },
+      ]);
       break;
     }
 
     case "challenge": {
       const units = action.selectableInstanceIds ?? [];
-      enterSelectModeInstance(container, "Select a unit to challenge with", units, (id) => {
-        onAction!({
-          type: "challenge",
-          challengerInstanceId: id,
-          opponentIndex: 1 - state.you.playerIndex,
-        });
-      });
+      enterSelectModeInstance(
+        container,
+        "Select a unit to challenge with",
+        units,
+        (id) => {
+          onAction!({
+            type: "challenge",
+            challengerInstanceId: id,
+            opponentIndex: 1 - state.you.playerIndex,
+          });
+        },
+        validActions,
+        state,
+      );
       break;
     }
 
@@ -630,9 +928,21 @@ function handleActionClick(
         onAction({ type: "defend", defenderInstanceId: null });
       } else {
         const defenders = action.selectableInstanceIds ?? [];
-        enterSelectModeInstance(container, "Select a defender", defenders, (id) => {
-          onAction!({ type: "defend", defenderInstanceId: id });
-        });
+        if (defenders.length === 1) {
+          // Per-defender action: send directly
+          onAction!({ type: "defend", defenderInstanceId: defenders[0] });
+        } else {
+          enterSelectModeInstance(
+            container,
+            "Select a defender",
+            defenders,
+            (id) => {
+              onAction!({ type: "defend", defenderInstanceId: id });
+            },
+            validActions,
+            state,
+          );
+        }
       }
       break;
     }
@@ -642,9 +952,16 @@ function handleActionClick(
       if (missions.length === 1) {
         onAction({ type: "resolveMission", missionInstanceId: missions[0], unitInstanceIds: [] });
       } else {
-        enterSelectModeInstance(container, "Select a mission to resolve", missions, (id) => {
-          onAction!({ type: "resolveMission", missionInstanceId: id, unitInstanceIds: [] });
-        });
+        enterSelectModeInstance(
+          container,
+          "Select a mission to resolve",
+          missions,
+          (id) => {
+            onAction!({ type: "resolveMission", missionInstanceId: id, unitInstanceIds: [] });
+          },
+          validActions,
+          state,
+        );
       }
       break;
     }
@@ -668,14 +985,23 @@ function handleActionClick(
                 targetInstanceId: targetId,
               });
             },
+            validActions,
+            state,
           );
         } else {
           onAction({ type: "playAbility", sourceInstanceId: sources[0] });
         }
       } else {
-        enterSelectModeInstance(container, action.description, sources, (id) => {
-          onAction!({ type: "playAbility", sourceInstanceId: id });
-        });
+        enterSelectModeInstance(
+          container,
+          action.description,
+          sources,
+          (id) => {
+            onAction!({ type: "playAbility", sourceInstanceId: id });
+          },
+          validActions,
+          state,
+        );
       }
       break;
     }
@@ -689,21 +1015,35 @@ function handleActionClick(
           const def = cardDefs[card.defId];
           if (def?.abilityText.includes("Target") || def?.abilityText.includes("target")) {
             const targetUnits = getAllAlertUnitIds(state);
-            enterSelectModeInstance(container, "Select target", targetUnits, (targetId) => {
-              onAction!({
-                type: "playEventInChallenge",
-                cardIndex: indices[0],
-                targetInstanceId: targetId,
-              });
-            });
+            enterSelectModeInstance(
+              container,
+              "Select target",
+              targetUnits,
+              (targetId) => {
+                onAction!({
+                  type: "playEventInChallenge",
+                  cardIndex: indices[0],
+                  targetInstanceId: targetId,
+                });
+              },
+              validActions,
+              state,
+            );
           } else {
             onAction({ type: "playEventInChallenge", cardIndex: indices[0] });
           }
         }
       } else {
-        enterSelectMode(container, "Select event to play", indices, (idx) => {
-          onAction!({ type: "playEventInChallenge", cardIndex: idx as number });
-        });
+        enterSelectMode(
+          container,
+          "Select event to play",
+          indices,
+          (idx) => {
+            onAction!({ type: "playEventInChallenge", cardIndex: idx as number });
+          },
+          validActions,
+          state,
+        );
       }
       break;
     }
@@ -731,6 +1071,8 @@ function handleActionClick(
             });
           }
         },
+        validActions,
+        state,
       );
       break;
     }
@@ -757,6 +1099,8 @@ function enterSelectMode(
   prompt: string,
   selectableIndices: number[],
   callback: (index: number) => void,
+  validActions?: ValidAction[],
+  state?: PlayerGameView,
 ): void {
   // Highlight selectable hand cards
   const handCards = container.querySelectorAll(".hand-card");
@@ -770,15 +1114,18 @@ function enterSelectMode(
     }
   });
 
-  // Show prompt
-  const actionsBar = container.querySelector("#actions-bar");
-  if (actionsBar) {
-    actionsBar.innerHTML = `<div class="select-prompt">${escapeHtml(prompt)} — click a highlighted card</div>
-      <button class="action-btn cancel-btn" id="cancel-select">Cancel</button>`;
-    document.getElementById("cancel-select")?.addEventListener("click", () => {
-      handCards.forEach((el) => el.classList.remove("selectable"));
-    });
-  }
+  showPromptModal(`${prompt} — tap a highlighted card`, [
+    {
+      label: "Cancel",
+      cancel: true,
+      onClick: () => {
+        handCards.forEach((el) => el.classList.remove("selectable"));
+        if (validActions && state) {
+          restoreActionsBar(container, validActions, state);
+        }
+      },
+    },
+  ]);
 }
 
 function enterSelectModeInstance(
@@ -786,6 +1133,8 @@ function enterSelectModeInstance(
   prompt: string,
   selectableIds: string[],
   callback: (id: string) => void,
+  validActions?: ValidAction[],
+  state?: PlayerGameView,
 ): void {
   // Highlight selectable board cards (text cards and image-based unit cards)
   const allCards = container.querySelectorAll("[data-instance-id]");
@@ -799,14 +1148,18 @@ function enterSelectModeInstance(
     }
   });
 
-  const actionsBar = container.querySelector("#actions-bar");
-  if (actionsBar) {
-    actionsBar.innerHTML = `<div class="select-prompt">${escapeHtml(prompt)} — click a highlighted card</div>
-      <button class="action-btn cancel-btn" id="cancel-select">Cancel</button>`;
-    document.getElementById("cancel-select")?.addEventListener("click", () => {
-      allCards.forEach((el) => el.classList.remove("selectable"));
-    });
-  }
+  showPromptModal(`${prompt} — tap a highlighted card`, [
+    {
+      label: "Cancel",
+      cancel: true,
+      onClick: () => {
+        allCards.forEach((el) => el.classList.remove("selectable"));
+        if (validActions && state) {
+          restoreActionsBar(container, validActions, state);
+        }
+      },
+    },
+  ]);
 }
 
 function setupHandScrollIndicators(container: HTMLElement): void {
@@ -847,78 +1200,70 @@ function showResourceDeployChoice(
   const card = state.you.hand[cardIndex];
   const cardName = card ? getCardName(card.defId) : "card";
 
-  const actionsBar = container.querySelector("#actions-bar");
-  if (!actionsBar) return;
-
-  actionsBar.innerHTML = `
-    <div class="select-prompt">Deploy ${escapeHtml(cardName)}:</div>
-    <button class="action-btn" id="deploy-new-pile">Start new resource pile</button>
-    <button class="action-btn" id="deploy-under-existing">Place under existing resource</button>
-    <button class="action-btn cancel-btn" id="cancel-deploy">Cancel</button>`;
-
-  document.getElementById("deploy-new-pile")?.addEventListener("click", () => {
-    onAction!({ type: "playToResource", cardIndex, asSupply: false });
+  const stackButtons = stackIndices.map((si) => {
+    const stack = state.you.zones.resourceStacks[si];
+    const stackName = getCardName(stack.topCard.defId);
+    const supplyCount = stack.supplyCards.length;
+    return {
+      label: `Supply to ${stackName} (${supplyCount} supply)`,
+      cardDefId: stack.topCard.defId,
+      onClick: () => {
+        onAction!({ type: "playToResource", cardIndex, asSupply: true, targetStackIndex: si });
+      },
+    };
   });
 
-  document.getElementById("deploy-under-existing")?.addEventListener("click", () => {
-    if (stackIndices.length === 1) {
-      onAction!({
-        type: "playToResource",
-        cardIndex,
-        asSupply: true,
-        targetStackIndex: stackIndices[0],
-      });
-    } else {
-      promptStackSelection(container, cardIndex, stackIndices, state, validActions);
-    }
-  });
-
-  document.getElementById("cancel-deploy")?.addEventListener("click", () => {
-    restoreActionsBar(container, validActions, state);
-  });
+  showPromptModal(`Deploy ${cardName}:`, [
+    {
+      label: "Start new resource pile",
+      onClick: () => {
+        onAction!({ type: "playToResource", cardIndex, asSupply: false });
+      },
+    },
+    ...stackButtons,
+    {
+      label: "Cancel",
+      cancel: true,
+      onClick: () => {
+        restoreActionsBar(container, validActions, state);
+      },
+    },
+  ]);
 }
 
-function promptStackSelection(
-  container: HTMLElement,
+/** Prompt to choose which stack to place a no-resource card under as supply. */
+function promptSupplyChoice(
   cardIndex: number,
   stackIndices: number[],
   state: PlayerGameView,
   validActions: ValidAction[],
 ): void {
-  const actionsBar = container.querySelector("#actions-bar");
-  if (actionsBar) {
-    actionsBar.innerHTML = `
-      <div class="select-prompt">Select a resource stack to place under</div>
-      <button class="action-btn cancel-btn" id="cancel-stack-select">Cancel</button>`;
-    document.getElementById("cancel-stack-select")?.addEventListener("click", () => {
-      container
-        .querySelectorAll(".resource-card-img, .card.resource-card")
-        .forEach((el) => el.classList.remove("selectable"));
-      restoreActionsBar(container, validActions, state);
-    });
-  }
+  const card = state.you.hand[cardIndex];
+  const name = card ? getCardName(card.defId) : "card";
 
-  // Highlight selectable resource stacks (target the wrapper or top-level stack element)
-  container
-    .querySelectorAll(
-      ".your-board .resource-stack-wrap[data-stack-index], .your-board .resource-card-img[data-stack-index], .your-board .card.resource-card[data-stack-index]",
-    )
-    .forEach((el) => {
-      // Skip inner elements if the wrap is already handling this stack
-      if (
-        !el.classList.contains("resource-stack-wrap") &&
-        el.parentElement?.classList.contains("resource-stack-wrap")
-      )
-        return;
-      const idx = parseInt((el as HTMLElement).dataset.stackIndex ?? "-1");
-      if (stackIndices.includes(idx)) {
-        el.classList.add("selectable");
-        el.addEventListener("click", function handler() {
-          el.removeEventListener("click", handler);
-          onAction!({ type: "playToResource", cardIndex, asSupply: true, targetStackIndex: idx });
-        });
-      }
-    });
+  const stackButtons = stackIndices.map((si) => {
+    const stack = state.you.zones.resourceStacks[si];
+    const stackName = getCardName(stack.topCard.defId);
+    const supplyCount = stack.supplyCards.length;
+    return {
+      label: `Supply to ${stackName} (${supplyCount} supply)`,
+      cardDefId: stack.topCard.defId,
+      onClick: () => {
+        onAction!({ type: "playToResource", cardIndex, asSupply: true, targetStackIndex: si });
+      },
+    };
+  });
+
+  showPromptModal(`Deploy ${name} as supply:`, [
+    ...stackButtons,
+    {
+      label: "Cancel",
+      cancel: true,
+      onClick: () => {
+        restoreActionsBar(document.getElementById("game-container")!, validActions, state);
+      },
+    },
+  ]);
 }
 
 function restoreActionsBar(
@@ -929,20 +1274,12 @@ function restoreActionsBar(
   // Remove all selectable highlights
   container.querySelectorAll(".selectable").forEach((el) => el.classList.remove("selectable"));
 
-  // Re-render actions bar and re-attach listeners
+  // Clear any select prompts from actions bar
   const actionsBar = container.querySelector("#actions-bar");
-  if (actionsBar) {
-    actionsBar.innerHTML = renderActions(validActions, state);
-    actionsBar.querySelectorAll(".action-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const idx = parseInt((btn as HTMLElement).dataset.actionIndex ?? "-1");
-        const action = validActions[idx];
-        if (action && onAction) {
-          handleActionClick(action, validActions, state, container);
-        }
-      });
-    });
-  }
+  if (actionsBar) actionsBar.innerHTML = "";
+
+  // Re-show the player action modal
+  showPlayerActionModal(validActions, state, container);
 }
 
 function escapeHtml(str: string): string {

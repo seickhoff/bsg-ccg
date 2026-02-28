@@ -6,6 +6,8 @@ import type {
   DeckSubmission,
   BaseCardDef,
   GameState,
+  GameAction,
+  ActionNotification,
 } from "@bsg/shared";
 import { validateDeck } from "@bsg/shared";
 import {
@@ -51,6 +53,9 @@ interface GameRoom {
   humanDeck: DeckSubmission | null;
   aiDeck: DeckSubmission | null;
   gameState: GameState | null;
+  aiProcessing: boolean;
+  pendingNotification: ActionNotification | null;
+  continueResolve: (() => void) | null;
 }
 
 const rooms: GameRoom[] = [];
@@ -63,6 +68,9 @@ function createRoom(ws: WebSocket): GameRoom {
     humanDeck: null,
     aiDeck: null,
     gameState: null,
+    aiProcessing: false,
+    pendingNotification: null,
+    continueResolve: null,
   };
   rooms.push(room);
   playerRoomMap.set(ws, room);
@@ -79,12 +87,17 @@ function broadcastGameState(room: GameRoom): void {
   if (!room.gameState || !room.humanWs) return;
 
   const view = getPlayerView(room.gameState, HUMAN_PLAYER_INDEX);
-  const validActions = getValidActions(room.gameState, HUMAN_PLAYER_INDEX, bases);
+  // Don't show valid actions while AI is stepping through actions
+  const validActions = room.aiProcessing
+    ? []
+    : getValidActions(room.gameState, HUMAN_PLAYER_INDEX, bases);
   sendToPlayer(room.humanWs, {
     type: "gameState",
     state: view,
     validActions,
-    log: room.gameState.log.slice(-20),
+    log: room.gameState.log.slice(-50),
+    aiActing: room.aiProcessing || undefined,
+    notification: room.pendingNotification || undefined,
   });
 }
 
@@ -105,9 +118,79 @@ function startGame(room: GameRoom): void {
   processAITurns(room);
 }
 
-/** Run AI turns until it's the human's turn or game is over */
-function processAITurns(room: GameRoom): void {
+const CONTINUE_TIMEOUT_MS = 30_000;
+
+/** Resolve card definition IDs involved in an AI action (before applying it). */
+function resolveActionCardIds(state: GameState, playerIndex: number, action: GameAction): string[] {
+  const player = state.players[playerIndex];
+
+  switch (action.type) {
+    case "playCard":
+    case "playToResource":
+    case "playEventInChallenge": {
+      const card = player.hand[action.cardIndex];
+      return card ? [card.defId] : [];
+    }
+    case "challenge":
+    case "challengeCylon": {
+      const id = action.challengerInstanceId;
+      return defIdFromInstanceId(state, id);
+    }
+    case "defend": {
+      if (!action.defenderInstanceId) return [];
+      return defIdFromInstanceId(state, action.defenderInstanceId);
+    }
+    case "playAbility": {
+      return defIdFromInstanceId(state, action.sourceInstanceId);
+    }
+    case "resolveMission": {
+      return defIdFromInstanceId(state, action.missionInstanceId);
+    }
+    default:
+      return [];
+  }
+}
+
+/** Find a card's defId by searching all zones for its instanceId. */
+function defIdFromInstanceId(state: GameState, instanceId: string): string[] {
+  for (const player of state.players) {
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        for (const card of stack.cards) {
+          if (card.instanceId === instanceId) return [card.defId];
+        }
+      }
+    }
+    for (const rs of player.zones.resourceStacks) {
+      if (rs.topCard.instanceId === instanceId) return [rs.topCard.defId];
+    }
+  }
+  return [];
+}
+
+/** Wait for the client to send a "continue" message, with a timeout safety. */
+function waitForContinue(room: GameRoom): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      room.continueResolve = null;
+      resolve();
+    }, CONTINUE_TIMEOUT_MS);
+
+    room.continueResolve = () => {
+      clearTimeout(timer);
+      room.continueResolve = null;
+      resolve();
+    };
+  });
+}
+
+/** Run AI turns until it's the human's turn or game is over.
+ *  Broadcasts state with a notification modal after each action,
+ *  waiting for the human to click "Continue" before proceeding. */
+async function processAITurns(room: GameRoom): Promise<void> {
   if (!room.gameState) return;
+
+  room.aiProcessing = true;
 
   let iterations = 0;
   const MAX_ITERATIONS = 100; // safety limit
@@ -134,6 +217,10 @@ function processAITurns(room: GameRoom): void {
 
     const decision = makeAIDecision(room.gameState, AI_PLAYER_INDEX, aiActions, registry);
 
+    // Resolve card IDs before applying action (card may leave hand after)
+    const cardDefIds = resolveActionCardIds(room.gameState, AI_PLAYER_INDEX, decision);
+    const logLenBefore = room.gameState.log.length;
+
     try {
       const result = applyAction(room.gameState, AI_PLAYER_INDEX, decision, bases);
       room.gameState = result.state;
@@ -143,13 +230,31 @@ function processAITurns(room: GameRoom): void {
     }
 
     iterations++;
+
+    // Build notification from new log entries
+    const newEntries = room.gameState.log.slice(logLenBefore);
+    const notificationText = newEntries.join("\n");
+
+    if (room.gameState.phase !== "setup" && notificationText) {
+      // Show modal and wait for human to click Continue
+      room.pendingNotification = { text: notificationText, cardDefIds };
+      broadcastGameState(room);
+      room.pendingNotification = null;
+      await waitForContinue(room);
+    } else {
+      // Setup phase or no log text — skip modal
+      broadcastGameState(room);
+    }
   }
 
   if (iterations >= MAX_ITERATIONS) {
     console.warn(`AI hit max iterations in ${room.id}`);
   }
 
-  // Broadcast final state to human after all AI turns
+  room.aiProcessing = false;
+  room.pendingNotification = null;
+
+  // Final broadcast with valid actions now available to human
   broadcastGameState(room);
 }
 
@@ -224,10 +329,22 @@ wss.on("connection", (ws) => {
         break;
       }
 
+      case "continue": {
+        const room = playerRoomMap.get(ws);
+        if (room?.continueResolve) {
+          room.continueResolve();
+        }
+        break;
+      }
+
       case "action": {
         const room = playerRoomMap.get(ws);
         if (!room?.gameState) {
           sendToPlayer(ws, { type: "error", message: "Not in a game" });
+          return;
+        }
+        if (room.aiProcessing) {
+          sendToPlayer(ws, { type: "error", message: "Opponent is still acting" });
           return;
         }
 

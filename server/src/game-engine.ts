@@ -69,6 +69,20 @@ function cardName(def: CardDef): string {
   return def.title ?? def.subtitle ?? "?";
 }
 
+const resourceAbbrev: Record<ResourceType, string> = {
+  persuasion: "P",
+  logistics: "L",
+  security: "S",
+};
+
+function formatCost(cost: CardCost): string {
+  if (!cost) return "";
+  return (Object.entries(cost) as [ResourceType, number][])
+    .filter(([, n]) => n > 0)
+    .map(([r, n]) => `${n}${resourceAbbrev[r]}`)
+    .join(" ");
+}
+
 /**
  * Find an existing unit stack whose top card shares the same title as the given def.
  * Searches alert first, then reserve (per rules, overlay keeps the stack's current zone).
@@ -352,18 +366,23 @@ export function getValidActions(
 
   if (state.phase === "ready" && state.readyStep === 4 && isActive) {
     if (!player.hasPlayedResource) {
-      if (player.hand.length > 0) {
-        const allIndices = player.hand.map((_: CardInstance, i: number) => i);
+      const stackIndices = player.zones.resourceStacks.map((_: ResourceStack, i: number) => i);
+      for (let i = 0; i < player.hand.length; i++) {
+        const def = getCardDef(player.hand[i].defId);
+        const resourceLabel = def.resource
+          ? def.resource.charAt(0).toUpperCase() + def.resource.slice(1)
+          : null;
         actions.push({
           type: "playToResource",
-          description: "Deploy a card to resource area",
-          selectableCardIndices: allIndices,
-          selectableStackIndices: player.zones.resourceStacks.map(
-            (_: ResourceStack, i: number) => i,
-          ),
+          description: resourceLabel
+            ? `${cardName(def)} — ${resourceLabel}`
+            : `${cardName(def)} — supply only`,
+          cardDefId: def.id,
+          selectableCardIndices: [i],
+          selectableStackIndices: stackIndices,
         });
       }
-      actions.push({ type: "passResource", description: "Pass (don't play to resource area)" });
+      actions.push({ type: "passResource", description: "Pass" });
     }
     return actions;
   }
@@ -375,16 +394,19 @@ export function getValidActions(
 
   // --- Execution phase ---
   if (state.phase === "execution" && isActive) {
-    // Play a card from hand
+    // Play a card from hand (affordable = active, unaffordable = disabled)
     for (let i = 0; i < player.hand.length; i++) {
       const def = getCardDef(player.hand[i].defId);
-      if (canAfford(player, def, bases)) {
-        actions.push({
-          type: "playCard",
-          description: `Play ${cardName(def)}`,
-          selectableCardIndices: [i],
-        });
-      }
+      const costStr = formatCost(def.cost);
+      const typeLabel = def.type.charAt(0).toUpperCase() + def.type.slice(1);
+      const affordable = canAfford(player, def, bases);
+      actions.push({
+        type: "playCard",
+        description: `${cardName(def)} — ${typeLabel}${costStr ? ` (${costStr})` : ""}`,
+        cardDefId: def.id,
+        selectableCardIndices: [i],
+        ...(affordable ? {} : { disabled: true }),
+      });
     }
 
     // Play ability (base exhaust abilities, unit commit/exhaust abilities)
@@ -393,6 +415,7 @@ export function getValidActions(
       actions.push({
         type: "playAbility",
         description: `Use ${baseDef.title} ability: ${baseDef.abilityText}`,
+        cardDefId: baseDef.id,
         selectableInstanceIds: [player.zones.resourceStacks[0].topCard.instanceId],
       });
     }
@@ -405,6 +428,7 @@ export function getValidActions(
           actions.push({
             type: "playAbility",
             description: `${cardName(def)}: ${def.abilityText}`,
+            cardDefId: def.id,
             selectableInstanceIds: [topCard.instanceId],
           });
         }
@@ -442,6 +466,7 @@ export function getValidActions(
               actions.push({
                 type: "resolveMission",
                 description: `Resolve ${cardName(def)}: ${def.abilityText}`,
+                cardDefId: def.id,
                 selectableInstanceIds: [topCard.instanceId],
               });
             }
@@ -499,22 +524,19 @@ function getChallengeActions(
     // Find eligible defenders (same type as challenger, face-up alert)
     const challengerDef = findCardDefByInstanceId(state, challenge.challengerInstanceId);
     if (challengerDef) {
-      const defenders: string[] = [];
       for (const stack of player.zones.alert) {
         const topCard = stack.cards[0];
         if (topCard && topCard.faceUp && !stack.exhausted) {
           const def = getCardDef(topCard.defId);
           if (isUnit(def) && def.type === challengerDef.type) {
-            defenders.push(topCard.instanceId);
+            actions.push({
+              type: "defend",
+              description: `Defend with ${cardName(def)}`,
+              cardDefId: def.id,
+              selectableInstanceIds: [topCard.instanceId],
+            });
           }
         }
-      }
-      if (defenders.length > 0) {
-        actions.push({
-          type: "defend",
-          description: "Choose a defender",
-          selectableInstanceIds: defenders,
-        });
       }
     }
     actions.push({ type: "defend", description: "Decline to defend" });
@@ -529,7 +551,8 @@ function getChallengeActions(
       if (def.type === "event" && canAfford(player, def, bases)) {
         actions.push({
           type: "playEventInChallenge",
-          description: `Play ${cardName(def)}: ${def.abilityText}`,
+          description: `${cardName(def)} — Event${formatCost(def.cost) ? ` (${formatCost(def.cost)})` : ""}`,
+          cardDefId: def.id,
           selectableCardIndices: [i],
         });
       }
@@ -544,6 +567,7 @@ function getChallengeActions(
           actions.push({
             type: "playAbility",
             description: `${cardName(def)}: ${def.abilityText}`,
+            cardDefId: def.id,
             selectableInstanceIds: [topCard.instanceId],
           });
         }

@@ -217,6 +217,8 @@ export type GameAction =
 export interface ValidAction {
   type: GameAction["type"];
   description: string;
+  cardDefId?: string; // card definition ID for thumbnail display
+  disabled?: boolean; // shown but not clickable (e.g. can't afford)
   // Optional context for the UI to know what's selectable
   selectableCardIndices?: number[]; // hand indices
   selectableInstanceIds?: string[]; // board card instance IDs
@@ -226,16 +228,29 @@ export interface ValidAction {
 
 // --- WebSocket Messages ---
 
+export interface ActionNotification {
+  text: string;
+  cardDefIds: string[];
+}
+
 export type ClientMessage =
   | { type: "joinGame" }
   | { type: "submitDeck"; baseId: string; deckCardIds: string[] }
-  | { type: "action"; action: GameAction };
+  | { type: "action"; action: GameAction }
+  | { type: "continue" };
 
 export type ServerMessage =
   | { type: "cardRegistry"; registry: CardRegistry }
   | { type: "deckRequired" }
   | { type: "waitingForOpponent" }
-  | { type: "gameState"; state: PlayerGameView; validActions: ValidAction[]; log: string[] }
+  | {
+      type: "gameState";
+      state: PlayerGameView;
+      validActions: ValidAction[];
+      log: string[];
+      aiActing?: boolean;
+      notification?: ActionNotification;
+    }
   | { type: "error"; message: string };
 
 // --- Card Registry Helper ---

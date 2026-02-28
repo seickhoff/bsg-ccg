@@ -362,6 +362,39 @@ function renderDeckTab(v: { valid: boolean; errors: string[] }): string {
   `;
 }
 
+// --- Preview navigation ---
+
+function getPreviewList(): { id: string; isBase: boolean }[] {
+  if (!state) return [];
+  if (state.activeTab === "base") {
+    return Object.values(state.registry.bases)
+      .sort((a, b) => a.title.localeCompare(b.title))
+      .map((b) => ({ id: b.id, isBase: true }));
+  }
+  if (state.activeTab === "deck") {
+    const entries: CardDef[] = [];
+    for (const [id] of state.deckCards) {
+      const c = state.registry.cards[id];
+      if (c) entries.push(c);
+    }
+    entries.sort((a, b) => cardName(a).localeCompare(cardName(b)));
+    return entries.map((c) => ({ id: c.id, isBase: false }));
+  }
+  return filterCards().map((c) => ({ id: c.id, isBase: false }));
+}
+
+function navigatePreview(direction: -1 | 1): void {
+  if (!state?.previewId) return;
+  const list = getPreviewList();
+  if (list.length === 0) return;
+  const idx = list.findIndex((e) => e.id === state!.previewId && e.isBase === state!.previewIsBase);
+  if (idx === -1) return;
+  const next = (idx + direction + list.length) % list.length;
+  state.previewId = list[next].id;
+  state.previewIsBase = list[next].isBase;
+  render();
+}
+
 // --- Preview overlay ---
 
 function renderPreview(): string {
@@ -410,17 +443,24 @@ function renderPreview(): string {
     `;
   }
 
+  const list = getPreviewList();
+  const idx = list.findIndex((e) => e.id === state!.previewId && e.isBase === state!.previewIsBase);
+  const pos = list.length > 1 ? `${idx + 1} / ${list.length}` : "";
+
   return `
     <div class="db-preview-overlay" id="db-overlay">
+      ${list.length > 1 ? '<button class="db-pv-nav db-pv-nav-prev" id="db-pv-prev">&#8249;</button>' : ""}
       <div class="db-preview">
         <button class="db-preview-close" id="db-pv-close">&times;</button>
         ${img ? `<img src="${img}" alt="${esc(name)}" class="db-preview-img${state?.previewIsBase ? " card-clip-landscape" : ""}" />` : ""}
         <div class="db-preview-info">
           <div class="db-pv-name">${esc(name)}</div>
+          ${pos ? `<div class="db-pv-pos">${pos}</div>` : ""}
           ${details}
           ${actions}
         </div>
       </div>
+      ${list.length > 1 ? '<button class="db-pv-nav db-pv-nav-next" id="db-pv-next">&#8250;</button>' : ""}
     </div>
   `;
 }
@@ -500,6 +540,68 @@ function attach(): void {
       render();
     }
   });
+
+  // Preview nav arrows
+  container.querySelector("#db-pv-prev")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    navigatePreview(-1);
+  });
+  container.querySelector("#db-pv-next")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    navigatePreview(1);
+  });
+
+  // Preview keyboard navigation
+  const overlay = container.querySelector("#db-overlay") as HTMLElement;
+  if (overlay) {
+    overlay.setAttribute("tabindex", "-1");
+    overlay.focus();
+    overlay.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        navigatePreview(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        navigatePreview(1);
+      } else if (e.key === "Escape") {
+        state!.previewId = null;
+        render();
+      }
+    });
+
+    // Touch swipe navigation
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let swiping = false;
+    overlay.addEventListener(
+      "touchstart",
+      (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        swiping = false;
+      },
+      { passive: true },
+    );
+    overlay.addEventListener(
+      "touchmove",
+      (e) => {
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        if (!swiping && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+          swiping = true;
+        }
+        if (swiping && e.cancelable) e.preventDefault();
+      },
+      { passive: false },
+    );
+    overlay.addEventListener("touchend", (e) => {
+      if (!swiping) return;
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(dx) > 50) {
+        navigatePreview(dx < 0 ? 1 : -1);
+      }
+    });
+  }
 
   // Filters
   const search = container.querySelector("#db-search") as HTMLInputElement;

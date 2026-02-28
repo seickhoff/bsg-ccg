@@ -5,7 +5,13 @@ import type {
   CardRegistry,
   DeckSubmission,
 } from "@bsg/shared";
-import { renderWaiting, renderGame, setCardRegistry, setActionHandler } from "./renderer.js";
+import {
+  renderWaiting,
+  renderGame,
+  setCardRegistry,
+  setActionHandler,
+  setContinueHandler,
+} from "./renderer.js";
 import { renderDeckBuilder } from "./deck-builder.js";
 import "./style.css";
 
@@ -30,6 +36,7 @@ function sendAction(action: GameAction): void {
 }
 
 setActionHandler(sendAction);
+setContinueHandler(() => sendMessage({ type: "continue" }));
 
 function handleDeckSubmit(submission: DeckSubmission): void {
   sendMessage({
@@ -97,7 +104,7 @@ function connect(): void {
         break;
 
       case "gameState":
-        renderGame(app, msg.state, msg.validActions, msg.log);
+        renderGame(app, msg.state, msg.validActions, msg.log, msg.aiActing, msg.notification);
         break;
 
       case "error":
