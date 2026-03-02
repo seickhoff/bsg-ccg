@@ -335,20 +335,22 @@ function showPlayerActionModal(
   dismissPlayerActionModal();
 
   // Contextual header based on game state
-  let headerText = "Choose an action";
+  let headerText = "Your turn — Choose an action";
   if (state.challenge) {
     const isChallenger = state.challenge.challengerPlayerIndex === state.you.playerIndex;
-    const role = isChallenger ? "You are the challenger" : "You are the defender";
-    const context = state.challenge.waitingForDefender
-      ? " — Choose a defender or decline"
-      : state.challenge.step === 2
-        ? " — Play effects or pass"
-        : "";
-    headerText = `CHALLENGE: ${role}${context}`;
+    if (state.challenge.waitingForDefender && !isChallenger) {
+      headerText = "Your turn — Choose a defender or decline";
+    } else if (state.challenge.step === 2) {
+      headerText = `Your turn — Play effects or pass`;
+    } else {
+      headerText = "Challenge in progress";
+    }
   } else if (state.phase === "ready" && state.readyStep === 4) {
-    headerText = "Deploy a card to resource area";
+    headerText = "Your turn — Deploy a card to resource area";
   } else if (state.phase === "cylon") {
-    headerText = "Cylon phase";
+    headerText = "Your turn — Cylon phase";
+  } else if (state.phase === "execution") {
+    headerText = "Your turn — Execution phase";
   }
 
   const buttonsHtml = validActions

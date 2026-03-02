@@ -1,0 +1,2432 @@
+// ============================================================
+// Mission Abilities Registry (Open/Closed Principle)
+// ============================================================
+// Each mission card's effects are registered here by abilityId.
+// Game engine calls dispatchers; adding new missions requires
+// only a new register() call — no engine changes needed.
+//
+// Three categories:
+//   one-shot  — resolve effect fires once, mission discards
+//   persistent — resolve effect fires, mission stays in play
+//   link       — mission attaches to a unit on resolve
+// ============================================================
+
+import type {
+  GameState,
+  PlayerState,
+  CardDef,
+  BaseCardDef,
+  UnitStack,
+  CardInstance,
+  Keyword,
+  ValidAction,
+  Trait,
+} from "@bsg/shared";
+
+// Re-use PowerContext from unit-abilities
+export interface PowerContext {
+  phase?: string;
+  isChallenger?: boolean;
+  isDefender?: boolean;
+  challengerDef?: CardDef;
+}
+
+// ============================================================
+// Handler Interface
+// ============================================================
+
+export interface MissionAbilityHandler {
+  category: "one-shot" | "persistent" | "link";
+
+  /** For Link: what unit type can be targeted for attachment */
+  linkTarget?: "personnel" | "ship" | "unit";
+
+  // --- Resolve-time ---
+  canResolve?(state: GameState, playerIndex: number): boolean;
+  getResolveTargets?(state: GameState, playerIndex: number): string[] | null;
+  onResolve?(
+    state: GameState,
+    playerIndex: number,
+    targetId: string | undefined,
+    log: string[],
+  ): void;
+
+  // --- Ongoing passive modifiers (persistent + link) ---
+  getPowerModifier?(
+    state: GameState,
+    unitStack: UnitStack,
+    ownerIndex: number,
+    context: PowerContext,
+  ): number;
+  fleetDefenseModifier?: number;
+  cylonThreatBonus?: number;
+  getKeywordGrants?(state: GameState, unitStack: UnitStack, ownerIndex: number): Keyword[];
+  canChallenge?: false;
+
+  // --- Activated abilities (persistent or link) ---
+  activation?: {
+    cost:
+      | "commit-unit"
+      | "commit-exhaust-unit"
+      | "exhaust-mission"
+      | "sacrifice-mission"
+      | "commit-exhaust-politician";
+    usableIn: ("execution" | "challenge" | "cylon-challenge")[];
+    oncePerTurn?: boolean;
+    getTargets?(state: GameState, playerIndex: number, sourceId: string): string[] | null;
+    resolve(
+      state: GameState,
+      playerIndex: number,
+      sourceId: string,
+      targetId: string | undefined,
+      log: string[],
+    ): void;
+  };
+
+  // --- Trigger hooks ---
+  onEventPlay?(state: GameState, playerIndex: number, log: string[]): void;
+  onReadyPhaseStart?(state: GameState, playerIndex: number, log: string[]): void;
+  onMysticReveal?(state: GameState, playerIndex: number, value: number, cardDef: CardDef): number;
+  interceptDefeat?(
+    state: GameState,
+    playerIndex: number,
+    unitType: "personnel" | "ship",
+    unitInstanceId: string,
+    log: string[],
+  ): boolean;
+  onLinkedUnitLeavePlay?(
+    state: GameState,
+    playerIndex: number,
+    unitInstanceId: string,
+    log: string[],
+  ): void;
+  onCylonThreatDefeat?(
+    state: GameState,
+    playerIndex: number,
+    unitInstanceId: string,
+    log: string[],
+  ): void;
+  onChallengeWin?(
+    state: GameState,
+    playerIndex: number,
+    winnerStack: UnitStack,
+    loserStack: UnitStack,
+    powerDiff: number,
+    log: string[],
+  ): void;
+  onDraw?(state: GameState, playerIndex: number, drawCount: number, log: string[]): void;
+
+  // --- Special game rule modifiers ---
+  preventOverlay?(state: GameState, playerIndex: number, unitDef: CardDef): boolean;
+  challengeCostModifier?(state: GameState, challengerIndex: number, defenderIndex: number): number;
+}
+
+// ============================================================
+// Game Engine Helpers (injected to avoid circular imports)
+// ============================================================
+
+export interface MissionGameHelpers {
+  getCardDef(defId: string): CardDef;
+  cardName(def: CardDef): string;
+  defeatUnit(
+    player: PlayerState,
+    instanceId: string,
+    log: string[],
+    state: GameState,
+    playerIndex: number,
+  ): void;
+  commitUnit(player: PlayerState, instanceId: string): void;
+  drawCards(player: PlayerState, count: number, log: string[], label: string): void;
+  applyPowerBuff(state: GameState, instanceId: string, amount: number, log: string[]): void;
+  applyInfluenceLoss(
+    state: GameState,
+    playerIndex: number,
+    amount: number,
+    log: string[],
+    bases: Record<string, BaseCardDef>,
+  ): void;
+  bases: Record<string, BaseCardDef>;
+}
+
+let helpers: MissionGameHelpers;
+
+export function setMissionGameHelpers(h: MissionGameHelpers): void {
+  helpers = h;
+}
+
+// ============================================================
+// Card Registry (injected from game engine)
+// ============================================================
+
+let cardRegistry: Record<string, CardDef> = {};
+
+export function setMissionAbilityCardRegistry(cards: Record<string, CardDef>): void {
+  cardRegistry = cards;
+}
+
+// ============================================================
+// Registry
+// ============================================================
+
+const registry = new Map<string, MissionAbilityHandler>();
+
+function register(abilityId: string, handler: MissionAbilityHandler): void {
+  registry.set(abilityId, handler);
+}
+
+// ============================================================
+// Local Helpers
+// ============================================================
+
+function getCardDef(defId: string): CardDef {
+  return cardRegistry[defId];
+}
+
+function findUnitInZone(
+  zone: UnitStack[],
+  instanceId: string,
+): { stack: UnitStack; index: number } | null {
+  for (let i = 0; i < zone.length; i++) {
+    if (zone[i].cards[0]?.instanceId === instanceId) {
+      return { stack: zone[i], index: i };
+    }
+  }
+  return null;
+}
+
+function findUnitInAnyZone(
+  player: PlayerState,
+  instanceId: string,
+): { stack: UnitStack; zone: "alert" | "reserve"; index: number } | null {
+  const alertResult = findUnitInZone(player.zones.alert, instanceId);
+  if (alertResult) return { ...alertResult, zone: "alert" };
+  const reserveResult = findUnitInZone(player.zones.reserve, instanceId);
+  if (reserveResult) return { ...reserveResult, zone: "reserve" };
+  return null;
+}
+
+function findUnitOwner(
+  state: GameState,
+  instanceId: string,
+): {
+  player: PlayerState;
+  playerIndex: number;
+  stack: UnitStack;
+  zone: "alert" | "reserve";
+  index: number;
+} | null {
+  for (let pi = 0; pi < state.players.length; pi++) {
+    const result = findUnitInAnyZone(state.players[pi], instanceId);
+    if (result) return { player: state.players[pi], playerIndex: pi, ...result };
+  }
+  return null;
+}
+
+function commitUnitLocal(player: PlayerState, instanceId: string): boolean {
+  const found = findUnitInZone(player.zones.alert, instanceId);
+  if (found) {
+    player.zones.alert.splice(found.index, 1);
+    player.zones.reserve.push(found.stack);
+    return true;
+  }
+  return false;
+}
+
+function readyUnitLocal(player: PlayerState, instanceId: string): boolean {
+  const found = findUnitInZone(player.zones.reserve, instanceId);
+  if (found && !found.stack.exhausted) {
+    player.zones.reserve.splice(found.index, 1);
+    player.zones.alert.push(found.stack);
+    return true;
+  }
+  return false;
+}
+
+function exhaustUnitLocal(_player: PlayerState, stack: UnitStack): boolean {
+  if (!stack.exhausted) {
+    stack.exhausted = true;
+    return true;
+  }
+  return false;
+}
+
+/** Get all face-up alert units for a player */
+function getAlertUnits(
+  player: PlayerState,
+): { stack: UnitStack; def: CardDef; instanceId: string }[] {
+  const results: { stack: UnitStack; def: CardDef; instanceId: string }[] = [];
+  for (const stack of player.zones.alert) {
+    const top = stack.cards[0];
+    if (top?.faceUp) {
+      const def = getCardDef(top.defId);
+      if (def && (def.type === "personnel" || def.type === "ship")) {
+        results.push({ stack, def, instanceId: top.instanceId });
+      }
+    }
+  }
+  return results;
+}
+
+/** Remove a unit from play entirely, returning the stack if found */
+function removeUnitFromPlay(
+  player: PlayerState,
+  instanceId: string,
+): { stack: UnitStack; zone: "alert" | "reserve" } | null {
+  const result = findUnitInAnyZone(player, instanceId);
+  if (!result) return null;
+  const zone = result.zone === "alert" ? player.zones.alert : player.zones.reserve;
+  zone.splice(result.index, 1);
+  return { stack: result.stack as UnitStack, zone: result.zone };
+}
+
+/** Find the best target personnel/ship for an AI to target (opponent's highest power) */
+function pickBestOpponentUnit(
+  state: GameState,
+  playerIndex: number,
+  filter?: (def: CardDef) => boolean,
+): string | undefined {
+  const opponentIdx = 1 - playerIndex;
+  const opponent = state.players[opponentIdx];
+  let best: { instanceId: string; power: number } | null = null;
+  for (const stack of opponent.zones.alert) {
+    const top = stack.cards[0];
+    if (!top?.faceUp) continue;
+    const def = getCardDef(top.defId);
+    if (!def || (def.type !== "personnel" && def.type !== "ship")) continue;
+    if (filter && !filter(def)) continue;
+    const power = def.power ?? 0;
+    if (!best || power > best.power) {
+      best = { instanceId: top.instanceId, power };
+    }
+  }
+  return best?.instanceId;
+}
+
+/** Get the linked mission handler for a unit stack */
+function getLinkedMissionHandlers(
+  unitStack: UnitStack,
+): { card: CardInstance; def: CardDef; handler: MissionAbilityHandler }[] {
+  const results: { card: CardInstance; def: CardDef; handler: MissionAbilityHandler }[] = [];
+  for (const mc of unitStack.linkedMissions ?? []) {
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (handler) results.push({ card: mc, def, handler });
+  }
+  return results;
+}
+
+function shuffle(arr: CardInstance[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+// ============================================================
+// ONE-SHOT MISSION REGISTRATIONS
+// ============================================================
+
+// BSG1-056 Accused — Target personnel gains Cylon trait until end of turn
+register("accused", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    // AI picks opponent's best non-Cylon personnel
+    const opIdx = 1 - playerIndex;
+    const target = pickBestOpponentUnit(
+      state,
+      playerIndex,
+      (d) => d.type === "personnel" && !d.traits?.includes("Cylon" as Trait),
+    );
+    if (target) {
+      const owner = findUnitOwner(state, target);
+      if (owner) {
+        const p = state.players[owner.playerIndex];
+        if (!p.temporaryTraitGrants) p.temporaryTraitGrants = {};
+        if (!p.temporaryTraitGrants[target]) p.temporaryTraitGrants[target] = [];
+        p.temporaryTraitGrants[target].push("Cylon" as Trait);
+        const def = getCardDef(owner.stack.cards[0].defId);
+        log.push(`Accused: ${helpers.cardName(def)} gains Cylon trait.`);
+      }
+    } else {
+      log.push("Accused: no valid target.");
+    }
+  },
+});
+
+// BSG1-057 Alert Five — Ready all Fighters
+register("alert-five", {
+  category: "one-shot",
+  onResolve(state, _playerIndex, _targetId, log) {
+    let count = 0;
+    for (const p of state.players) {
+      const toReady: UnitStack[] = [];
+      const remaining: UnitStack[] = [];
+      for (const stack of p.zones.reserve) {
+        const top = stack.cards[0];
+        if (top?.faceUp) {
+          const def = getCardDef(top.defId);
+          if (def?.traits?.includes("Fighter" as Trait)) {
+            toReady.push(stack);
+            count++;
+            continue;
+          }
+        }
+        remaining.push(stack);
+      }
+      p.zones.reserve = remaining;
+      p.zones.alert.push(...toReady);
+    }
+    log.push(`Alert Five: readied ${count} Fighter(s).`);
+  },
+});
+
+// BSG1-058 Arrow Of Apollo — Search deck for any card, put in hand
+register("arrow-of-apollo", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    if (player.deck.length === 0) {
+      log.push("Arrow Of Apollo: deck empty.");
+      return;
+    }
+    // AI picks highest mystic value card
+    let bestIdx = 0;
+    let bestMystic = 0;
+    for (let i = 0; i < player.deck.length; i++) {
+      const def = getCardDef(player.deck[i].defId);
+      if ((def?.mysticValue ?? 0) > bestMystic) {
+        bestMystic = def?.mysticValue ?? 0;
+        bestIdx = i;
+      }
+    }
+    const [card] = player.deck.splice(bestIdx, 1);
+    player.hand.push(card);
+    shuffle(player.deck);
+    log.push(`Arrow Of Apollo: searched deck, put a card into hand.`);
+  },
+});
+
+// BSG1-059 Article 23 — Each player: sacrifice personnel OR lose 2 influence
+register("article-23", {
+  category: "one-shot",
+  onResolve(state, _playerIndex, _targetId, log) {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      const pLabel = `Player ${pi + 1}`;
+      // Find cheapest alert personnel to sacrifice
+      let cheapestId: string | undefined;
+      let cheapestPower = Infinity;
+      for (const stack of p.zones.alert) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel" && (def.power ?? 0) < cheapestPower) {
+          cheapestPower = def.power ?? 0;
+          cheapestId = top.instanceId;
+        }
+      }
+      if (cheapestId) {
+        helpers.defeatUnit(p, cheapestId, log, state, pi);
+        log.push(`Article 23: ${pLabel} sacrifices a personnel.`);
+      } else {
+        helpers.applyInfluenceLoss(state, pi, 2, log, helpers.bases);
+        log.push(`Article 23: ${pLabel} loses 2 influence.`);
+      }
+    }
+  },
+});
+
+// BSG1-060 Based On Scriptures — Gain 5 influence
+register("based-on-scriptures", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    state.players[playerIndex].influence += 5;
+    log.push(
+      `Based On Scriptures: gain 5 influence. (Now ${state.players[playerIndex].influence})`,
+    );
+  },
+});
+
+// BSG1-062 Colonial Day — Ready all Civilian units
+register("colonial-day", {
+  category: "one-shot",
+  onResolve(state, _playerIndex, _targetId, log) {
+    let count = 0;
+    for (const p of state.players) {
+      const toReady: UnitStack[] = [];
+      const remaining: UnitStack[] = [];
+      for (const stack of p.zones.reserve) {
+        const top = stack.cards[0];
+        if (top?.faceUp) {
+          const def = getCardDef(top.defId);
+          if (
+            def?.traits?.includes("Civilian" as Trait) &&
+            (def.type === "personnel" || def.type === "ship")
+          ) {
+            toReady.push(stack);
+            count++;
+            continue;
+          }
+        }
+        remaining.push(stack);
+      }
+      p.zones.reserve = remaining;
+      p.zones.alert.push(...toReady);
+    }
+    log.push(`Colonial Day: readied ${count} Civilian unit(s).`);
+  },
+});
+
+// BSG1-066 Earn Freedom Points — Gain 1 influence per Civilian unit or Civilian mission you control
+register("earn-freedom-points", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    let count = 0;
+    // Count Civilian units
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.traits?.includes("Civilian" as Trait)) count++;
+      }
+    }
+    // Count Civilian persistent missions
+    for (const mc of player.zones.persistentMissions ?? []) {
+      const def = getCardDef(mc.defId);
+      if (def?.traits?.includes("Civilian" as Trait)) count++;
+    }
+    player.influence += count;
+    log.push(`Earn Freedom Points: gain ${count} influence. (Now ${player.influence})`);
+  },
+});
+
+// BSG1-067 Earn Your Wings — Ready all Pilots
+register("earn-your-wings", {
+  category: "one-shot",
+  onResolve(state, _playerIndex, _targetId, log) {
+    let count = 0;
+    for (const p of state.players) {
+      const toReady: UnitStack[] = [];
+      const remaining: UnitStack[] = [];
+      for (const stack of p.zones.reserve) {
+        const top = stack.cards[0];
+        if (top?.faceUp) {
+          const def = getCardDef(top.defId);
+          if (def?.traits?.includes("Pilot" as Trait)) {
+            toReady.push(stack);
+            count++;
+            continue;
+          }
+        }
+        remaining.push(stack);
+      }
+      p.zones.reserve = remaining;
+      p.zones.alert.push(...toReady);
+    }
+    log.push(`Earn Your Wings: readied ${count} Pilot(s).`);
+  },
+});
+
+// BSG1-069 Formal Dress Function — Commit all Officers
+register("formal-dress-function", {
+  category: "one-shot",
+  onResolve(state, _playerIndex, _targetId, log) {
+    let count = 0;
+    for (const p of state.players) {
+      const toCommit: UnitStack[] = [];
+      const remaining: UnitStack[] = [];
+      for (const stack of p.zones.alert) {
+        const top = stack.cards[0];
+        if (top?.faceUp) {
+          const def = getCardDef(top.defId);
+          if (def?.traits?.includes("Officer" as Trait)) {
+            toCommit.push(stack);
+            count++;
+            continue;
+          }
+        }
+        remaining.push(stack);
+      }
+      p.zones.alert = remaining;
+      p.zones.reserve.push(...toCommit);
+    }
+    log.push(`Formal Dress Function: committed ${count} Officer(s).`);
+  },
+});
+
+// BSG1-070 Full Scale Assault — All your units get +1 power (phase-scoped)
+register("full-scale-assault", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    let count = 0;
+    for (const stack of player.zones.alert) {
+      const top = stack.cards[0];
+      if (top?.faceUp) {
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel" || def?.type === "ship") {
+          helpers.applyPowerBuff(state, top.instanceId, 1, log);
+          count++;
+        }
+      }
+    }
+    log.push(`Full Scale Assault: ${count} unit(s) get +1 power.`);
+  },
+});
+
+// BSG1-072 Green: You're A Normal Human — Bounce Cylon unit to hand, owner gains 2
+register("green-normal-human", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    // Target any Cylon unit (prefer opponent's)
+    const target = pickBestOpponentUnit(
+      state,
+      playerIndex,
+      (d) => d.traits?.includes("Cylon" as Trait) === true,
+    );
+    if (target) {
+      const owner = findUnitOwner(state, target);
+      if (owner) {
+        const def = getCardDef(owner.stack.cards[0].defId);
+        const removed = removeUnitFromPlay(owner.player, target);
+        if (removed) {
+          for (const card of removed.stack.cards) {
+            owner.player.hand.push(card);
+          }
+        }
+        owner.player.influence += 2;
+        log.push(
+          `Green: ${helpers.cardName(def)} returned to hand. Player ${owner.playerIndex + 1} gains 2 influence.`,
+        );
+      }
+    } else {
+      log.push("Green: no valid Cylon target.");
+    }
+  },
+});
+
+// BSG1-073 Hand Of God — Draw 2 cards
+register("hand-of-god", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    helpers.drawCards(state.players[playerIndex], 2, log, `Player ${playerIndex + 1}`);
+    log.push("Hand Of God: draw 2 cards.");
+  },
+});
+
+// BSG1-074 Hunt For Tylium — Put a supply card from hand to resource area
+register("hunt-for-tylium", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    if (player.hand.length === 0) {
+      log.push("Hunt For Tylium: no cards in hand.");
+      return;
+    }
+    // AI picks lowest mystic value card from hand
+    let worstIdx = 0;
+    let worstMystic = Infinity;
+    for (let i = 0; i < player.hand.length; i++) {
+      const def = getCardDef(player.hand[i].defId);
+      if ((def?.mysticValue ?? 0) < worstMystic) {
+        worstMystic = def?.mysticValue ?? 0;
+        worstIdx = i;
+      }
+    }
+    const [card] = player.hand.splice(worstIdx, 1);
+    card.faceUp = false; // supply cards are face-down
+    // Add as supply to base (first resource stack)
+    if (player.zones.resourceStacks.length > 0) {
+      player.zones.resourceStacks[0].supplyCards.push(card);
+    }
+    log.push("Hunt For Tylium: played a supply card from hand.");
+  },
+});
+
+// BSG1-077 Investigation — Put target personnel on top of owner's deck; that player loses 2 influence
+register("investigation", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    // AI targets opponent's best personnel
+    const target = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
+    if (target) {
+      const owner = findUnitOwner(state, target);
+      if (owner) {
+        const def = getCardDef(owner.stack.cards[0].defId);
+        const removed = removeUnitFromPlay(owner.player, target);
+        if (removed) {
+          // Put cards on top of deck (top card first)
+          for (const card of removed.stack.cards) {
+            owner.player.deck.unshift(card);
+          }
+        }
+        helpers.applyInfluenceLoss(state, owner.playerIndex, 2, log, helpers.bases);
+        log.push(
+          `Investigation: ${helpers.cardName(def)} put on top of deck. Player ${owner.playerIndex + 1} loses 2 influence.`,
+        );
+      }
+    } else {
+      log.push("Investigation: no valid target.");
+    }
+  },
+});
+
+// BSG1-078 Kobol's Last Gleaming — Shuffle target personnel into owner's deck
+register("kobols-last-gleaming", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const target = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
+    if (target) {
+      const owner = findUnitOwner(state, target);
+      if (owner) {
+        const def = getCardDef(owner.stack.cards[0].defId);
+        const removed = removeUnitFromPlay(owner.player, target);
+        if (removed) {
+          for (const card of removed.stack.cards) {
+            owner.player.deck.push(card);
+          }
+          shuffle(owner.player.deck);
+        }
+        log.push(`Kobol's Last Gleaming: ${helpers.cardName(def)} shuffled into deck.`);
+      }
+    } else {
+      log.push("Kobol's Last Gleaming: no valid target.");
+    }
+  },
+});
+
+// BSG1-079 Life Has A Melody — Search deck for Cylon card, put in hand
+register("life-has-a-melody", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    // Find best Cylon card in deck
+    let bestIdx = -1;
+    let bestMystic = -1;
+    for (let i = 0; i < player.deck.length; i++) {
+      const def = getCardDef(player.deck[i].defId);
+      if (def?.traits?.includes("Cylon" as Trait) && (def.mysticValue ?? 0) > bestMystic) {
+        bestMystic = def.mysticValue ?? 0;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx >= 0) {
+      const [card] = player.deck.splice(bestIdx, 1);
+      player.hand.push(card);
+      shuffle(player.deck);
+      log.push("Life Has A Melody: found a Cylon card, put into hand.");
+    } else {
+      shuffle(player.deck);
+      log.push("Life Has A Melody: no Cylon card found in deck.");
+    }
+  },
+});
+
+// BSG1-080 Meet The New Boss — Exchange personnel in hand with same-power personnel you control (errata)
+register("meet-the-new-boss", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    // Find a personnel in hand and a personnel in play with same power
+    for (let hi = 0; hi < player.hand.length; hi++) {
+      const handDef = getCardDef(player.hand[hi].defId);
+      if (handDef?.type !== "personnel") continue;
+      for (const zone of [player.zones.alert, player.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const playDef = getCardDef(top.defId);
+          if (playDef?.type !== "personnel") continue;
+          if ((playDef.power ?? 0) === (handDef.power ?? 0)) {
+            // Exchange: hand card replaces the unit stack (errata says exchange with stack)
+            const handCard = player.hand.splice(hi, 1)[0];
+            const playCards = stack.cards.splice(0, stack.cards.length);
+            stack.cards.push(handCard);
+            for (const c of playCards) player.hand.push(c);
+            log.push(
+              `Meet The New Boss: exchanged ${helpers.cardName(handDef)} with ${helpers.cardName(playDef)}.`,
+            );
+            return;
+          }
+        }
+      }
+    }
+    log.push("Meet The New Boss: no valid exchange found.");
+  },
+});
+
+// BSG1-083 Obliterate The Base — Defeat target asset with no supply cards
+register("obliterate-the-base", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const opIdx = 1 - playerIndex;
+    const opponent = state.players[opIdx];
+    // Find an asset (non-base resource stack) with no supply cards
+    for (let i = 1; i < opponent.zones.resourceStacks.length; i++) {
+      const stack = opponent.zones.resourceStacks[i];
+      if (stack.supplyCards.length === 0) {
+        opponent.zones.resourceStacks.splice(i, 1);
+        opponent.discard.push(stack.topCard);
+        log.push("Obliterate The Base: defeated target asset.");
+        return;
+      }
+    }
+    log.push("Obliterate The Base: no valid asset target.");
+  },
+});
+
+// BSG1-084 Overtime — Ready all ships you control
+register("overtime", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    let count = 0;
+    const toReady: UnitStack[] = [];
+    const remaining: UnitStack[] = [];
+    for (const stack of player.zones.reserve) {
+      const top = stack.cards[0];
+      if (top?.faceUp) {
+        const def = getCardDef(top.defId);
+        if (def?.type === "ship") {
+          toReady.push(stack);
+          count++;
+          continue;
+        }
+      }
+      remaining.push(stack);
+    }
+    player.zones.reserve = remaining;
+    player.zones.alert.push(...toReady);
+    log.push(`Overtime: readied ${count} ship(s).`);
+  },
+});
+
+// BSG1-086 Picking Sides — Choose singular personnel; opponents sacrifice same-title personnel
+register("picking-sides", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    // Find a singular personnel we control (has title)
+    let chosenTitle: string | undefined;
+    for (const stack of player.zones.alert) {
+      const top = stack.cards[0];
+      if (!top?.faceUp) continue;
+      const def = getCardDef(top.defId);
+      if (def?.type === "personnel" && def.title) {
+        chosenTitle = def.title;
+        break;
+      }
+    }
+    if (!chosenTitle) {
+      log.push("Picking Sides: no singular personnel to choose.");
+      return;
+    }
+    log.push(`Picking Sides: chose ${chosenTitle}.`);
+    // Opponents sacrifice personnel with same title
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === playerIndex) continue;
+      const p = state.players[pi];
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (def?.type === "personnel" && def.title === chosenTitle) {
+            helpers.defeatUnit(p, top.instanceId, log, state, pi);
+            log.push(`Picking Sides: Player ${pi + 1} sacrifices ${helpers.cardName(def)}.`);
+          }
+        }
+      }
+    }
+  },
+});
+
+// BSG1-087 Press Junket — Gain 2 influence
+register("press-junket", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    state.players[playerIndex].influence += 2;
+    log.push(`Press Junket: gain 2 influence. (Now ${state.players[playerIndex].influence})`);
+  },
+});
+
+// BSG1-088 Pulling Rank — Commit two target personnel
+register("pulling-rank", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    // AI commits opponent's two best alert personnel
+    const opIdx = 1 - playerIndex;
+    const opponent = state.players[opIdx];
+    const targets: string[] = [];
+    const personnel = opponent.zones.alert
+      .filter((s) => {
+        const top = s.cards[0];
+        if (!top?.faceUp) return false;
+        const def = getCardDef(top.defId);
+        return def?.type === "personnel";
+      })
+      .sort((a, b) => {
+        const da = getCardDef(a.cards[0].defId);
+        const db = getCardDef(b.cards[0].defId);
+        return (db?.power ?? 0) - (da?.power ?? 0);
+      });
+    for (let i = 0; i < Math.min(2, personnel.length); i++) {
+      targets.push(personnel[i].cards[0].instanceId);
+    }
+    for (const id of targets) {
+      commitUnitLocal(opponent, id);
+    }
+    log.push(`Pulling Rank: committed ${targets.length} personnel.`);
+  },
+});
+
+// BSG1-089 Red: You're An Evil Cylon — Bounce Cylon unit to hand; owner loses 2 influence
+register("red-evil-cylon", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const target = pickBestOpponentUnit(
+      state,
+      playerIndex,
+      (d) => d.traits?.includes("Cylon" as Trait) === true,
+    );
+    if (target) {
+      const owner = findUnitOwner(state, target);
+      if (owner) {
+        const def = getCardDef(owner.stack.cards[0].defId);
+        const removed = removeUnitFromPlay(owner.player, target);
+        if (removed) {
+          for (const card of removed.stack.cards) owner.player.hand.push(card);
+        }
+        helpers.applyInfluenceLoss(state, owner.playerIndex, 2, log, helpers.bases);
+        log.push(
+          `Red: ${helpers.cardName(def)} returned to hand. Player ${owner.playerIndex + 1} loses 2 influence.`,
+        );
+      }
+    } else {
+      log.push("Red: no valid Cylon target.");
+    }
+  },
+});
+
+// BSG1-090 Refueling Operation — Shuffle discard pile into deck
+register("refueling-operation", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    player.deck.push(...player.discard);
+    player.discard = [];
+    shuffle(player.deck);
+    log.push("Refueling Operation: shuffled discard pile into deck.");
+  },
+});
+
+// BSG1-091 Relieved Of Duty — Return target alert personnel to owner's hand
+register("relieved-of-duty", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const target = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
+    if (target) {
+      const owner = findUnitOwner(state, target);
+      if (owner && owner.zone === "alert") {
+        const def = getCardDef(owner.stack.cards[0].defId);
+        const removed = removeUnitFromPlay(owner.player, target);
+        if (removed) {
+          for (const card of removed.stack.cards) owner.player.hand.push(card);
+        }
+        log.push(`Relieved Of Duty: ${helpers.cardName(def)} returned to hand.`);
+      }
+    } else {
+      log.push("Relieved Of Duty: no valid target.");
+    }
+  },
+});
+
+// BSG1-092 Shuttle Diplomacy — Gain 3 influence
+register("shuttle-diplomacy", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    state.players[playerIndex].influence += 3;
+    log.push(`Shuttle Diplomacy: gain 3 influence. (Now ${state.players[playerIndex].influence})`);
+  },
+});
+
+// BSG1-094 Suspicions — Target player loses 2 influence
+register("suspicions", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const opIdx = 1 - playerIndex;
+    helpers.applyInfluenceLoss(state, opIdx, 2, log, helpers.bases);
+    log.push(`Suspicions: Player ${opIdx + 1} loses 2 influence.`);
+  },
+});
+
+// BSG1-095 Trying Times — Gain 1 influence per alert Politician in play
+register("trying-times", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    let count = 0;
+    for (const p of state.players) {
+      for (const stack of p.zones.alert) {
+        const top = stack.cards[0];
+        if (top?.faceUp) {
+          const def = getCardDef(top.defId);
+          if (def?.traits?.includes("Politician" as Trait)) count++;
+        }
+      }
+    }
+    state.players[playerIndex].influence += count;
+    log.push(
+      `Trying Times: ${count} alert Politician(s) → gain ${count} influence. (Now ${state.players[playerIndex].influence})`,
+    );
+  },
+});
+
+// BSG1-097 Working Together — Ready all Politicians
+register("working-together", {
+  category: "one-shot",
+  onResolve(state, _playerIndex, _targetId, log) {
+    let count = 0;
+    for (const p of state.players) {
+      const toReady: UnitStack[] = [];
+      const remaining: UnitStack[] = [];
+      for (const stack of p.zones.reserve) {
+        const top = stack.cards[0];
+        if (top?.faceUp) {
+          const def = getCardDef(top.defId);
+          if (def?.traits?.includes("Politician" as Trait)) {
+            toReady.push(stack);
+            count++;
+            continue;
+          }
+        }
+        remaining.push(stack);
+      }
+      p.zones.reserve = remaining;
+      p.zones.alert.push(...toReady);
+    }
+    log.push(`Working Together: readied ${count} Politician(s).`);
+  },
+});
+
+// BSG2-046 Assassination — Commit+exhaust own personnel → defeat target personnel
+register("assassination", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    // Find cheapest own alert personnel to commit+exhaust
+    let sourceId: string | undefined;
+    let sourcePower = Infinity;
+    for (const stack of player.zones.alert) {
+      const top = stack.cards[0];
+      if (!top?.faceUp || stack.exhausted) continue;
+      const def = getCardDef(top.defId);
+      if (def?.type === "personnel" && (def.power ?? 0) < sourcePower) {
+        sourcePower = def.power ?? 0;
+        sourceId = top.instanceId;
+      }
+    }
+    if (!sourceId) {
+      log.push("Assassination: no personnel to commit.");
+      return;
+    }
+    // Target opponent's best personnel
+    const targetId = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
+    if (!targetId) {
+      log.push("Assassination: no target personnel.");
+      return;
+    }
+    // Commit and exhaust source
+    const sourceFound = findUnitInZone(player.zones.alert, sourceId);
+    if (sourceFound) {
+      sourceFound.stack.exhausted = true;
+      commitUnitLocal(player, sourceId);
+    }
+    // Defeat target
+    const targetOwner = findUnitOwner(state, targetId);
+    if (targetOwner) {
+      const def = getCardDef(targetOwner.stack.cards[0].defId);
+      helpers.defeatUnit(targetOwner.player, targetId, log, state, targetOwner.playerIndex);
+      log.push(`Assassination: defeated ${helpers.cardName(def)}.`);
+    }
+  },
+});
+
+// BSG2-061 False Peace — DEFERRED (no-op)
+register("false-peace", {
+  category: "one-shot",
+  onResolve(_state, _playerIndex, _targetId, log) {
+    log.push("False Peace resolved (effect not yet implemented).");
+  },
+});
+
+// BSG2-077 The Hunters — Defeat target mission with Link keyword
+register("the-hunters", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const opIdx = 1 - playerIndex;
+    const opponent = state.players[opIdx];
+    // Find a linked mission on any of opponent's units
+    for (const zone of [opponent.zones.alert, opponent.zones.reserve]) {
+      for (const stack of zone) {
+        if (stack.linkedMissions && stack.linkedMissions.length > 0) {
+          const mission = stack.linkedMissions.shift()!;
+          opponent.discard.push(mission);
+          const def = getCardDef(mission.defId);
+          log.push(
+            `The Hunters: defeated linked mission ${def ? helpers.cardName(def) : "unknown"}.`,
+          );
+          return;
+        }
+      }
+    }
+    log.push("The Hunters: no Link mission found to defeat.");
+  },
+});
+
+// BSG2-078 Thinking Outside The Box — Defeat target asset with no supply cards
+register("thinking-outside-box", {
+  category: "one-shot",
+  onResolve(state, playerIndex, _targetId, log) {
+    const opIdx = 1 - playerIndex;
+    const opponent = state.players[opIdx];
+    for (let i = 1; i < opponent.zones.resourceStacks.length; i++) {
+      const stack = opponent.zones.resourceStacks[i];
+      if (stack.supplyCards.length === 0) {
+        opponent.zones.resourceStacks.splice(i, 1);
+        opponent.discard.push(stack.topCard);
+        log.push("Thinking Outside The Box: defeated target asset.");
+        return;
+      }
+    }
+    log.push("Thinking Outside The Box: no valid asset target.");
+  },
+});
+
+// ============================================================
+// PERSISTENT MISSION REGISTRATIONS
+// ============================================================
+
+// --- Passive Power Buffs ---
+
+// BSG1-061 CAG — All ships you control get +1 power
+register("cag", {
+  category: "persistent",
+  getPowerModifier(state, unitStack, ownerIndex, _context) {
+    const top = unitStack.cards[0];
+    if (!top) return 0;
+    const unitDef = getCardDef(top.defId);
+    if (unitDef?.type !== "ship") return 0;
+    // Check if ownerIndex has this persistent mission
+    const player = state.players[ownerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "cag",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// BSG1-075 Increased Loadout — All Fighters get +1 power
+register("increased-loadout", {
+  category: "persistent",
+  getPowerModifier(state, unitStack, ownerIndex, _context) {
+    const top = unitStack.cards[0];
+    if (!top) return 0;
+    const unitDef = getCardDef(top.defId);
+    if (!unitDef?.traits?.includes("Fighter" as Trait)) return 0;
+    const player = state.players[ownerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "increased-loadout",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// BSG1-093 Stern Leadership — All Pilots get +1 power
+register("stern-leadership", {
+  category: "persistent",
+  getPowerModifier(state, unitStack, ownerIndex, _context) {
+    const top = unitStack.cards[0];
+    if (!top) return 0;
+    const unitDef = getCardDef(top.defId);
+    if (!unitDef?.traits?.includes("Pilot" as Trait)) return 0;
+    const player = state.players[ownerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "stern-leadership",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// BSG2-049 Caprican Ideals — All Civilian units get +1 power
+register("caprican-ideals", {
+  category: "persistent",
+  getPowerModifier(state, unitStack, ownerIndex, _context) {
+    const top = unitStack.cards[0];
+    if (!top) return 0;
+    const unitDef = getCardDef(top.defId);
+    if (!unitDef?.traits?.includes("Civilian" as Trait)) return 0;
+    const player = state.players[ownerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "caprican-ideals",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// --- Fleet Defense Modifiers ---
+
+// BSG1-085 Persistent Assault — Fleet defense -2
+register("persistent-assault", {
+  category: "persistent",
+  fleetDefenseModifier: -2,
+});
+
+// BSG2-052 Coming Out To Fight — Fleet defense +4
+register("coming-out-to-fight", {
+  category: "persistent",
+  fleetDefenseModifier: 4,
+});
+
+// --- Cylon Threat Modifier ---
+
+// BSG2-055 Cylon Ambush — All Cylon threats get +1 power
+register("cylon-ambush", {
+  category: "persistent",
+  cylonThreatBonus: 1,
+});
+
+// --- Keyword Grants ---
+
+// BSG2-073 Ram The Ship — All ships you control gain Scramble
+register("ram-the-ship", {
+  category: "persistent",
+  getKeywordGrants(state, unitStack, ownerIndex) {
+    const top = unitStack.cards[0];
+    if (!top) return [];
+    const unitDef = getCardDef(top.defId);
+    if (unitDef?.type !== "ship") return [];
+    const player = state.players[ownerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "ram-the-ship",
+    );
+    return has ? ["Scramble"] : [];
+  },
+});
+
+// BSG2-075 Sam Battery — All personnel you control gain Scramble
+register("sam-battery", {
+  category: "persistent",
+  getKeywordGrants(state, unitStack, ownerIndex) {
+    const top = unitStack.cards[0];
+    if (!top) return [];
+    const unitDef = getCardDef(top.defId);
+    if (unitDef?.type !== "personnel") return [];
+    const player = state.players[ownerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "sam-battery",
+    );
+    return has ? ["Scramble"] : [];
+  },
+});
+
+// --- Defeat Prevention ---
+
+// BSG1-068 Flight School — When ship you control would be defeated, sacrifice this instead
+register("flight-school", {
+  category: "persistent",
+  interceptDefeat(state, playerIndex, unitType, _unitInstanceId, log) {
+    if (unitType !== "ship") return false;
+    const player = state.players[playerIndex];
+    const missions = player.zones.persistentMissions ?? [];
+    const idx = missions.findIndex((m) => getCardDef(m.defId)?.abilityId === "flight-school");
+    if (idx < 0) return false;
+    const [mission] = missions.splice(idx, 1);
+    player.discard.push(mission);
+    log.push("Flight School: sacrificed to prevent ship defeat.");
+    return true;
+  },
+});
+
+// BSG1-081 Misdirection — When personnel you control would be defeated, sacrifice this instead
+register("misdirection", {
+  category: "persistent",
+  interceptDefeat(state, playerIndex, unitType, _unitInstanceId, log) {
+    if (unitType !== "personnel") return false;
+    const player = state.players[playerIndex];
+    const missions = player.zones.persistentMissions ?? [];
+    const idx = missions.findIndex((m) => getCardDef(m.defId)?.abilityId === "misdirection");
+    if (idx < 0) return false;
+    const [mission] = missions.splice(idx, 1);
+    player.discard.push(mission);
+    log.push("Misdirection: sacrificed to prevent personnel defeat.");
+    return true;
+  },
+});
+
+// --- Triggered ---
+
+// BSG1-065 Dradis Contact — Each time you play event, may gain 1 influence
+register("dradis-contact", {
+  category: "persistent",
+  onEventPlay(state, playerIndex, log) {
+    const player = state.players[playerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "dradis-contact",
+    );
+    if (has) {
+      player.influence += 1;
+      log.push(`Dradis Contact: gain 1 influence for playing event. (Now ${player.influence})`);
+    }
+  },
+});
+
+// BSG1-071 God Has A Plan — Cylon card mystic reveal +1
+register("god-has-a-plan", {
+  category: "persistent",
+  onMysticReveal(state, playerIndex, value, cardDef) {
+    const player = state.players[playerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "god-has-a-plan",
+    );
+    if (has && cardDef.traits?.includes("Cylon" as Trait)) {
+      return value + 1;
+    }
+    return value;
+  },
+});
+
+// BSG1-082 Multiple Contacts — At ready phase start, draw 1 card
+register("multiple-contacts", {
+  category: "persistent",
+  onReadyPhaseStart(state, playerIndex, log) {
+    const player = state.players[playerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "multiple-contacts",
+    );
+    if (has) {
+      helpers.drawCards(player, 1, log, `Player ${playerIndex + 1}`);
+      log.push("Multiple Contacts: draw 1 card at ready phase start.");
+    }
+  },
+});
+
+// BSG2-079 Tightening The Noose — Each card drawn in execution phase → discard one
+register("tightening-the-noose", {
+  category: "persistent",
+  onDraw(state, playerIndex, drawCount, log) {
+    if (state.phase !== "execution") return;
+    // Check if ANY player has this persistent mission
+    let active = false;
+    for (const p of state.players) {
+      if (
+        (p.zones.persistentMissions ?? []).some(
+          (m) => getCardDef(m.defId)?.abilityId === "tightening-the-noose",
+        )
+      ) {
+        active = true;
+        break;
+      }
+    }
+    if (!active) return;
+    const player = state.players[playerIndex];
+    // Discard N cards (lowest mystic value)
+    for (let i = 0; i < drawCount && player.hand.length > 0; i++) {
+      let worstIdx = 0;
+      let worstMystic = Infinity;
+      for (let j = 0; j < player.hand.length; j++) {
+        const def = getCardDef(player.hand[j].defId);
+        if ((def?.mysticValue ?? 0) < worstMystic) {
+          worstMystic = def?.mysticValue ?? 0;
+          worstIdx = j;
+        }
+      }
+      const [card] = player.hand.splice(worstIdx, 1);
+      player.discard.push(card);
+    }
+    log.push(`Tightening The Noose: Player ${playerIndex + 1} discards ${drawCount} card(s).`);
+  },
+});
+
+// --- Activated ---
+
+// BSG1-076 Interim Quorum — Commit+exhaust Politician → target other personnel +3 power
+register("interim-quorum", {
+  category: "persistent",
+  activation: {
+    cost: "commit-exhaust-politician",
+    usableIn: ["execution", "challenge", "cylon-challenge"],
+    getTargets(state, playerIndex, _sourceId) {
+      // Find a Politician to commit+exhaust
+      const player = state.players[playerIndex];
+      const hasPolitician = player.zones.alert.some((s) => {
+        const top = s.cards[0];
+        if (!top?.faceUp || s.exhausted) return false;
+        const def = getCardDef(top.defId);
+        return def?.traits?.includes("Politician" as Trait);
+      });
+      if (!hasPolitician) return [];
+      // Targets: any other alert personnel
+      const targets: string[] = [];
+      for (const p of state.players) {
+        for (const stack of p.zones.alert) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (def?.type === "personnel") targets.push(top.instanceId);
+        }
+      }
+      return targets.length > 0 ? targets : [];
+    },
+    resolve(state, playerIndex, _sourceId, targetId, log) {
+      const player = state.players[playerIndex];
+      // Find cheapest Politician to commit+exhaust
+      let politicianId: string | undefined;
+      let cheapest = Infinity;
+      for (const stack of player.zones.alert) {
+        const top = stack.cards[0];
+        if (!top?.faceUp || stack.exhausted) continue;
+        const def = getCardDef(top.defId);
+        if (def?.traits?.includes("Politician" as Trait) && (def.power ?? 0) < cheapest) {
+          cheapest = def.power ?? 0;
+          politicianId = top.instanceId;
+        }
+      }
+      if (!politicianId) return;
+      const found = findUnitInZone(player.zones.alert, politicianId);
+      if (found) {
+        found.stack.exhausted = true;
+        commitUnitLocal(player, politicianId);
+      }
+      if (targetId) {
+        helpers.applyPowerBuff(state, targetId, 3, log);
+        log.push("Interim Quorum: target personnel gets +3 power.");
+      }
+    },
+  },
+});
+
+// BSG2-053 Critical Component — Exhaust mission + exhaust resource → extra action + cost reduction by 2
+register("critical-component", {
+  category: "persistent",
+  activation: {
+    cost: "exhaust-mission",
+    usableIn: ["execution"],
+    getTargets(state, playerIndex, _sourceId) {
+      const player = state.players[playerIndex];
+      // Need a non-exhausted resource stack with at least 1 supply card
+      const hasStack = player.zones.resourceStacks.some(
+        (s) => !s.exhausted && s.supplyCards.length > 0,
+      );
+      return hasStack ? null : []; // null = no target needed (auto-select resource stack)
+    },
+    resolve(state, playerIndex, _sourceId, _targetId, log) {
+      const player = state.players[playerIndex];
+      // Find mission and exhaust it
+      const missions = player.zones.persistentMissions ?? [];
+      const mission = missions.find((m) => getCardDef(m.defId)?.abilityId === "critical-component");
+      if (mission) mission.faceUp = false; // exhaust
+      // Exhaust a resource stack with supply cards
+      for (const stack of player.zones.resourceStacks) {
+        if (!stack.exhausted && stack.supplyCards.length > 0) {
+          stack.exhausted = true;
+          break;
+        }
+      }
+      // Grant extra action and cost reduction
+      player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+      player.costReduction = {
+        persuasion: 2,
+        logistics: 2,
+        security: 2,
+      };
+      log.push("Critical Component: extra action granted, next card costs 2 less.");
+    },
+  },
+});
+
+// BSG2-056 Cylon Betrayal — Sacrifice → target player goes first in Cylon phase
+register("cylon-betrayal", {
+  category: "persistent",
+  activation: {
+    cost: "sacrifice-mission",
+    usableIn: ["execution"],
+    getTargets(_state, _playerIndex, _sourceId) {
+      return null; // target is opponent (auto in 2-player)
+    },
+    resolve(state, playerIndex, _sourceId, _targetId, log) {
+      const player = state.players[playerIndex];
+      // Sacrifice this mission
+      const missions = player.zones.persistentMissions ?? [];
+      const idx = missions.findIndex((m) => getCardDef(m.defId)?.abilityId === "cylon-betrayal");
+      if (idx >= 0) {
+        const [mission] = missions.splice(idx, 1);
+        player.discard.push(mission);
+      }
+      // In a 2-player game, the opponent goes first in cylon phase
+      // This is simplified: we just log it (first player determination is complex)
+      log.push("Cylon Betrayal: sacrificed. Target player goes first in next Cylon phase.");
+    },
+  },
+});
+
+// --- Resolve-Only + Persistent ---
+
+// BSG1-063 Combat Air Patrol — On resolve: commit target Pilot, gain 1 influence
+register("combat-air-patrol", {
+  category: "persistent",
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    // Find a Pilot to commit
+    for (const stack of player.zones.alert) {
+      const top = stack.cards[0];
+      if (!top?.faceUp) continue;
+      const def = getCardDef(top.defId);
+      if (def?.traits?.includes("Pilot" as Trait)) {
+        commitUnitLocal(player, top.instanceId);
+        log.push(`Combat Air Patrol: committed ${helpers.cardName(def)}.`);
+        break;
+      }
+    }
+    player.influence += 1;
+    log.push(`Combat Air Patrol: gain 1 influence. (Now ${player.influence})`);
+  },
+});
+
+// --- Special Rule Modifiers ---
+
+// BSG1-064 Difference Of Opinion — Challengers must pay 1 resource per challenge against you
+register("difference-of-opinion", {
+  category: "persistent",
+  challengeCostModifier(state, _challengerIndex, defenderIndex) {
+    const defender = state.players[defenderIndex];
+    const has = (defender.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "difference-of-opinion",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// BSG1-096 We'll See You Again — Cylon units not singular (errata: singular cards don't overlay Cylon stacks)
+register("well-see-you-again", {
+  category: "persistent",
+  preventOverlay(state, playerIndex, unitDef) {
+    const player = state.players[playerIndex];
+    const has = (player.zones.persistentMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "well-see-you-again",
+    );
+    if (!has) return false;
+    // Prevent overlay if the target stack has Cylon trait
+    return unitDef.traits?.includes("Cylon" as Trait) === true;
+  },
+});
+
+// ============================================================
+// LINK MISSION REGISTRATIONS
+// ============================================================
+
+// --- Link Personnel: Passive ---
+
+// BSG2-048 Blackmail — Personnel gains Manipulate
+register("blackmail", {
+  category: "link",
+  linkTarget: "personnel",
+  getKeywordGrants(_state, unitStack, _ownerIndex) {
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "blackmail",
+    );
+    return has ? ["Manipulate"] : [];
+  },
+});
+
+// BSG2-050 Caprican Supplies — Personnel +1 power
+register("caprican-supplies", {
+  category: "link",
+  linkTarget: "personnel",
+  getPowerModifier(_state, unitStack, _ownerIndex, _context) {
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "caprican-supplies",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// BSG2-057 Damning Evidence — Personnel can't challenge
+register("damning-evidence", {
+  category: "link",
+  linkTarget: "personnel",
+  canChallenge: false,
+});
+
+// BSG2-064 Independent Tribunal — Units power ≤2 can't defend against this personnel
+// (Handled in engine's defender filter via special check)
+register("independent-tribunal", {
+  category: "link",
+  linkTarget: "personnel",
+});
+
+// BSG2-080 To Your Ships — Personnel gains Scramble
+register("to-your-ships", {
+  category: "link",
+  linkTarget: "personnel",
+  getKeywordGrants(_state, unitStack, _ownerIndex) {
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "to-your-ships",
+    );
+    return has ? ["Scramble"] : [];
+  },
+});
+
+// --- Link Personnel: Activated ---
+
+// BSG2-045 Are You Alive? — Commit: target unit -2 power
+register("are-you-alive", {
+  category: "link",
+  linkTarget: "personnel",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution", "challenge", "cylon-challenge"],
+    getTargets(state, playerIndex, _sourceId) {
+      // Target any unit
+      const targets: string[] = [];
+      for (const p of state.players) {
+        for (const stack of [...p.zones.alert, ...p.zones.reserve]) {
+          const top = stack.cards[0];
+          if (top?.faceUp) targets.push(top.instanceId);
+        }
+      }
+      return targets.length > 0 ? targets : [];
+    },
+    resolve(state, playerIndex, sourceId, targetId, log) {
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      if (targetId) {
+        helpers.applyPowerBuff(state, targetId, -2, log);
+        log.push("Are You Alive?: target unit gets -2 power.");
+      }
+    },
+  },
+});
+
+// BSG2-063 In Love With A Machine — Commit: ready target Cylon unit
+register("in-love-with-machine", {
+  category: "link",
+  linkTarget: "personnel",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution"],
+    getTargets(state, playerIndex, _sourceId) {
+      const player = state.players[playerIndex];
+      const targets: string[] = [];
+      for (const stack of player.zones.reserve) {
+        const top = stack.cards[0];
+        if (!top?.faceUp || stack.exhausted) continue;
+        const def = getCardDef(top.defId);
+        if (def?.traits?.includes("Cylon" as Trait)) {
+          targets.push(top.instanceId);
+        }
+      }
+      return targets.length > 0 ? targets : [];
+    },
+    resolve(state, playerIndex, sourceId, targetId, log) {
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      if (targetId) {
+        readyUnitLocal(state.players[playerIndex], targetId);
+        log.push("In Love With A Machine: readied Cylon unit.");
+      }
+    },
+  },
+});
+
+// BSG2-070 Plan B — Commit: ready target mission
+register("plan-b", {
+  category: "link",
+  linkTarget: "personnel",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution"],
+    getTargets(state, playerIndex, _sourceId) {
+      const player = state.players[playerIndex];
+      // Find missions in reserve (committed missions)
+      const targets: string[] = [];
+      for (const stack of player.zones.reserve) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "mission") targets.push(top.instanceId);
+      }
+      return targets.length > 0 ? targets : [];
+    },
+    resolve(state, playerIndex, sourceId, targetId, log) {
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      if (targetId) {
+        readyUnitLocal(state.players[playerIndex], targetId);
+        log.push("Plan B: readied target mission.");
+      }
+    },
+  },
+});
+
+// BSG2-071 Prophetic Visions — Commit: look at top 2 of deck, arrange
+register("prophetic-visions", {
+  category: "link",
+  linkTarget: "unit",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution"],
+    getTargets(_state, _playerIndex, _sourceId) {
+      return null; // targets opponent's deck (auto in 2-player)
+    },
+    resolve(state, playerIndex, sourceId, _targetId, log) {
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      // AI: look at top 2 of opponent's deck, put higher mystic on top
+      const opIdx = 1 - playerIndex;
+      const opponent = state.players[opIdx];
+      if (opponent.deck.length >= 2) {
+        const card0Def = getCardDef(opponent.deck[0].defId);
+        const card1Def = getCardDef(opponent.deck[1].defId);
+        // Put lower mystic on top (worse for opponent)
+        if ((card0Def?.mysticValue ?? 0) > (card1Def?.mysticValue ?? 0)) {
+          [opponent.deck[0], opponent.deck[1]] = [opponent.deck[1], opponent.deck[0]];
+        }
+      }
+      log.push("Prophetic Visions: looked at top 2 cards, rearranged.");
+    },
+  },
+});
+
+// BSG2-074 Rudimentary Still — Commit + exhaust resource → extra action + cost reduction by 1
+register("rudimentary-still", {
+  category: "link",
+  linkTarget: "personnel",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution"],
+    getTargets(state, playerIndex, _sourceId) {
+      const player = state.players[playerIndex];
+      const hasStack = player.zones.resourceStacks.some((s) => !s.exhausted);
+      return hasStack ? null : [];
+    },
+    resolve(state, playerIndex, sourceId, _targetId, log) {
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      const player = state.players[playerIndex];
+      // Exhaust a resource stack
+      for (const stack of player.zones.resourceStacks) {
+        if (!stack.exhausted) {
+          stack.exhausted = true;
+          break;
+        }
+      }
+      player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+      player.costReduction = { persuasion: 1, logistics: 1, security: 1 };
+      log.push("Rudimentary Still: extra action granted, next card costs 1 less.");
+    },
+  },
+});
+
+// BSG2-068 Mysterious Warning — +2 power during Cylon phase
+register("mysterious-warning", {
+  category: "link",
+  linkTarget: "personnel",
+  getPowerModifier(state, unitStack, _ownerIndex, context) {
+    if (context.phase !== "cylon") return 0;
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "mysterious-warning",
+    );
+    return has ? 2 : 0;
+  },
+});
+
+// --- Link Personnel: Triggered ---
+
+// BSG2-062 Hero To The End — When leaves play → controller gains 2 influence
+register("hero-to-the-end", {
+  category: "link",
+  linkTarget: "personnel",
+  onLinkedUnitLeavePlay(state, playerIndex, _unitInstanceId, log) {
+    state.players[playerIndex].influence += 2;
+    log.push(`Hero To The End: gain 2 influence. (Now ${state.players[playerIndex].influence})`);
+  },
+});
+
+// BSG2-069 Nothin' But The Rain — Each time defeats Cylon threat → +1 additional influence
+register("nothin-but-the-rain", {
+  category: "link",
+  linkTarget: "personnel",
+  onCylonThreatDefeat(state, playerIndex, _unitInstanceId, log) {
+    state.players[playerIndex].influence += 1;
+    log.push(
+      `Nothin' But The Rain: +1 additional influence for Cylon defeat. (Now ${state.players[playerIndex].influence})`,
+    );
+  },
+});
+
+// --- Link Ship: Passive ---
+
+// BSG2-058 Deck Crew — Ship +1 power
+register("deck-crew", {
+  category: "link",
+  linkTarget: "ship",
+  getPowerModifier(_state, unitStack, _ownerIndex, _context) {
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "deck-crew",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// BSG2-067 Marine Assault — Ship gains Scramble
+register("marine-assault", {
+  category: "link",
+  linkTarget: "ship",
+  getKeywordGrants(_state, unitStack, _ownerIndex) {
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "marine-assault",
+    );
+    return has ? ["Scramble"] : [];
+  },
+});
+
+// BSG2-072 Raider Swarm — Ship can't challenge
+register("raider-swarm", {
+  category: "link",
+  linkTarget: "ship",
+  canChallenge: false,
+});
+
+// BSG2-076 Teamwork — Ship +2 power during Cylon phase
+register("teamwork", {
+  category: "link",
+  linkTarget: "ship",
+  getPowerModifier(state, unitStack, _ownerIndex, context) {
+    if (context.phase !== "cylon") return 0;
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "teamwork",
+    );
+    return has ? 2 : 0;
+  },
+});
+
+// --- Link Ship: Triggered ---
+
+// BSG2-047 Beyond Insane — When personnel you control defeated → sacrifice this ship instead
+register("beyond-insane", {
+  category: "link",
+  linkTarget: "ship",
+  interceptDefeat(state, playerIndex, unitType, _unitInstanceId, log) {
+    if (unitType !== "personnel") return false;
+    const player = state.players[playerIndex];
+    // Find a unit with beyond-insane linked
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const linked = stack.linkedMissions ?? [];
+        const idx = linked.findIndex((m) => getCardDef(m.defId)?.abilityId === "beyond-insane");
+        if (idx < 0) continue;
+        // Sacrifice the linked mission AND the ship
+        const [mission] = linked.splice(idx, 1);
+        player.discard.push(mission);
+        // Defeat/sacrifice the ship this was linked to
+        const shipId = stack.cards[0]?.instanceId;
+        if (shipId) {
+          helpers.defeatUnit(player, shipId, log, state, playerIndex);
+        }
+        log.push("Beyond Insane: sacrificed ship to prevent personnel defeat.");
+        return true;
+      }
+    }
+    return false;
+  },
+});
+
+// BSG2-059 Drawing Strength From Loss — When personnel defeated by Cylon threat → gain 2 influence
+// (Triggered from engine when personnel is defeated during Cylon phase)
+register("drawing-strength", {
+  category: "link",
+  linkTarget: "ship",
+  // This triggers differently: when ANY of your personnel is defeated by a Cylon threat.
+  // The engine will call fireMissionOnCylonDefeat for this.
+  onCylonThreatDefeat(state, playerIndex, _unitInstanceId, log) {
+    // Check if player has a ship with this linked
+    const player = state.players[playerIndex];
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const has = (stack.linkedMissions ?? []).some(
+          (m) => getCardDef(m.defId)?.abilityId === "drawing-strength",
+        );
+        if (has) {
+          player.influence += 2;
+          log.push(`Drawing Strength From Loss: gain 2 influence. (Now ${player.influence})`);
+          return;
+        }
+      }
+    }
+  },
+});
+
+// --- Link Ship: Activated ---
+
+// BSG2-082 Viral Warfare — Commit ship: target player discards a card
+register("viral-warfare", {
+  category: "link",
+  linkTarget: "ship",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution"],
+    getTargets(_state, _playerIndex, _sourceId) {
+      return null; // opponent (auto in 2-player)
+    },
+    resolve(state, playerIndex, sourceId, _targetId, log) {
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      const opIdx = 1 - playerIndex;
+      const opponent = state.players[opIdx];
+      if (opponent.hand.length > 0) {
+        // Discard lowest mystic value card
+        let worstIdx = 0;
+        let worstMystic = Infinity;
+        for (let i = 0; i < opponent.hand.length; i++) {
+          const def = getCardDef(opponent.hand[i].defId);
+          if ((def?.mysticValue ?? 0) < worstMystic) {
+            worstMystic = def?.mysticValue ?? 0;
+            worstIdx = i;
+          }
+        }
+        const [card] = opponent.hand.splice(worstIdx, 1);
+        opponent.discard.push(card);
+      }
+      log.push("Viral Warfare: opponent discards a card.");
+    },
+  },
+});
+
+// --- Link Unit: Passive ---
+
+// BSG2-054 Cutting Through The Hull — Unit gains Scramble
+register("cutting-through-hull", {
+  category: "link",
+  linkTarget: "unit",
+  getKeywordGrants(_state, unitStack, _ownerIndex) {
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "cutting-through-hull",
+    );
+    return has ? ["Scramble"] : [];
+  },
+});
+
+// BSG2-060 Explosive Rounds — Unit +2 power during Cylon phase
+register("explosive-rounds", {
+  category: "link",
+  linkTarget: "unit",
+  getPowerModifier(state, unitStack, _ownerIndex, context) {
+    if (context.phase !== "cylon") return 0;
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "explosive-rounds",
+    );
+    return has ? 2 : 0;
+  },
+});
+
+// BSG2-065 Instant Acclaim — Unit +1 power
+register("instant-acclaim", {
+  category: "link",
+  linkTarget: "unit",
+  getPowerModifier(_state, unitStack, _ownerIndex, _context) {
+    const has = (unitStack.linkedMissions ?? []).some(
+      (m) => getCardDef(m.defId)?.abilityId === "instant-acclaim",
+    );
+    return has ? 1 : 0;
+  },
+});
+
+// --- Link Unit: Activated ---
+
+// BSG2-051 Clear Your Heads — Commit: exhaust target mission
+register("clear-your-heads", {
+  category: "link",
+  linkTarget: "unit",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution"],
+    getTargets(state, _playerIndex, _sourceId) {
+      // Target any face-up mission (persistent or in alert)
+      const targets: string[] = [];
+      for (const p of state.players) {
+        for (const stack of p.zones.alert) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (def?.type === "mission") targets.push(top.instanceId);
+        }
+      }
+      return targets.length > 0 ? targets : [];
+    },
+    resolve(state, playerIndex, sourceId, targetId, log) {
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      if (targetId) {
+        // Exhaust the target mission
+        for (const p of state.players) {
+          for (const stack of p.zones.alert) {
+            if (stack.cards[0]?.instanceId === targetId) {
+              stack.exhausted = true;
+              log.push("Clear Your Heads: exhausted target mission.");
+              return;
+            }
+          }
+        }
+      }
+    },
+  },
+});
+
+// BSG2-081 Trust The Lords Of Kobol — Commit: skip mystic reveal, target unit gets +X power
+register("trust-the-lords", {
+  category: "link",
+  linkTarget: "unit",
+  activation: {
+    cost: "commit-unit",
+    usableIn: ["execution", "challenge"],
+    getTargets(state, playerIndex, _sourceId) {
+      // Target any of your units
+      const targets: string[] = [];
+      const player = state.players[playerIndex];
+      for (const stack of player.zones.alert) {
+        const top = stack.cards[0];
+        if (top?.faceUp) targets.push(top.instanceId);
+      }
+      return targets.length > 0 ? targets : [];
+    },
+    resolve(state, playerIndex, sourceId, targetId, log) {
+      // Get mystic value before committing
+      const unitStack = findUnitInAnyZone(state.players[playerIndex], sourceId);
+      const sourceDef = unitStack ? getCardDef(unitStack.stack.cards[0]?.defId) : undefined;
+      const mv = sourceDef?.mysticValue ?? 0;
+      commitUnitLocal(state.players[playerIndex], sourceId);
+      if (targetId) {
+        helpers.applyPowerBuff(state, targetId, mv, log);
+        log.push(`Trust The Lords: target unit gets +${mv} power (skip mystic reveal).`);
+      }
+    },
+  },
+});
+
+// --- Link Unit: Triggered ---
+
+// BSG2-066 Last Word — When this unit defeats a challenger → gain influence = power difference
+register("last-word", {
+  category: "link",
+  linkTarget: "unit",
+  onChallengeWin(state, playerIndex, _winnerStack, _loserStack, powerDiff, log) {
+    state.players[playerIndex].influence += Math.max(0, powerDiff);
+    log.push(
+      `Last Word: gain ${Math.max(0, powerDiff)} influence from power difference. (Now ${state.players[playerIndex].influence})`,
+    );
+  },
+});
+
+// ============================================================
+// DISPATCHERS (called by game engine at hook points)
+// ============================================================
+
+// --- Resolve-time ---
+
+export function resolveMissionAbility(
+  abilityId: string,
+  state: GameState,
+  playerIndex: number,
+  targetId: string | undefined,
+  log: string[],
+): void {
+  const handler = registry.get(abilityId);
+  if (!handler?.onResolve) {
+    log.push(`Mission resolved (no effect registered for ${abilityId}).`);
+    return;
+  }
+  handler.onResolve(state, playerIndex, targetId, log);
+}
+
+export function getMissionResolveTargets(
+  abilityId: string,
+  state: GameState,
+  playerIndex: number,
+): string[] | null {
+  const handler = registry.get(abilityId);
+  return handler?.getResolveTargets?.(state, playerIndex) ?? null;
+}
+
+export function canResolveMissionAbility(
+  abilityId: string,
+  state: GameState,
+  playerIndex: number,
+): boolean {
+  const handler = registry.get(abilityId);
+  return handler?.canResolve?.(state, playerIndex) ?? true;
+}
+
+export function getMissionCategory(abilityId: string): "one-shot" | "persistent" | "link" {
+  const handler = registry.get(abilityId);
+  return handler?.category ?? "one-shot";
+}
+
+export function getLinkTargetType(abilityId: string): "personnel" | "ship" | "unit" | undefined {
+  const handler = registry.get(abilityId);
+  return handler?.linkTarget;
+}
+
+// --- Passive modifiers ---
+
+export function computeMissionPowerModifier(
+  state: GameState,
+  unitStack: UnitStack,
+  ownerIndex: number,
+  context: PowerContext,
+): number {
+  let total = 0;
+
+  // Check persistent missions for power modifiers
+  for (const player of state.players) {
+    for (const mc of player.zones.persistentMissions ?? []) {
+      if (!mc.faceUp) continue; // exhausted missions don't contribute
+      const def = getCardDef(mc.defId);
+      if (!def?.abilityId) continue;
+      const handler = registry.get(def.abilityId);
+      if (handler?.getPowerModifier) {
+        total += handler.getPowerModifier(state, unitStack, ownerIndex, context);
+      }
+    }
+  }
+
+  // Check linked missions on this unit
+  for (const mc of unitStack.linkedMissions ?? []) {
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (handler?.getPowerModifier) {
+      total += handler.getPowerModifier(state, unitStack, ownerIndex, context);
+    }
+  }
+
+  return total;
+}
+
+export function computeMissionFleetDefenseModifier(state: GameState): number {
+  let total = 0;
+  for (const player of state.players) {
+    for (const mc of player.zones.persistentMissions ?? []) {
+      if (!mc.faceUp) continue;
+      const def = getCardDef(mc.defId);
+      if (!def?.abilityId) continue;
+      const handler = registry.get(def.abilityId);
+      if (handler?.fleetDefenseModifier) {
+        total += handler.fleetDefenseModifier;
+      }
+    }
+  }
+  return total;
+}
+
+export function computeMissionCylonThreatBonus(state: GameState): number {
+  let total = 0;
+  for (const player of state.players) {
+    for (const mc of player.zones.persistentMissions ?? []) {
+      if (!mc.faceUp) continue;
+      const def = getCardDef(mc.defId);
+      if (!def?.abilityId) continue;
+      const handler = registry.get(def.abilityId);
+      if (handler?.cylonThreatBonus) {
+        total += handler.cylonThreatBonus;
+      }
+    }
+  }
+  return total;
+}
+
+export function getMissionKeywordGrants(
+  state: GameState,
+  unitStack: UnitStack,
+  ownerIndex: number,
+): Keyword[] {
+  const grants: Keyword[] = [];
+
+  // From persistent missions
+  for (const player of state.players) {
+    for (const mc of player.zones.persistentMissions ?? []) {
+      if (!mc.faceUp) continue;
+      const def = getCardDef(mc.defId);
+      if (!def?.abilityId) continue;
+      const handler = registry.get(def.abilityId);
+      if (handler?.getKeywordGrants) {
+        grants.push(...handler.getKeywordGrants(state, unitStack, ownerIndex));
+      }
+    }
+  }
+
+  // From linked missions on this unit
+  for (const mc of unitStack.linkedMissions ?? []) {
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (handler?.getKeywordGrants) {
+      grants.push(...handler.getKeywordGrants(state, unitStack, ownerIndex));
+    }
+  }
+
+  return grants;
+}
+
+export function canLinkedUnitChallenge(_state: GameState, unitStack: UnitStack): boolean {
+  for (const mc of unitStack.linkedMissions ?? []) {
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (handler?.canChallenge === false) return false;
+  }
+  return true;
+}
+
+// --- Activated abilities ---
+
+export function getMissionActivationActions(
+  state: GameState,
+  playerIndex: number,
+  context: "execution" | "challenge" | "cylon-challenge",
+): ValidAction[] {
+  const actions: ValidAction[] = [];
+  const player = state.players[playerIndex];
+
+  // Check persistent missions with activations
+  for (const mc of player.zones.persistentMissions ?? []) {
+    if (!mc.faceUp) continue;
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (!handler?.activation) continue;
+    if (!handler.activation.usableIn.includes(context)) continue;
+    const targets = handler.activation.getTargets?.(state, playerIndex, mc.instanceId);
+    if (targets !== undefined && targets !== null && targets.length === 0) continue;
+    actions.push({
+      type: "playAbility",
+      description: `${def.subtitle ?? def.abilityId}: ${def.abilityText?.substring(0, 60)}...`,
+      cardDefId: def.id,
+      selectableInstanceIds: targets ?? undefined,
+      targetInstanceId: mc.instanceId,
+    });
+  }
+
+  // Check linked missions with activations
+  for (const zone of [player.zones.alert]) {
+    for (const stack of zone) {
+      if (stack.exhausted) continue;
+      const top = stack.cards[0];
+      if (!top?.faceUp) continue;
+      for (const mc of stack.linkedMissions ?? []) {
+        const def = getCardDef(mc.defId);
+        if (!def?.abilityId) continue;
+        const handler = registry.get(def.abilityId);
+        if (!handler?.activation) continue;
+        if (!handler.activation.usableIn.includes(context)) continue;
+        if (
+          handler.activation.cost === "commit-unit" ||
+          handler.activation.cost === "commit-exhaust-unit"
+        ) {
+          // Source unit must be alert and not exhausted
+          const targets = handler.activation.getTargets?.(state, playerIndex, top.instanceId);
+          if (targets !== undefined && targets !== null && targets.length === 0) continue;
+          actions.push({
+            type: "playAbility",
+            description: `${def.subtitle ?? def.abilityId} (linked): ${def.abilityText?.substring(0, 60)}...`,
+            cardDefId: def.id,
+            selectableInstanceIds: targets ?? undefined,
+            targetInstanceId: top.instanceId,
+          });
+        }
+      }
+    }
+  }
+
+  return actions;
+}
+
+export function resolveMissionActivation(
+  abilityId: string,
+  state: GameState,
+  playerIndex: number,
+  sourceId: string,
+  targetId: string | undefined,
+  log: string[],
+): void {
+  const handler = registry.get(abilityId);
+  handler?.activation?.resolve(state, playerIndex, sourceId, targetId, log);
+}
+
+// --- Trigger dispatchers ---
+
+export function fireMissionOnEventPlay(state: GameState, playerIndex: number, log: string[]): void {
+  // Check all persistent missions for onEventPlay
+  for (const [, handler] of registry) {
+    if (handler.onEventPlay) {
+      handler.onEventPlay(state, playerIndex, log);
+    }
+  }
+}
+
+export function fireMissionOnReadyPhaseStart(state: GameState, log: string[]): void {
+  for (let pi = 0; pi < state.players.length; pi++) {
+    for (const [, handler] of registry) {
+      if (handler.onReadyPhaseStart) {
+        handler.onReadyPhaseStart(state, pi, log);
+      }
+    }
+  }
+}
+
+export function adjustMysticForMissions(
+  state: GameState,
+  playerIndex: number,
+  value: number,
+  cardDef: CardDef,
+): number {
+  let adjusted = value;
+  for (const [, handler] of registry) {
+    if (handler.onMysticReveal) {
+      adjusted = handler.onMysticReveal(state, playerIndex, adjusted, cardDef);
+    }
+  }
+  return adjusted;
+}
+
+export function interceptMissionDefeat(
+  state: GameState,
+  playerIndex: number,
+  unitType: "personnel" | "ship",
+  unitInstanceId: string,
+  log: string[],
+): boolean {
+  // Check persistent missions first
+  for (const [, handler] of registry) {
+    if (handler.interceptDefeat) {
+      if (handler.interceptDefeat(state, playerIndex, unitType, unitInstanceId, log)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function cleanupLinkedMissions(
+  state: GameState,
+  playerIndex: number,
+  unitStack: UnitStack,
+  log: string[],
+): void {
+  const linked = unitStack.linkedMissions ?? [];
+  if (linked.length === 0) return;
+
+  // Fire onLinkedUnitLeavePlay triggers
+  for (const mc of linked) {
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (handler?.onLinkedUnitLeavePlay) {
+      handler.onLinkedUnitLeavePlay(state, playerIndex, unitStack.cards[0]?.instanceId ?? "", log);
+    }
+  }
+
+  // Move all linked missions to their owner's discard
+  for (const mc of linked) {
+    state.players[playerIndex].discard.push(mc);
+    const def = getCardDef(mc.defId);
+    if (def) log.push(`Linked mission ${helpers.cardName(def)} goes to discard.`);
+  }
+  unitStack.linkedMissions = [];
+}
+
+export function fireMissionOnCylonDefeat(
+  state: GameState,
+  playerIndex: number,
+  unitInstanceId: string,
+  log: string[],
+): void {
+  const player = state.players[playerIndex];
+  // Check linked missions on the winning unit
+  for (const zone of [player.zones.alert, player.zones.reserve]) {
+    for (const stack of zone) {
+      if (stack.cards[0]?.instanceId !== unitInstanceId) continue;
+      for (const mc of stack.linkedMissions ?? []) {
+        const def = getCardDef(mc.defId);
+        if (!def?.abilityId) continue;
+        const handler = registry.get(def.abilityId);
+        if (handler?.onCylonThreatDefeat) {
+          handler.onCylonThreatDefeat(state, playerIndex, unitInstanceId, log);
+        }
+      }
+    }
+  }
+}
+
+export function fireMissionOnChallengeWin(
+  state: GameState,
+  playerIndex: number,
+  winnerStack: UnitStack,
+  loserStack: UnitStack,
+  powerDiff: number,
+  log: string[],
+): void {
+  for (const mc of winnerStack.linkedMissions ?? []) {
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (handler?.onChallengeWin) {
+      handler.onChallengeWin(state, playerIndex, winnerStack, loserStack, powerDiff, log);
+    }
+  }
+}
+
+export function fireMissionOnDraw(
+  state: GameState,
+  playerIndex: number,
+  drawCount: number,
+  log: string[],
+): void {
+  for (const [, handler] of registry) {
+    if (handler.onDraw) {
+      handler.onDraw(state, playerIndex, drawCount, log);
+    }
+  }
+}
+
+// --- Special game rule modifiers ---
+
+export function checkMissionOverlayPrevention(
+  state: GameState,
+  playerIndex: number,
+  unitDef: CardDef,
+): boolean {
+  for (const [, handler] of registry) {
+    if (handler.preventOverlay) {
+      if (handler.preventOverlay(state, playerIndex, unitDef)) return true;
+    }
+  }
+  return false;
+}
+
+export function getMissionChallengeCost(
+  state: GameState,
+  challengerIndex: number,
+  defenderIndex: number,
+): number {
+  let total = 0;
+  for (const [, handler] of registry) {
+    if (handler.challengeCostModifier) {
+      total += handler.challengeCostModifier(state, challengerIndex, defenderIndex);
+    }
+  }
+  return total;
+}
+
+// --- Link target helper ---
+
+export function hasIndependentTribunal(unitStack: UnitStack): boolean {
+  return (unitStack.linkedMissions ?? []).some(
+    (m) => getCardDef(m.defId)?.abilityId === "independent-tribunal",
+  );
+}

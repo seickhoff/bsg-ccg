@@ -1,4 +1,5 @@
 import type { CardDef, BaseCardDef, CardRegistry } from "@bsg/shared";
+import { extractKeywords } from "@bsg/shared";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -29,6 +30,14 @@ export function loadCardRegistry(): CardRegistry {
     ...personnel,
     ...ships,
   };
+
+  // Populate keywords from abilityText on all card defs
+  for (const def of Object.values(cards)) {
+    const keywords = extractKeywords(def.abilityText);
+    if (keywords.length > 0) {
+      def.keywords = keywords;
+    }
+  }
 
   return { cards, bases };
 }

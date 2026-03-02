@@ -7,6 +7,7 @@
     "set": "BSG1",
     "number": 9,
     "rarity": "common",
+    "abilityId": "act-of-contrition",
     "cost": {
       "logistics": 2
     },
@@ -23,6 +24,7 @@
     "set": "BSG1",
     "number": 10,
     "rarity": "uncommon",
+    "abilityId": "advanced-planning",
     "cost": {
       "logistics": 1
     },
@@ -39,6 +41,7 @@
     "set": "BSG1",
     "number": 11,
     "rarity": "rare",
+    "abilityId": "angry",
     "cost": {
       "security": 3
     },
@@ -55,6 +58,7 @@
     "set": "BSG1",
     "number": 12,
     "rarity": "uncommon",
+    "abilityId": "bingo-fuel",
     "cost": {
       "persuasion": 2
     },
@@ -71,6 +75,7 @@
     "set": "BSG1",
     "number": 13,
     "rarity": "common",
+    "abilityId": "catastrophe",
     "cost": {
       "persuasion": 3
     },
@@ -86,10 +91,11 @@
     "set": "BSG1",
     "number": 14,
     "rarity": "rare",
+    "abilityId": "channel-lords",
+    "traits": ["Political"],
     "cost": {
       "persuasion": 2
     },
-    "traits": ["Political"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Expedite (When you pay a cost and have [persuasion] [persuasion] excess resources, you may play this card.) The next time you would reveal a mystic value for a challenge this turn, do so twice and add those mystic values together.",
@@ -103,6 +109,7 @@
     "set": "BSG1",
     "number": 15,
     "rarity": "common",
+    "abilityId": "condition-one",
     "cost": {
       "logistics": 2
     },
@@ -119,6 +126,7 @@
     "set": "BSG1",
     "number": 16,
     "rarity": "common",
+    "abilityId": "condition-two",
     "cost": {
       "security": 2
     },
@@ -135,6 +143,7 @@
     "set": "BSG1",
     "number": 17,
     "rarity": "common",
+    "abilityId": "crackdown",
     "cost": {
       "security": 1
     },
@@ -150,11 +159,12 @@
     "set": "BSG1",
     "number": 18,
     "rarity": "rare",
+    "abilityId": "cylon-computer-virus",
+    "traits": ["Cylon"],
     "cost": {
       "logistics": 1,
       "security": 1
     },
-    "traits": ["Cylon"],
     "mysticValue": 3,
     "cylonThreat": 3,
     "abilityText": "All players discard their hands and then draw cards equal to their starting hand size.",
@@ -168,10 +178,11 @@
     "set": "BSG1",
     "number": 19,
     "rarity": "common",
+    "abilityId": "cylon-missile-battery",
+    "traits": ["Cylon"],
     "cost": {
       "logistics": 1
     },
-    "traits": ["Cylon"],
     "mysticValue": 4,
     "cylonThreat": 3,
     "abilityText": "Expedite (When you pay a cost and have [logistics] excess resources, you may play this card.) Target Cylon unit gets +2 power.",
@@ -185,6 +196,7 @@
     "set": "BSG1",
     "number": 20,
     "rarity": "uncommon",
+    "abilityId": "cylons-look-like-humans",
     "cost": {
       "security": 2
     },
@@ -201,6 +213,7 @@
     "set": "BSG1",
     "number": 21,
     "rarity": "rare",
+    "abilityId": "decoys",
     "cost": {
       "security": 2
     },
@@ -217,6 +230,7 @@
     "set": "BSG1",
     "number": 22,
     "rarity": "rare",
+    "abilityId": "dissension",
     "cost": {
       "security": 2
     },
@@ -233,6 +247,7 @@
     "set": "BSG1",
     "number": 23,
     "rarity": "uncommon",
+    "abilityId": "distraction",
     "cost": {
       "security": 2
     },
@@ -249,10 +264,11 @@
     "set": "BSG1",
     "number": 24,
     "rarity": "common",
+    "abilityId": "downed-pilot",
+    "traits": ["Crisis", "Military"],
     "cost": {
       "persuasion": 2
     },
-    "traits": ["Crisis", "Military"],
     "mysticValue": 4,
     "cylonThreat": 1,
     "abilityText": "Target opponent chooses one—Commit a ship that player controls; or sacrifice a personnel.",
@@ -266,10 +282,11 @@
     "set": "BSG1",
     "number": 25,
     "rarity": "common",
+    "abilityId": "endless-task",
+    "traits": ["Crisis"],
     "cost": {
       "security": 1
     },
-    "traits": ["Crisis"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Target player chooses one—Commit a unit he or she controls; or exhaust a unit he or she controls.",
@@ -283,10 +300,11 @@
     "set": "BSG1",
     "number": 26,
     "rarity": "common",
+    "abilityId": "executive-privilege",
+    "traits": ["Political"],
     "cost": {
       "persuasion": 2
     },
-    "traits": ["Political"],
     "mysticValue": 3,
     "cylonThreat": 2,
     "abilityText": "Prevent all influence loss this phase.",
@@ -300,10 +318,11 @@
     "set": "BSG1",
     "number": 27,
     "rarity": "fixed",
+    "abilityId": "fire-support",
+    "traits": ["Military"],
     "cost": {
       "security": 2
     },
-    "traits": ["Military"],
     "mysticValue": 2,
     "cylonThreat": 3,
     "abilityText": "Target unit gets +2 power. (A unit is a personnel or ship.)"
@@ -316,6 +335,7 @@
     "set": "BSG1",
     "number": 28,
     "rarity": "common",
+    "abilityId": "fury",
     "cost": {
       "persuasion": 2
     },
@@ -332,10 +352,11 @@
     "set": "BSG1",
     "number": 29,
     "rarity": "uncommon",
+    "abilityId": "grounded",
+    "traits": ["Crisis", "Political"],
     "cost": {
       "persuasion": 3
     },
-    "traits": ["Crisis", "Political"],
     "mysticValue": 4,
     "cylonThreat": 1,
     "abilityText": "Target opponent chooses one—Commit a ship he or she controls; or commit all personnel he or she controls.",
@@ -349,11 +370,12 @@
     "set": "BSG1",
     "number": 30,
     "rarity": "uncommon",
+    "abilityId": "hangar-deck-fire",
+    "traits": ["Crisis"],
     "cost": {
       "logistics": 2,
       "security": 1
     },
-    "traits": ["Crisis"],
     "mysticValue": 4,
     "cylonThreat": 2,
     "abilityText": "Target opponent chooses one—Sacrifice a ship; or sacrifice a supply card.",
@@ -367,6 +389,7 @@
     "set": "BSG1",
     "number": 31,
     "rarity": "rare",
+    "abilityId": "high-stakes-game",
     "cost": {
       "persuasion": 2
     },
@@ -383,10 +406,11 @@
     "set": "BSG1",
     "number": 32,
     "rarity": "uncommon",
+    "abilityId": "martial-law",
+    "traits": ["Military"],
     "cost": {
       "security": 2
     },
-    "traits": ["Military"],
     "mysticValue": 3,
     "cylonThreat": 2,
     "abilityText": "Politicians can't defend this phase.",
@@ -400,10 +424,11 @@
     "set": "BSG1",
     "number": 33,
     "rarity": "uncommon",
+    "abilityId": "military-coup",
+    "traits": ["Military"],
     "cost": {
       "security": 1
     },
-    "traits": ["Military"],
     "mysticValue": 3,
     "cylonThreat": 2,
     "abilityText": "When you play this event, you may exhaust target personnel you control. If you do, exhaust target personnel an opponent controls.",
@@ -417,10 +442,11 @@
     "set": "BSG1",
     "number": 34,
     "rarity": "rare",
+    "abilityId": "network-hacking",
+    "traits": ["Crisis", "Cylon"],
     "cost": {
       "security": 3
     },
-    "traits": ["Crisis", "Cylon"],
     "mysticValue": 2,
     "cylonThreat": 4,
     "abilityText": "Each player chooses one—Commit a Cylon unit he or she controls; or commit all ships he or she controls.",
@@ -434,10 +460,11 @@
     "set": "BSG1",
     "number": 35,
     "rarity": "rare",
+    "abilityId": "networked-computers",
+    "traits": ["Military"],
     "cost": {
       "logistics": 3
     },
-    "traits": ["Military"],
     "mysticValue": 1,
     "cylonThreat": 4,
     "abilityText": "Each player reveals a mystic value. The player who has the highest mystic value chooses a card from his or her discard pile and puts that card into his or her hand. (If the mystic values are tied, reveal again.)"
@@ -450,6 +477,7 @@
     "set": "BSG1",
     "number": 36,
     "rarity": "common",
+    "abilityId": "outmaneuvered",
     "cost": {
       "persuasion": 1
     },
@@ -466,10 +494,11 @@
     "set": "BSG1",
     "number": 37,
     "rarity": "uncommon",
+    "abilityId": "painful-recovery",
+    "traits": ["Cylon"],
     "cost": {
       "security": 1
     },
-    "traits": ["Cylon"],
     "mysticValue": 3,
     "cylonThreat": 4,
     "abilityText": "When you play this event, you may put target Cylon unit you control on top of its owner's deck. If you do, commit and exhaust target personnel.",
@@ -483,10 +512,11 @@
     "set": "BSG1",
     "number": 38,
     "rarity": "uncommon",
+    "abilityId": "power-of-prayer",
+    "traits": ["Political"],
     "cost": {
       "persuasion": 1
     },
-    "traits": ["Political"],
     "mysticValue": 2,
     "cylonThreat": 1,
     "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Reveal a mystic value. Target unit gets +X power, where X is that mystic value.",
@@ -500,10 +530,11 @@
     "set": "BSG1",
     "number": 39,
     "rarity": "fixed",
+    "abilityId": "presidential-candidate",
+    "traits": ["Political"],
     "cost": {
       "persuasion": 1
     },
-    "traits": ["Political"],
     "mysticValue": 4,
     "cylonThreat": 1,
     "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Target defending Politician gets +2 power.",
@@ -517,11 +548,12 @@
     "set": "BSG1",
     "number": 40,
     "rarity": "common",
+    "abilityId": "reformat",
+    "traits": ["Political"],
     "cost": {
       "logistics": 1,
       "security": 1
     },
-    "traits": ["Political"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Discard X cards and then draw X cards.",
@@ -535,10 +567,11 @@
     "set": "BSG1",
     "number": 41,
     "rarity": "uncommon",
+    "abilityId": "setback",
+    "traits": ["Crisis"],
     "cost": {
       "security": 2
     },
-    "traits": ["Crisis"],
     "mysticValue": 2,
     "cylonThreat": 2,
     "abilityText": "Target player chooses one—Exhaust an alert unit he or she controls; or exhaust a reserve unit he or she controls."
@@ -551,6 +584,7 @@
     "set": "BSG1",
     "number": 42,
     "rarity": "uncommon",
+    "abilityId": "sick-bay",
     "cost": {
       "persuasion": 2
     },
@@ -567,6 +601,7 @@
     "set": "BSG1",
     "number": 43,
     "rarity": "uncommon",
+    "abilityId": "sneak-attack",
     "cost": {
       "persuasion": 1
     },
@@ -583,10 +618,11 @@
     "set": "BSG1",
     "number": 44,
     "rarity": "common",
+    "abilityId": "standoff",
+    "traits": ["Military"],
     "cost": {
       "security": 2
     },
-    "traits": ["Military"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Prevent all influence gain this phase.",
@@ -600,10 +636,11 @@
     "set": "BSG1",
     "number": 45,
     "rarity": "rare",
+    "abilityId": "still-no-contact",
+    "traits": ["Crisis", "Military"],
     "cost": {
       "security": 2
     },
-    "traits": ["Crisis", "Military"],
     "mysticValue": 4,
     "cylonThreat": 3,
     "abilityText": "Target opponent chooses one—Commit a personnel he or she controls; or sacrifice a personnel.",
@@ -617,6 +654,7 @@
     "set": "BSG1",
     "number": 46,
     "rarity": "rare",
+    "abilityId": "stims",
     "cost": {
       "security": 1
     },
@@ -633,6 +671,7 @@
     "set": "BSG1",
     "number": 47,
     "rarity": "rare",
+    "abilityId": "stranded",
     "cost": {
       "security": 3
     },
@@ -649,6 +688,7 @@
     "set": "BSG1",
     "number": 48,
     "rarity": "rare",
+    "abilityId": "suicide-bomber",
     "cost": {
       "security": 2
     },
@@ -665,6 +705,7 @@
     "set": "BSG1",
     "number": 49,
     "rarity": "common",
+    "abilityId": "test-of-faith",
     "cost": {
       "persuasion": 2
     },
@@ -681,10 +722,11 @@
     "set": "BSG1",
     "number": 50,
     "rarity": "rare",
+    "abilityId": "them-or-us",
+    "traits": ["Military"],
     "cost": {
       "security": 1
     },
-    "traits": ["Military"],
     "mysticValue": 3,
     "cylonThreat": 2,
     "abilityText": "When you play this event, you may sacrifice a ship. If you do, defeat target personnel.",
@@ -698,10 +740,11 @@
     "set": "BSG1",
     "number": 51,
     "rarity": "common",
+    "abilityId": "under-arrest",
+    "traits": ["Military"],
     "cost": {
       "logistics": 2
     },
-    "traits": ["Military"],
     "mysticValue": 3,
     "cylonThreat": 2,
     "abilityText": "Put target personnel on top of its owner's deck.",
@@ -715,6 +758,7 @@
     "set": "BSG1",
     "number": 52,
     "rarity": "common",
+    "abilityId": "vision-of-serpents",
     "cost": {
       "security": 2
     },
@@ -731,6 +775,7 @@
     "set": "BSG1",
     "number": 53,
     "rarity": "uncommon",
+    "abilityId": "winning-hand",
     "cost": {
       "persuasion": 1
     },
@@ -747,6 +792,7 @@
     "set": "BSG1",
     "number": 54,
     "rarity": "common",
+    "abilityId": "wounded-in-action",
     "cost": {
       "persuasion": 2
     },
@@ -763,10 +809,11 @@
     "set": "BSG1",
     "number": 55,
     "rarity": "uncommon",
+    "abilityId": "you-gave-yourself-over",
+    "traits": ["Civilian"],
     "cost": {
       "persuasion": 1
     },
-    "traits": ["Civilian"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Expedite (When you pay a cost and have [persuasion] excess resources, you may play this card.) Target Civilian unit gets +2 power.",
@@ -780,6 +827,7 @@
     "set": "BSG2",
     "number": 7,
     "rarity": "uncommon",
+    "abilityId": "anti-radiation",
     "cost": {
       "security": 1
     },
@@ -796,6 +844,7 @@
     "set": "BSG2",
     "number": 8,
     "rarity": "common",
+    "abilityId": "boarding-party",
     "cost": {
       "logistics": 2
     },
@@ -812,10 +861,11 @@
     "set": "BSG2",
     "number": 9,
     "rarity": "rare",
+    "abilityId": "concentrated-firepower",
+    "traits": ["Military"],
     "cost": {
       "security": 2
     },
-    "traits": ["Military"],
     "mysticValue": 2,
     "cylonThreat": 2,
     "abilityText": "Target unit gets +X power, where X is the number of supply cards in target resource stack you control.",
@@ -829,6 +879,7 @@
     "set": "BSG2",
     "number": 10,
     "rarity": "common",
+    "abilityId": "covering-fire",
     "cost": {
       "logistics": 1
     },
@@ -845,6 +896,7 @@
     "set": "BSG2",
     "number": 11,
     "rarity": "common",
+    "abilityId": "crushing-reality",
     "cost": {
       "security": 1
     },
@@ -861,10 +913,11 @@
     "set": "BSG2",
     "number": 12,
     "rarity": "uncommon",
+    "abilityId": "cylon-surprise",
+    "traits": ["Cylon"],
     "cost": {
       "logistics": 1
     },
-    "traits": ["Cylon"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Target Cylon Machine gets +2 power."
@@ -877,6 +930,7 @@
     "set": "BSG2",
     "number": 13,
     "rarity": "common",
+    "abilityId": "cylons-on-brain",
     "cost": {
       "persuasion": 2
     },
@@ -893,6 +947,7 @@
     "set": "BSG2",
     "number": 14,
     "rarity": "uncommon",
+    "abilityId": "determination",
     "cost": {
       "logistics": 1
     },
@@ -909,10 +964,11 @@
     "set": "BSG2",
     "number": 15,
     "rarity": "rare",
+    "abilityId": "discourage-pursuit",
+    "traits": ["Military"],
     "cost": {
       "persuasion": 2
     },
-    "traits": ["Military"],
     "mysticValue": 1,
     "cylonThreat": 2,
     "abilityText": "Exhaust target defending personnel: It is not defeated if it loses the challenge. If the challenger wins, defeat the challenger."
@@ -925,10 +981,11 @@
     "set": "BSG2",
     "number": 16,
     "rarity": "rare",
+    "abilityId": "double-trouble",
+    "traits": ["Cylon"],
     "cost": {
       "persuasion": 3
     },
-    "traits": ["Cylon"],
     "mysticValue": 1,
     "cylonThreat": 2,
     "abilityText": "Take target singular Cylon personnel you control from its unit stack and put it into your reserve area."
@@ -941,10 +998,11 @@
     "set": "BSG2",
     "number": 17,
     "rarity": "uncommon",
+    "abilityId": "everyone-green",
+    "traits": ["Cylon"],
     "cost": {
       "persuasion": 2
     },
-    "traits": ["Cylon"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Target Cylon personnel without the Machine trait loses the Cylon trait.\n\nDraw a card.",
@@ -958,6 +1016,7 @@
     "set": "BSG2",
     "number": 18,
     "rarity": "rare",
+    "abilityId": "fallout-shelter",
     "cost": {
       "security": 2
     },
@@ -973,6 +1032,7 @@
     "set": "BSG2",
     "number": 19,
     "rarity": "uncommon",
+    "abilityId": "false-sense-security",
     "cost": {
       "security": 2
     },
@@ -988,10 +1048,11 @@
     "set": "BSG2",
     "number": 20,
     "rarity": "common",
+    "abilityId": "full-disclosure",
+    "traits": ["Political"],
     "cost": {
       "persuasion": 2
     },
-    "traits": ["Political"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Each player reveals his or her hand.",
@@ -1005,6 +1066,7 @@
     "set": "BSG2",
     "number": 21,
     "rarity": "rare",
+    "abilityId": "full-system-malfunction",
     "cost": {
       "security": 5
     },
@@ -1021,6 +1083,7 @@
     "set": "BSG2",
     "number": 22,
     "rarity": "rare",
+    "abilityId": "left-behind",
     "cost": {
       "persuasion": 2,
       "security": 3
@@ -1038,6 +1101,7 @@
     "set": "BSG2",
     "number": 23,
     "rarity": "common",
+    "abilityId": "lest-we-forget",
     "cost": {
       "security": 2
     },
@@ -1053,6 +1117,7 @@
     "set": "BSG2",
     "number": 24,
     "rarity": "rare",
+    "abilityId": "like-a-ghost-town",
     "cost": {
       "security": 3
     },
@@ -1069,11 +1134,12 @@
     "set": "BSG2",
     "number": 25,
     "rarity": "rare",
+    "abilityId": "massive-assault",
+    "traits": ["Military"],
     "cost": {
       "logistics": 3,
       "security": 1
     },
-    "traits": ["Military"],
     "mysticValue": 2,
     "cylonThreat": 2,
     "abilityText": "Ready all Capital Ships and Fighters.",
@@ -1087,6 +1153,7 @@
     "set": "BSG2",
     "number": 26,
     "rarity": "common",
+    "abilityId": "out-of-sight",
     "cost": {
       "logistics": 2
     },
@@ -1103,10 +1170,11 @@
     "set": "BSG2",
     "number": 27,
     "rarity": "rare",
+    "abilityId": "raiding-farms",
+    "traits": ["Military"],
     "cost": {
       "logistics": 3
     },
-    "traits": ["Military"],
     "mysticValue": 3,
     "cylonThreat": 2,
     "abilityText": "Defeat target asset that has no supply cards.",
@@ -1120,6 +1188,7 @@
     "set": "BSG2",
     "number": 28,
     "rarity": "rare",
+    "abilityId": "resupply",
     "cost": {
       "logistics": 2
     },
@@ -1135,6 +1204,7 @@
     "set": "BSG2",
     "number": 29,
     "rarity": "rare",
+    "abilityId": "showdown",
     "cost": {
       "persuasion": 2
     },
@@ -1151,6 +1221,7 @@
     "set": "BSG2",
     "number": 30,
     "rarity": "rare",
+    "abilityId": "site-of-betrayal",
     "cost": {
       "persuasion": 3
     },
@@ -1167,6 +1238,7 @@
     "set": "BSG2",
     "number": 31,
     "rarity": "uncommon",
+    "abilityId": "special-delivery",
     "cost": {
       "logistics": 2
     },
@@ -1183,6 +1255,7 @@
     "set": "BSG2",
     "number": 32,
     "rarity": "uncommon",
+    "abilityId": "spot-judgment",
     "cost": {
       "security": 2
     },
@@ -1199,10 +1272,11 @@
     "set": "BSG2",
     "number": 33,
     "rarity": "uncommon",
+    "abilityId": "strafing-run",
+    "traits": ["Military"],
     "cost": {
       "security": 2
     },
-    "traits": ["Military"],
     "mysticValue": 2,
     "cylonThreat": 1,
     "abilityText": "Target ship gets +1 power and gains Strafe. (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)\n\nDraw a card."
@@ -1215,10 +1289,11 @@
     "set": "BSG2",
     "number": 34,
     "rarity": "uncommon",
+    "abilityId": "strange-wingman",
+    "traits": ["Military"],
     "cost": {
       "logistics": 1
     },
-    "traits": ["Military"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Target Fighter you control gets +X power, where X is the number of Cylon ships you control.",
@@ -1232,10 +1307,11 @@
     "set": "BSG2",
     "number": 35,
     "rarity": "uncommon",
+    "abilityId": "swearing-in",
+    "traits": ["Political"],
     "cost": {
       "persuasion": 1
     },
-    "traits": ["Political"],
     "mysticValue": 3,
     "cylonThreat": 1,
     "abilityText": "Target Politician gets +2 power.",
@@ -1249,10 +1325,11 @@
     "set": "BSG2",
     "number": 36,
     "rarity": "uncommon",
+    "abilityId": "there-are-many-copies",
+    "traits": ["Cylon"],
     "cost": {
       "persuasion": 2
     },
-    "traits": ["Cylon"],
     "mysticValue": 2,
     "cylonThreat": 2,
     "abilityText": "Take target Cylon personnel card from your discard pile and put it into your hand."
@@ -1265,6 +1342,7 @@
     "set": "BSG2",
     "number": 37,
     "rarity": "uncommon",
+    "abilityId": "this-tribunal",
     "cost": {
       "persuasion": 2
     },
@@ -1281,6 +1359,7 @@
     "set": "BSG2",
     "number": 38,
     "rarity": "common",
+    "abilityId": "to-the-victor",
     "cost": {
       "security": 2
     },
@@ -1297,6 +1376,7 @@
     "set": "BSG2",
     "number": 39,
     "rarity": "common",
+    "abilityId": "top-off-tank",
     "cost": {
       "logistics": 3
     },
@@ -1312,6 +1392,7 @@
     "set": "BSG2",
     "number": 40,
     "rarity": "common",
+    "abilityId": "treacherous-toaster",
     "cost": {
       "logistics": 2
     },
@@ -1328,6 +1409,7 @@
     "set": "BSG2",
     "number": 41,
     "rarity": "uncommon",
+    "abilityId": "unexpected",
     "cost": {
       "persuasion": 1
     },
@@ -1344,6 +1426,7 @@
     "set": "BSG2",
     "number": 42,
     "rarity": "uncommon",
+    "abilityId": "sign",
     "cost": {
       "persuasion": 2
     },
@@ -1360,10 +1443,11 @@
     "set": "BSG2",
     "number": 43,
     "rarity": "uncommon",
+    "abilityId": "unwelcome-visitor",
+    "traits": ["Cylon"],
     "cost": {
       "security": 1
     },
-    "traits": ["Cylon"],
     "mysticValue": 2,
     "cylonThreat": 2,
     "abilityText": "Target challenging Cylon personnel gets +4 power. When the challenge ends, defeat the target.",
@@ -1377,6 +1461,7 @@
     "set": "BSG2",
     "number": 44,
     "rarity": "rare",
+    "abilityId": "vulnerable-supplies",
     "cost": {
       "security": 2
     },

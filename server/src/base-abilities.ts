@@ -1,0 +1,551 @@
+import type {
+  GameState,
+  BaseCardDef,
+  CardDef,
+  ValidAction,
+  UnitStack,
+  CardInstance,
+} from "@bsg/shared";
+
+// ============================================================
+// BSG CCG — Base Ability Registry
+//
+// Open/Closed architecture matching keyword-rules.ts:
+// Each base registers a handler; the engine calls dispatchers
+// at hook points. New bases = new registrations, zero engine changes.
+// ============================================================
+
+// --- Handler Interface ---
+
+export interface BaseAbilityHandler {
+  /** Contexts where this ability appears as a voluntary action */
+  usableIn: ("execution" | "challenge" | "cylon-challenge")[];
+
+  /** For triggered abilities (engine invokes at hook points) */
+  trigger?: "onChallenged" | "onInfluenceLoss" | "onCylonReveal" | "onMissionResolve";
+
+  /**
+   * Get valid target instanceIds for this ability.
+   * Return null if no target needed.
+   * Return empty array if targets needed but none available.
+   */
+  getTargets(
+    state: GameState,
+    playerIndex: number,
+    bases: Record<string, BaseCardDef>,
+  ): string[] | null;
+
+  /**
+   * Apply the ability effect.
+   * The base is already exhausted by the engine before calling this.
+   */
+  resolve(
+    state: GameState,
+    playerIndex: number,
+    targetInstanceId: string | undefined,
+    log: string[],
+    bases: Record<string, BaseCardDef>,
+  ): void;
+}
+
+// --- Registry ---
+
+const registry = new Map<string, BaseAbilityHandler>();
+
+function registerBaseAbility(abilityId: string, handler: BaseAbilityHandler): void {
+  registry.set(abilityId, handler);
+}
+
+// --- Card Def Helper (duplicated from engine to avoid circular imports) ---
+
+let cardRegistryRef: Record<string, CardDef> = {};
+
+export function setBaseAbilityCardRegistry(cards: Record<string, CardDef>): void {
+  cardRegistryRef = cards;
+}
+
+function getCardDef(defId: string): CardDef | undefined {
+  return cardRegistryRef[defId];
+}
+
+// --- Utility: find units in zones ---
+
+function findUnitsInZone(
+  zone: UnitStack[],
+  filter: (def: CardDef) => boolean,
+): { instanceId: string; def: CardDef }[] {
+  const results: { instanceId: string; def: CardDef }[] = [];
+  for (const stack of zone) {
+    const topCard = stack.cards[0];
+    if (topCard && topCard.faceUp && !stack.exhausted) {
+      const def = getCardDef(topCard.defId);
+      if (def && filter(def)) {
+        results.push({ instanceId: topCard.instanceId, def });
+      }
+    }
+  }
+  return results;
+}
+
+function findUnitInAnyZone(
+  player: { zones: { alert: UnitStack[]; reserve: UnitStack[] } },
+  instanceId: string,
+): { stack: UnitStack; zone: "alert" | "reserve"; index: number } | null {
+  for (let i = 0; i < player.zones.alert.length; i++) {
+    if (player.zones.alert[i].cards[0]?.instanceId === instanceId) {
+      return { stack: player.zones.alert[i], zone: "alert", index: i };
+    }
+  }
+  for (let i = 0; i < player.zones.reserve.length; i++) {
+    if (player.zones.reserve[i].cards[0]?.instanceId === instanceId) {
+      return { stack: player.zones.reserve[i], zone: "reserve", index: i };
+    }
+  }
+  return null;
+}
+
+function cardName(def: CardDef): string {
+  if (def.title && def.subtitle) return `${def.title}, ${def.subtitle}`;
+  return def.title ?? def.subtitle ?? "?";
+}
+
+// ============================================================
+// Base Ability Registrations
+// ============================================================
+
+// --- Colonial One: +1 influence ---
+registerBaseAbility("colonial-one", {
+  usableIn: ["execution", "challenge"],
+  getTargets: () => null,
+  resolve(state, playerIndex, _target, log) {
+    state.players[playerIndex].influence += 1;
+    log.push(
+      `Colonial One: Player ${playerIndex + 1} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
+    );
+  },
+});
+
+// --- Galactica: target player -1 influence ---
+registerBaseAbility("galactica", {
+  usableIn: ["execution", "challenge"],
+  getTargets: () => null, // always targets opponent in 2-player
+  resolve(state, playerIndex, _target, log, bases) {
+    const oppIndex = 1 - playerIndex;
+    // Route through interceptInfluenceLoss for I.H.T. Colonial One interception
+    const adjusted = interceptInfluenceLoss(state, oppIndex, 1, log, bases);
+    if (adjusted > 0) {
+      state.players[oppIndex].influence -= adjusted;
+    }
+    log.push(
+      `Galactica: Player ${oppIndex + 1} loses influence. (Now ${state.players[oppIndex].influence})`,
+    );
+  },
+});
+
+// --- Celestra: deck manipulation ---
+registerBaseAbility("celestra", {
+  usableIn: ["execution", "challenge"],
+  getTargets: () => null,
+  resolve(state, playerIndex, _target, log) {
+    const player = state.players[playerIndex];
+    if (player.deck.length < 2) {
+      log.push("Celestra: Not enough cards in deck to use ability.");
+      return;
+    }
+    // Pop top 2 cards from deck into pendingChoice
+    const card1 = player.deck.shift()!;
+    const card2 = player.deck.shift()!;
+    state.pendingChoice = {
+      type: "celestra",
+      playerIndex,
+      cards: [card1, card2],
+    };
+    const def1 = getCardDef(card1.defId);
+    const def2 = getCardDef(card2.defId);
+    log.push(`Celestra: Player ${playerIndex + 1} looks at the top two cards of their deck.`);
+  },
+});
+
+// --- Cylon Base Star: ready target Cylon unit ---
+registerBaseAbility("cylon-base-star", {
+  usableIn: ["execution"],
+  getTargets(state, playerIndex) {
+    const player = state.players[playerIndex];
+    // Target: face-up Cylon units in own reserve
+    return findUnitsInZone(player.zones.reserve, (def) => {
+      return (
+        (def.type === "personnel" || def.type === "ship") &&
+        (def.traits?.includes("Cylon") ?? false)
+      );
+    }).map((u) => u.instanceId);
+  },
+  resolve(state, playerIndex, targetInstanceId, log) {
+    if (!targetInstanceId) return;
+    const player = state.players[playerIndex];
+    const found = findUnitInAnyZone(player, targetInstanceId);
+    if (found && found.zone === "reserve") {
+      player.zones.reserve.splice(found.index, 1);
+      player.zones.alert.push(found.stack);
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`Cylon Base Star: Readied ${def ? cardName(def) : "Cylon unit"}.`);
+    }
+  },
+});
+
+// --- Ragnar Anchorage: extra action + resource override ---
+registerBaseAbility("ragnar-anchorage", {
+  usableIn: ["execution"],
+  getTargets: () => null,
+  resolve(state, playerIndex, _target, log) {
+    const player = state.players[playerIndex];
+    player.ragnarExtraAction = true;
+    player.ragnarResourceOverride = true;
+    log.push(
+      "Ragnar Anchorage: Take an extra action. Next resource spend: logistics ≥2 generates 3 of any type.",
+    );
+  },
+});
+
+// --- Battlestar Galactica: +2 to challenging unit ---
+registerBaseAbility("battlestar-galactica", {
+  usableIn: ["challenge"],
+  getTargets(state) {
+    if (!state.challenge) return [];
+    return [state.challenge.challengerInstanceId];
+  },
+  resolve(state, _playerIndex, targetInstanceId, log) {
+    if (!state.challenge || !targetInstanceId) return;
+    if (targetInstanceId === state.challenge.challengerInstanceId) {
+      state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 2;
+      log.push("Battlestar Galactica: Challenger gets +2 power.");
+    }
+  },
+});
+
+// --- Assault Base Star: +2 to Cylon unit in challenge ---
+registerBaseAbility("assault-base-star", {
+  usableIn: ["challenge", "cylon-challenge"],
+  getTargets(state) {
+    if (!state.challenge) return [];
+    const targets: string[] = [];
+    // Check challenger
+    const challengerDef = findChallengeUnitDef(state, state.challenge.challengerInstanceId);
+    if (challengerDef?.traits?.includes("Cylon")) {
+      targets.push(state.challenge.challengerInstanceId);
+    }
+    // Check defender (if it exists and is a real unit, not a Cylon threat)
+    if (state.challenge.defenderInstanceId && !state.challenge.isCylonChallenge) {
+      const defenderDef = findChallengeUnitDef(state, state.challenge.defenderInstanceId);
+      if (defenderDef?.traits?.includes("Cylon")) {
+        targets.push(state.challenge.defenderInstanceId);
+      }
+    }
+    return targets;
+  },
+  resolve(state, _playerIndex, targetInstanceId, log) {
+    if (!state.challenge || !targetInstanceId) return;
+    if (targetInstanceId === state.challenge.challengerInstanceId) {
+      state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 2;
+      log.push("Assault Base Star: Cylon challenger gets +2 power.");
+    } else if (targetInstanceId === state.challenge.defenderInstanceId) {
+      state.challenge.defenderPowerBuff = (state.challenge.defenderPowerBuff ?? 0) + 2;
+      log.push("Assault Base Star: Cylon defender gets +2 power.");
+    }
+  },
+});
+
+// --- BS-75 Galactica: +3 to unit challenging Cylon threat ---
+registerBaseAbility("bs75-galactica", {
+  usableIn: ["cylon-challenge"],
+  getTargets(state) {
+    if (!state.challenge?.isCylonChallenge) return [];
+    return [state.challenge.challengerInstanceId];
+  },
+  resolve(state, _playerIndex, _targetInstanceId, log) {
+    if (!state.challenge) return;
+    state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 3;
+    log.push("BS-75 Galactica: Cylon threat challenger gets +3 power.");
+  },
+});
+
+// --- Delphi Union High School: +1 to any unit in challenge ---
+registerBaseAbility("delphi-union", {
+  usableIn: ["challenge", "cylon-challenge"],
+  getTargets(state) {
+    if (!state.challenge) return [];
+    const targets = [state.challenge.challengerInstanceId];
+    if (state.challenge.defenderInstanceId && !state.challenge.isCylonChallenge) {
+      targets.push(state.challenge.defenderInstanceId);
+    }
+    return targets;
+  },
+  resolve(state, _playerIndex, targetInstanceId, log) {
+    if (!state.challenge || !targetInstanceId) return;
+    if (targetInstanceId === state.challenge.challengerInstanceId) {
+      state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 1;
+      log.push("Delphi Union High School: Challenger gets +1 power.");
+    } else if (targetInstanceId === state.challenge.defenderInstanceId) {
+      state.challenge.defenderPowerBuff = (state.challenge.defenderPowerBuff ?? 0) + 1;
+      log.push("Delphi Union High School: Defender gets +1 power.");
+    }
+  },
+});
+
+// --- Agro Ship: triggered on challenged, ready personnel ---
+registerBaseAbility("agro-ship", {
+  usableIn: [],
+  trigger: "onChallenged",
+  getTargets(state, playerIndex) {
+    const player = state.players[playerIndex];
+    // Target: face-up personnel in own reserve
+    return findUnitsInZone(player.zones.reserve, (def) => {
+      return def.type === "personnel";
+    }).map((u) => u.instanceId);
+  },
+  resolve(state, playerIndex, targetInstanceId, log) {
+    if (!targetInstanceId) return;
+    const player = state.players[playerIndex];
+    const found = findUnitInAnyZone(player, targetInstanceId);
+    if (found && found.zone === "reserve") {
+      player.zones.reserve.splice(found.index, 1);
+      player.zones.alert.push(found.stack);
+      if (state.challenge) {
+        state.challenge.triggerReadiedInstanceId = targetInstanceId;
+      }
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`Agro Ship: Readied ${def ? cardName(def) : "personnel"}.`);
+    }
+  },
+});
+
+// --- Flattop: triggered on challenged, ready ship ---
+registerBaseAbility("flattop", {
+  usableIn: [],
+  trigger: "onChallenged",
+  getTargets(state, playerIndex) {
+    const player = state.players[playerIndex];
+    // Target: face-up ships in own reserve
+    return findUnitsInZone(player.zones.reserve, (def) => {
+      return def.type === "ship";
+    }).map((u) => u.instanceId);
+  },
+  resolve(state, playerIndex, targetInstanceId, log) {
+    if (!targetInstanceId) return;
+    const player = state.players[playerIndex];
+    const found = findUnitInAnyZone(player, targetInstanceId);
+    if (found && found.zone === "reserve") {
+      player.zones.reserve.splice(found.index, 1);
+      player.zones.alert.push(found.stack);
+      if (state.challenge) {
+        state.challenge.triggerReadiedInstanceId = targetInstanceId;
+      }
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`Flattop: Readied ${def ? cardName(def) : "ship"}.`);
+    }
+  },
+});
+
+// --- I.H.T. Colonial One: reduce influence loss by 2 ---
+registerBaseAbility("iht-colonial-one", {
+  usableIn: [],
+  trigger: "onInfluenceLoss",
+  getTargets: () => null,
+  resolve() {
+    // Handled by interceptInfluenceLoss dispatcher — not called directly
+  },
+});
+
+// --- Blockading Base Star: prevent Cylon threat text ---
+registerBaseAbility("blockading-base-star", {
+  usableIn: [],
+  trigger: "onCylonReveal",
+  getTargets: () => null,
+  resolve(_state, _playerIndex, _target, log) {
+    // No-op until Cylon threat red text is implemented
+    log.push("Blockading Base Star: Cylon threat text prevention (not yet implemented).");
+  },
+});
+
+// --- Colonial Heavy 798: counts as Civilian for mission ---
+registerBaseAbility("colonial-heavy-798", {
+  usableIn: [],
+  trigger: "onMissionResolve",
+  getTargets: () => null,
+  resolve() {
+    // Handled by mission resolve logic in engine — not called directly
+  },
+});
+
+// ============================================================
+// Dispatchers (called by game engine)
+// ============================================================
+
+/** Get valid actions for a base ability in a given context. */
+export function getBaseAbilityActions(
+  abilityId: string,
+  state: GameState,
+  playerIndex: number,
+  bases: Record<string, BaseCardDef>,
+  context: "execution" | "challenge" | "cylon-challenge",
+): ValidAction[] {
+  const handler = registry.get(abilityId);
+  if (!handler) return [];
+  if (!handler.usableIn.includes(context)) return [];
+
+  const player = state.players[playerIndex];
+  const baseDef = bases[player.baseDefId];
+  const baseStack = player.zones.resourceStacks[0];
+  if (!baseStack || baseStack.exhausted) return [];
+
+  const targets = handler.getTargets(state, playerIndex, bases);
+
+  // No target needed — single action
+  if (targets === null) {
+    return [
+      {
+        type: "playAbility",
+        description: `${baseDef.title}: ${baseDef.abilityText}`,
+        cardDefId: baseDef.id,
+        selectableInstanceIds: [baseStack.topCard.instanceId],
+      },
+    ];
+  }
+
+  // Targets needed but none available
+  if (targets.length === 0) return [];
+
+  // Generate one action per target
+  const actions: ValidAction[] = [];
+  for (const targetId of targets) {
+    const targetDef = findChallengeUnitDef(state, targetId);
+    const targetLabel = targetDef ? cardName(targetDef) : "unit";
+    actions.push({
+      type: "playAbility",
+      description: `${baseDef.title}: ${baseDef.abilityText.split(".")[0]} → ${targetLabel}`,
+      cardDefId: baseDef.id,
+      selectableInstanceIds: [baseStack.topCard.instanceId],
+      targetInstanceId: targetId,
+    });
+  }
+  return actions;
+}
+
+/** Resolve a base ability by abilityId. */
+export function resolveBaseAbilityEffect(
+  abilityId: string,
+  state: GameState,
+  playerIndex: number,
+  targetInstanceId: string | undefined,
+  log: string[],
+  bases: Record<string, BaseCardDef>,
+): void {
+  const handler = registry.get(abilityId);
+  if (!handler) {
+    log.push(`Base ability ${abilityId} not found in registry.`);
+    return;
+  }
+  handler.resolve(state, playerIndex, targetInstanceId, log, bases);
+}
+
+/** Check if any onChallenged trigger is available for the defending player. */
+export function getOnChallengedTrigger(
+  state: GameState,
+  defenderPlayerIndex: number,
+  bases: Record<string, BaseCardDef>,
+): { abilityId: string; targets: string[] } | null {
+  const player = state.players[defenderPlayerIndex];
+  const baseDef = bases[player.baseDefId];
+  if (!baseDef?.abilityId) return null;
+
+  const handler = registry.get(baseDef.abilityId);
+  if (!handler || handler.trigger !== "onChallenged") return null;
+
+  // Base must not be exhausted
+  const baseStack = player.zones.resourceStacks[0];
+  if (!baseStack || baseStack.exhausted) return null;
+
+  const targets = handler.getTargets(state, defenderPlayerIndex, bases);
+  if (!targets || targets.length === 0) return null;
+
+  return { abilityId: baseDef.abilityId, targets };
+}
+
+/**
+ * Intercept influence loss — checks for I.H.T. Colonial One.
+ * Returns the adjusted loss amount after applying any reduction.
+ * Auto-exhausts the base if used.
+ */
+export function interceptInfluenceLoss(
+  state: GameState,
+  playerIndex: number,
+  amount: number,
+  log: string[],
+  bases: Record<string, BaseCardDef>,
+): number {
+  if (amount <= 0) return amount;
+  const player = state.players[playerIndex];
+  const baseDef = bases[player.baseDefId];
+  if (baseDef?.abilityId !== "iht-colonial-one") return amount;
+
+  const baseStack = player.zones.resourceStacks[0];
+  if (!baseStack || baseStack.exhausted) return amount;
+
+  // Auto-apply: exhaust base, reduce loss by 2
+  baseStack.exhausted = true;
+  const reduced = Math.max(0, amount - 2);
+  log.push(`I.H.T. Colonial One: Reduced influence loss from ${amount} to ${reduced}.`);
+  return reduced;
+}
+
+/** Check if a base ability is registered and usable in the given context. */
+export function isBaseAbilityUsableIn(
+  abilityId: string,
+  context: "execution" | "challenge" | "cylon-challenge",
+): boolean {
+  const handler = registry.get(abilityId);
+  return handler?.usableIn.includes(context) ?? false;
+}
+
+/** Check if the base has Colonial Heavy 798 ability (for mission resolve). */
+export function hasColonialHeavy798(
+  state: GameState,
+  playerIndex: number,
+  bases: Record<string, BaseCardDef>,
+): boolean {
+  const player = state.players[playerIndex];
+  const baseDef = bases[player.baseDefId];
+  if (baseDef?.abilityId !== "colonial-heavy-798") return false;
+  const baseStack = player.zones.resourceStacks[0];
+  return !!baseStack && !baseStack.exhausted;
+}
+
+/** Exhaust Colonial Heavy 798 base (called when mission uses it). */
+export function exhaustColonialHeavy798(
+  state: GameState,
+  playerIndex: number,
+  log: string[],
+): void {
+  const player = state.players[playerIndex];
+  const baseStack = player.zones.resourceStacks[0];
+  if (baseStack) {
+    baseStack.exhausted = true;
+    log.push("Colonial Heavy 798: Counts as 1 Civilian unit for mission requirements.");
+  }
+}
+
+// --- Internal helper ---
+
+function findChallengeUnitDef(state: GameState, instanceId: string): CardDef | null {
+  for (const player of state.players) {
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        for (const card of stack.cards) {
+          if (card.instanceId === instanceId) {
+            return getCardDef(card.defId) ?? null;
+          }
+        }
+      }
+    }
+  }
+  return null;
+}

@@ -2,6 +2,10 @@
 // BSG CCG — Shared Types
 // ============================================================
 
+import type { Keyword } from "./keywords.js";
+export type { Keyword };
+export { extractKeywords, hasKeyword } from "./keywords.js";
+
 // --- Resource & Card Types ---
 
 export type ResourceType = "persuasion" | "logistics" | "security";
@@ -41,7 +45,7 @@ export interface CardDef {
   mysticValue?: number;
   resource?: ResourceType; // what it produces when played as an asset
   traits?: Trait[];
-  keywords?: string[];
+  keywords?: Keyword[];
   resolveText?: string; // mission resolve requirements, e.g. "Resolve: 2 Officers."
   abilityText: string; // display text for the ability
   cylonThreatText?: string; // red text describing cylon threat effect (not on all cards)
@@ -83,12 +87,14 @@ export interface ResourceStack {
 export interface UnitStack {
   cards: CardInstance[]; // top card is cards[0], rest are overlaid
   exhausted: boolean;
+  linkedMissions?: CardInstance[]; // Link missions attached to this unit
 }
 
 export interface PlayerZones {
   alert: UnitStack[]; // alert units and missions
   reserve: UnitStack[]; // committed / not-yet-readied units and missions
   resourceStacks: ResourceStack[]; // base + assets + supply cards
+  persistentMissions?: CardInstance[]; // resolved persistent missions (face-up in resource area per rules)
 }
 
 // --- Game State Types ---
@@ -119,12 +125,25 @@ export interface ChallengeState {
   challengerMysticValue: number | null;
   defenderMysticValue: number | null;
   waitingForDefender: boolean; // true = waiting for defend/decline
+  defenderSelector: "challenger" | "defender"; // who picks the defender (Sniper → "challenger")
   consecutivePasses: number; // for step 2 effect round
   challengerPowerBuff?: number; // temporary power modifier
   defenderPowerBuff?: number; // temporary power modifier
   isCylonChallenge: boolean; // true if this is a Cylon phase challenge
   cylonThreatIndex?: number; // index into cylonThreats array
   cylonPlayerIndex?: number; // player acting as "Cylon player"
+  pendingTrigger?: { abilityId: string; playerIndex: number }; // Agro Ship/Flattop pre-defender trigger
+  triggerReadiedInstanceId?: string; // unit readied by trigger, commit at challenge end
+  losesExhaustedNotDefeated?: boolean; // Dr. Cottle Surgeon: loser exhausted instead of defeated
+  doubleMysticReveal?: number; // playerIndex who reveals double mystic (Elosha Priestess / Channel Lords)
+  selfDoubleMystic?: number; // Spot Judgment: playerIndex who reveals 2 and picks best
+  opponentDoubleMystic?: { controllerIndex: number; opponentIndex: number }; // False Sense of Security
+  sixSeductressBuff?: number; // extra power from Six Seductress on undefended challenge
+  forceEnd?: boolean; // Cloud 9 Transport Hub / ...Sign: end challenge immediately
+  exhaustAtChallengeEnd?: string; // Stims: instanceId to exhaust after challenge
+  defeatAtChallengeEnd?: string; // Unwelcome Visitor: instanceId to defeat after challenge
+  defenderImmune?: boolean; // Discourage Pursuit: defender not defeated
+  defeatChallengerOnWin?: boolean; // Discourage Pursuit: challenger defeated if wins
 }
 
 export interface CylonThreatCard {
@@ -144,6 +163,15 @@ export interface PlayerState {
   hasPlayedResource: boolean; // tracks if player used ready phase step 4
   hasResolvedMission: boolean; // only one per execution phase
   consecutivePasses: number; // for execution phase ending
+  ragnarExtraAction?: boolean; // Ragnar Anchorage: skip next turn advance
+  ragnarResourceOverride?: boolean; // Ragnar Anchorage: next cost → logistics ≥2 becomes 3 of any type
+  oncePerTurnUsed?: Record<string, boolean>; // tracks once-per-turn abilities by abilityId
+  temporaryTraitGrants?: Record<string, Trait[]>; // instanceId → granted traits this turn
+  temporaryKeywordGrants?: Record<string, Keyword[]>; // instanceId → granted keywords this turn
+  temporaryCylonThreatMods?: Record<string, number>; // instanceId → cylon threat modifier this turn
+  extraActionsRemaining?: number; // Number Six Agent Provocateur extra actions
+  costReduction?: { persuasion?: number; logistics?: number; security?: number }; // Refinery Ship
+  temporaryTraitRemovals?: Record<string, string[]>; // instanceId → removed traits (Everyone's Green, Unexpected)
 }
 
 export interface GameState {
@@ -158,6 +186,16 @@ export interface GameState {
   cylonThreats: CylonThreatCard[];
   log: string[];
   winner: number | null; // player index or null
+  preventInfluenceLoss?: boolean; // Executive Privilege: prevent all influence loss this phase
+  preventInfluenceGain?: boolean; // Standoff: prevent all influence gain this phase
+  noChallenges?: boolean; // Showdown: no challenges rest of phase
+  politiciansCantDefend?: boolean; // Martial Law: politicians can't defend this phase
+  skipEventDiscard?: boolean; // Top Off the Tank: event doesn't go to discard
+  pendingChoice?: {
+    type: string; // e.g. "celestra"
+    playerIndex: number;
+    cards: CardInstance[]; // revealed cards to choose between
+  };
 }
 
 // --- Player View (what the client sees) ---
@@ -210,7 +248,11 @@ export type GameAction =
   | { type: "playEventInChallenge"; cardIndex: number; targetInstanceId?: string }
   | { type: "pass" }
   | { type: "challengeCylon"; challengerInstanceId: string; threatIndex: number }
-  | { type: "passCylon" };
+  | { type: "passCylon" }
+  | { type: "useTriggeredAbility"; targetInstanceId?: string }
+  | { type: "declineTrigger" }
+  | { type: "makeChoice"; choiceIndex: number }
+  | { type: "strafeChoice"; challengeAs: "personnel" | "ship" };
 
 // --- Valid Actions (server → client) ---
 
@@ -224,6 +266,8 @@ export interface ValidAction {
   selectableInstanceIds?: string[]; // board card instance IDs
   selectableStackIndices?: number[]; // resource stack indices
   selectableThreatIndices?: number[]; // cylon threat indices
+  targetInstanceId?: string; // pre-selected target for ability actions
+  abilityIndex?: number; // for dual-ability cards (e.g. Baltar VP: 0 or 1)
 }
 
 // --- WebSocket Messages ---

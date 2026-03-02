@@ -8,6 +8,7 @@
     "set": "BSG1",
     "number": 144,
     "rarity": "common",
+    "abilityId": "astral-queen-defend",
     "cost": {
       "persuasion": 3
     },
@@ -27,6 +28,7 @@
     "set": "BSG1",
     "number": 145,
     "rarity": "common",
+    "abilityId": "cloud9-shield",
     "cost": {
       "persuasion": 3
     },
@@ -178,6 +180,7 @@
     "set": "BSG1",
     "number": 153,
     "rarity": "rare",
+    "abilityId": "viper762-pilot",
     "cost": {
       "logistics": 4
     },
@@ -235,6 +238,7 @@
     "set": "BSG1",
     "number": 156,
     "rarity": "uncommon",
+    "abilityId": "freighter-recover",
     "cost": {
       "logistics": 3
     },
@@ -292,6 +296,7 @@
     "set": "BSG1",
     "number": 159,
     "rarity": "uncommon",
+    "abilityId": "mining-ship-dig",
     "cost": {
       "logistics": 3
     },
@@ -310,6 +315,7 @@
     "set": "BSG1",
     "number": 160,
     "rarity": "rare",
+    "abilityId": "doomed-liner-bounce",
     "cost": {
       "persuasion": 2
     },
@@ -330,6 +336,7 @@
     "set": "BSG1",
     "number": 161,
     "rarity": "uncommon",
+    "abilityId": "ordnance-freighter",
     "cost": {
       "security": 3
     },
@@ -500,6 +507,7 @@
     "set": "BSG1",
     "number": 170,
     "rarity": "rare",
+    "abilityId": "raptor816-defend",
     "cost": {
       "persuasion": 3
     },
@@ -519,6 +527,7 @@
     "set": "BSG1",
     "number": 171,
     "rarity": "rare",
+    "abilityId": "scouting-raider-etb",
     "cost": {
       "security": 5
     },
@@ -538,6 +547,7 @@
     "set": "BSG1",
     "number": 172,
     "rarity": "common",
+    "abilityId": "skirmishing-raider-sacrifice",
     "cost": {
       "security": 3
     },
@@ -557,6 +567,7 @@
     "set": "BSG1",
     "number": 173,
     "rarity": "rare",
+    "abilityId": "space-park-scry",
     "cost": {
       "persuasion": 2
     },
@@ -576,6 +587,7 @@
     "set": "BSG1",
     "number": 174,
     "rarity": "uncommon",
+    "abilityId": "supply-freighter",
     "cost": {
       "logistics": 3
     },
@@ -594,6 +606,7 @@
     "set": "BSG1",
     "number": 175,
     "rarity": "uncommon",
+    "abilityId": "troop-freighter",
     "cost": {
       "persuasion": 3
     },
@@ -653,6 +666,7 @@
     "set": "BSG2",
     "number": 132,
     "rarity": "common",
+    "abilityId": "astral-queen-lockdown",
     "cost": {
       "persuasion": 3
     },
@@ -673,6 +687,7 @@
     "set": "BSG2",
     "number": 133,
     "rarity": "rare",
+    "abilityId": "astral-queen-exhaust2",
     "cost": {
       "persuasion": 3
     },
@@ -713,6 +728,7 @@
     "set": "BSG2",
     "number": 135,
     "rarity": "rare",
+    "abilityId": "captured-raider-starbuck",
     "cost": {
       "security": 4
     },
@@ -734,6 +750,7 @@
     "set": "BSG2",
     "number": 136,
     "rarity": "rare",
+    "abilityId": "cloud9-transport",
     "cost": {
       "persuasion": 4
     },
@@ -754,6 +771,7 @@
     "set": "BSG2",
     "number": 137,
     "rarity": "uncommon",
+    "abilityId": "cloud9-civilian",
     "cost": {
       "persuasion": 3
     },
@@ -774,6 +792,7 @@
     "set": "BSG2",
     "number": 138,
     "rarity": "rare",
+    "abilityId": "colonial-one-politician",
     "cost": {
       "persuasion": 3
     },
@@ -793,6 +812,7 @@
     "set": "BSG2",
     "number": 139,
     "rarity": "common",
+    "abilityId": "colonial-one-influence",
     "cost": {
       "persuasion": 4
     },
@@ -812,6 +832,7 @@
     "set": "BSG2",
     "number": 140,
     "rarity": "rare",
+    "abilityId": "viper0205-buff",
     "cost": {
       "security": 4
     },
@@ -850,6 +871,7 @@
     "set": "BSG2",
     "number": 142,
     "rarity": "uncommon",
+    "abilityId": "viper1104-cylon",
     "cost": {
       "logistics": 4
     },
@@ -907,6 +929,7 @@
     "set": "BSG2",
     "number": 145,
     "rarity": "common",
+    "abilityId": "viper4267-defend",
     "cost": {
       "persuasion": 3
     },
@@ -966,6 +989,7 @@
     "set": "BSG2",
     "number": 148,
     "rarity": "common",
+    "abilityId": "galactica-defender",
     "cost": {
       "security": 6
     },
@@ -986,6 +1010,7 @@
     "set": "BSG2",
     "number": 149,
     "rarity": "rare",
+    "abilityId": "galactica-fighters",
     "cost": {
       "security": 6
     },
@@ -1006,6 +1031,7 @@
     "set": "BSG2",
     "number": 150,
     "rarity": "uncommon",
+    "abilityId": "gideon-commit",
     "cost": {
       "persuasion": 3
     },
@@ -1063,6 +1089,7 @@
     "set": "BSG2",
     "number": 153,
     "rarity": "uncommon",
+    "abilityId": "nuclear-raider-win",
     "cost": {
       "logistics": 4
     },
@@ -1084,6 +1111,7 @@
     "set": "BSG2",
     "number": 154,
     "rarity": "uncommon",
+    "abilityId": "olympic-carrier-mission",
     "cost": {
       "logistics": 3
     },
@@ -1200,6 +1228,7 @@
     "set": "BSG2",
     "number": 161,
     "rarity": "uncommon",
+    "abilityId": "raptor432-flash",
     "cost": {
       "logistics": 3
     },
@@ -1219,6 +1248,7 @@
     "set": "BSG2",
     "number": 162,
     "rarity": "uncommon",
+    "abilityId": "raptor659-strafe",
     "cost": {
       "security": 3
     },
@@ -1256,6 +1286,7 @@
     "set": "BSG2",
     "number": 164,
     "rarity": "uncommon",
+    "abilityId": "refinery-extra-action",
     "cost": {
       "logistics": 3
     },

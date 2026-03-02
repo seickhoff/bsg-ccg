@@ -10,7 +10,8 @@
     "startingInfluence": 11,
     "handSize": 3,
     "resource": "logistics",
-    "abilityText": "Each time you are challenged, you may exhaust this base. If you do, ready target personnel. At the end of the challenge, commit that personnel."
+    "abilityText": "Each time you are challenged, you may exhaust this base. If you do, ready target personnel. At the end of the challenge, commit that personnel.",
+    "abilityId": "agro-ship"
   },
   "BSG1-002": {
     "id": "BSG1-002",
@@ -23,7 +24,8 @@
     "startingInfluence": 12,
     "handSize": 4,
     "resource": "security",
-    "abilityText": "Exhaust: Target challenging unit gets +2 power."
+    "abilityText": "Exhaust: Target challenging unit gets +2 power.",
+    "abilityId": "battlestar-galactica"
   },
   "BSG1-003": {
     "id": "BSG1-003",
@@ -36,7 +38,8 @@
     "startingInfluence": 9,
     "handSize": 5,
     "resource": "persuasion",
-    "abilityText": "Exhaust: Look at the top two cards of your deck. Put one on top of your deck and the other on the bottom."
+    "abilityText": "Exhaust: Look at the top two cards of your deck. Put one on top of your deck and the other on the bottom.",
+    "abilityId": "celestra"
   },
   "BSG1-004": {
     "id": "BSG1-004",
@@ -49,7 +52,8 @@
     "startingInfluence": 10,
     "handSize": 4,
     "resource": "persuasion",
-    "abilityText": "Exhaust: Target player gains 1 influence."
+    "abilityText": "Exhaust: Target player gains 1 influence.",
+    "abilityId": "colonial-one"
   },
   "BSG1-005": {
     "id": "BSG1-005",
@@ -62,7 +66,8 @@
     "startingInfluence": 10,
     "handSize": 5,
     "resource": "logistics",
-    "abilityText": "Exhaust: Ready target Cylon unit."
+    "abilityText": "Exhaust: Ready target Cylon unit.",
+    "abilityId": "cylon-base-star"
   },
   "BSG1-006": {
     "id": "BSG1-006",
@@ -75,7 +80,8 @@
     "startingInfluence": 11,
     "handSize": 3,
     "resource": "logistics",
-    "abilityText": "Each time you are challenged, you may exhaust this base. If you do, ready target ship. At the end of the challenge, commit that ship."
+    "abilityText": "Each time you are challenged, you may exhaust this base. If you do, ready target ship. At the end of the challenge, commit that ship.",
+    "abilityId": "flattop"
   },
   "BSG1-007": {
     "id": "BSG1-007",
@@ -88,7 +94,8 @@
     "startingInfluence": 9,
     "handSize": 4,
     "resource": "security",
-    "abilityText": "Exhaust: Target player loses 1 influence."
+    "abilityText": "Exhaust: Target player loses 1 influence.",
+    "abilityId": "galactica"
   },
   "BSG1-008": {
     "id": "BSG1-008",
@@ -101,7 +108,8 @@
     "startingInfluence": 12,
     "handSize": 3,
     "resource": "persuasion",
-    "abilityText": "Each time you lose influence, you may exhaust this base. If you do, reduce that loss by 2."
+    "abilityText": "Each time you lose influence, you may exhaust this base. If you do, reduce that loss by 2.",
+    "abilityId": "iht-colonial-one"
   },
   "BSG1P-1": {
     "id": "BSG1P-1",
@@ -153,7 +161,8 @@
     "startingInfluence": 10,
     "handSize": 4,
     "resource": "logistics",
-    "abilityText": "Exhaust: Target Cylon unit gets +2 power."
+    "abilityText": "Exhaust: Target Cylon unit gets +2 power.",
+    "abilityId": "assault-base-star"
   },
   "BSG2-002": {
     "id": "BSG2-002",
@@ -166,7 +175,8 @@
     "startingInfluence": 12,
     "handSize": 3,
     "resource": "persuasion",
-    "abilityText": "When Cylon threats are revealed, you can exhaust this base. If you do, Cylon threat text on target Cylon threat does not affect target player."
+    "abilityText": "When Cylon threats are revealed, you can exhaust this base. If you do, Cylon threat text on target Cylon threat does not affect target player.",
+    "abilityId": "blockading-base-star"
   },
   "BSG2-003": {
     "id": "BSG2-003",
@@ -179,7 +189,8 @@
     "startingInfluence": 10,
     "handSize": 4,
     "resource": "security",
-    "abilityText": "Exhaust: Target unit challenging a Cylon threat gets +3 power."
+    "abilityText": "Exhaust: Target unit challenging a Cylon threat gets +3 power.",
+    "abilityId": "bs75-galactica"
   },
   "BSG2-004": {
     "id": "BSG2-004",
@@ -192,7 +203,8 @@
     "startingInfluence": 12,
     "handSize": 4,
     "resource": "persuasion",
-    "abilityText": "When you resolve a mission, you can exhaust this base. If you do, it counts as one Civilian unit for meeting the mission's requirements."
+    "abilityText": "When you resolve a mission, you can exhaust this base. If you do, it counts as one Civilian unit for meeting the mission's requirements.",
+    "abilityId": "colonial-heavy-798"
   },
   "BSG2-005": {
     "id": "BSG2-005",
@@ -205,7 +217,8 @@
     "startingInfluence": 11,
     "handSize": 4,
     "resource": "security",
-    "abilityText": "Exhaust: Target unit in a challenge gets +1 power."
+    "abilityText": "Exhaust: Target unit in a challenge gets +1 power.",
+    "abilityId": "delphi-union"
   },
   "BSG2-006": {
     "id": "BSG2-006",
@@ -218,6 +231,7 @@
     "startingInfluence": 9,
     "handSize": 5,
     "resource": "logistics",
-    "abilityText": "Exhaust: Take an extra action after this one. On your next action, when you would spend resources to generate at least [L][L], generate three of any one resource instead."
+    "abilityText": "Exhaust: Take an extra action after this one. On your next action, when you would spend resources to generate at least [L][L], generate three of any one resource instead.",
+    "abilityId": "ragnar-anchorage"
   }
 }

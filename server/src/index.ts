@@ -29,7 +29,7 @@ import { makeAIDecision } from "./ai-player.js";
 // --- Load card registry at startup ---
 
 const registry: CardRegistry = loadCardRegistry();
-setCardRegistry(registry.cards);
+setCardRegistry(registry.cards, registry.bases);
 
 const bases: Record<string, BaseCardDef> = registry.bases;
 

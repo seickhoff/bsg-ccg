@@ -37,6 +37,7 @@
     "resource": "security",
     "traits": ["Pilot"],
     "abilityText": "All other Pilots you control get +1 power.",
+    "abilityId": "apollo-cag",
     "flavorText": "\"You know the drill, people. Scatter formation, keep 'em off the civvies, and don't stray beyond the recovery line.\" —Capt. Adama"
   },
   "BSG1-100": {
@@ -57,6 +58,7 @@
     "resource": "security",
     "traits": ["Officer", "Politician"],
     "abilityText": "All other Officers you control gain the Politician trait.",
+    "abilityId": "apollo-politician",
     "flavorText": "\"As leaders, don't we have an obligation to question our actions, to make sure the decisions that we make are the right decisions?\" —Capt. Adama"
   },
   "BSG1-101": {
@@ -77,6 +79,7 @@
     "resource": "persuasion",
     "traits": ["Politician"],
     "abilityText": "When this card enters play as a personnel, gain 1 influence.",
+    "abilityId": "billy-etb",
     "flavorText": "\"If this could've waited a few more months until the presidential election, we could've hand-picked a candidate to run on our ticket.\" —Billy Keikeya"
   },
   "BSG1-102": {
@@ -97,6 +100,7 @@
     "resource": "persuasion",
     "traits": ["Politician"],
     "abilityText": "While defending, this personnel gets +2 power.",
+    "abilityId": "billy-defend",
     "flavorText": "\"And thank you for making my first official press conference a relatively bloodless affair.\" —Billy Keikeya"
   },
   "BSG1-103": {
@@ -137,6 +141,7 @@
     "resource": "logistics",
     "traits": ["Cylon", "Pilot"],
     "abilityText": "When this card enters play as a personnel, draw a card.",
+    "abilityId": "boomer-etb",
     "cylonThreatText": "Each player discards a card.",
     "flavorText": "\"Plans B, C, D, and E are the same as plan A: get off the planet and get back to the ship.\" —Lt. Valerii"
   },
@@ -158,6 +163,7 @@
     "resource": "security",
     "traits": ["Cylon", "Pilot"],
     "abilityText": "Commit: All players lose 1 influence.",
+    "abilityId": "boomer-saboteur",
     "cylonThreatText": "Each player loses 1 influence.",
     "flavorText": "\"What the frak...?\" —Lt. Valerii"
   },
@@ -178,6 +184,7 @@
     "resource": "security",
     "traits": ["Cylon", "Machine"],
     "abilityText": "Commit: Target Cylon threat gets +2 power.",
+    "abilityId": "centurion-ambush",
     "cylonThreatText": "Each player sacrifices a reserve ship."
   },
   "BSG1-107": {
@@ -256,6 +263,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit: Choose target other unit. If that unit is challenging, it gets +2 power.",
+    "abilityId": "crashdown-buff",
     "flavorText": "\"You're the boss.\" —Lt. Quartararo"
   },
   "BSG1-111": {
@@ -276,6 +284,7 @@
     "resource": "persuasion",
     "traits": ["Officer"],
     "abilityText": "Commit and exhaust: Put target card from your discard pile into your hand.",
+    "abilityId": "crashdown-recover",
     "flavorText": "\"Crashdown/Galactica. We've completed our search. Positive water findings. Repeat: We found water!\" —Lt. Quartararo"
   },
   "BSG1-112": {
@@ -296,6 +305,7 @@
     "resource": "security",
     "traits": ["Cylon", "Machine"],
     "abilityText": "While challenging, this personnel gets +2 power.",
+    "abilityId": "centurion-aggro",
     "cylonThreatText": "Each player sacrifices a reserve personnel.",
     "flavorText": "The Cylons were created by man. They rebelled. They evolved."
   },
@@ -317,6 +327,7 @@
     "resource": "persuasion",
     "traits": ["Civilian", "Cylon"],
     "abilityText": "Commit: Choose target other unit. If that unit is challenging, it gets +2 power.",
+    "abilityId": "danna-buff",
     "cylonThreatText": "Each player exhausts a personnel he or she controls.",
     "flavorText": "\"Is this a social call or are we on the verge of another coup?\" —D'Anna Biers"
   },
@@ -338,6 +349,7 @@
     "resource": "persuasion",
     "traits": ["Civilian", "Cylon"],
     "abilityText": "This personnel cannot challenge. (This personnel can defend.)",
+    "abilityId": "danna-noattack",
     "cylonThreatText": "Each player commits a personnel he or she controls.",
     "flavorText": "\"I take it I'm here because you're unhappy with my report on the Gideon Massacre.\" —D'Anna Biers"
   },
@@ -359,6 +371,7 @@
     "resource": "logistics",
     "traits": ["Enlisted"],
     "abilityText": "During the Cylon phase, this personnel gets +2 power.",
+    "abilityId": "dee-cylon",
     "flavorText": "\"Contact! Dradis contact! Incoming, bearing zero-six-zero, carom three-zero-eight.\" —PO 2nd Class Dualla"
   },
   "BSG1-116": {
@@ -379,6 +392,7 @@
     "resource": "security",
     "traits": ["Enlisted"],
     "abilityText": "Commit: Target other personnel gets +2 power.",
+    "abilityId": "dee-buff",
     "flavorText": "\"How about Dee? Petty Officer 2nd Class Dualla. She works in CIC...\" —Billy Keikeya"
   },
   "BSG1-117": {
@@ -399,6 +413,7 @@
     "resource": "persuasion",
     "traits": ["Civilian"],
     "abilityText": "Commit and exhaust: Put target personnel card from your discard pile into your hand.",
+    "abilityId": "baltar-recover",
     "flavorText": "World-famous winner of three Magnate Prizes, and best known for his controversial views on computer technology."
   },
   "BSG1-118": {
@@ -419,6 +434,7 @@
     "resource": "security",
     "traits": ["Civilian"],
     "abilityText": "Commit: Defeat target exhausted personnel.",
+    "abilityId": "baltar-defeat",
     "flavorText": "\"I am not on anybody's side.\" —Dr. Baltar"
   },
   "BSG1-119": {
@@ -439,6 +455,7 @@
     "resource": "persuasion",
     "traits": ["Politician"],
     "abilityText": "Commit: Move target mission to its owner's reserve area. Commit: Ready target mission.",
+    "abilityId": "baltar-vp",
     "flavorText": "\"Mr. Vice President if you please, Lieutenant. Some decorum is called for after all. Not a pirate ship you're running here, is it?\" —Dr. Baltar"
   },
   "BSG1-120": {
@@ -459,6 +476,7 @@
     "resource": "logistics",
     "traits": ["Enlisted"],
     "abilityText": "Commit: Ready target ship.",
+    "abilityId": "tyrol-ready",
     "flavorText": "\"Show's over. We got work to do.\" —CPO Tyrol"
   },
   "BSG1-121": {
@@ -479,6 +497,7 @@
     "resource": "logistics",
     "traits": ["Enlisted"],
     "abilityText": "Each time a ship you control enters play, you may commit this personnel to ready that ship.",
+    "abilityId": "tyrol-chief",
     "flavorText": "\"Here's what you gotta do: First, you're gonna have to remove my size 12 shoe from your ass.\" —CPO Tyrol"
   },
   "BSG1-122": {
@@ -499,6 +518,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit: Target Pilot gets +2 power.",
+    "abilityId": "helo-buff",
     "flavorText": "\"Sharon, we've made it this far. We're gonna make it all the way.\" —Lt. Agathon"
   },
   "BSG1-123": {
@@ -539,6 +559,7 @@
     "resource": "logistics",
     "traits": ["Officer"],
     "abilityText": "This personnel gets +3 power while challenging a Cylon personnel.",
+    "abilityId": "helo-anticylon",
     "flavorText": "\"Never send a pilot to do an ECO's job.\" —Lt. Agathon"
   },
   "BSG1-125": {
@@ -559,6 +580,7 @@
     "resource": "logistics",
     "traits": ["Politician"],
     "abilityText": "Commit: Draw a card.",
+    "abilityId": "roslin-draw",
     "flavorText": "\"You need to understand that my responsibility as president is, first and foremost, to preserve and protect the people of this fleet.\" —President Roslin"
   },
   "BSG1-126": {
@@ -579,6 +601,7 @@
     "resource": "persuasion",
     "traits": ["Politician"],
     "abilityText": "Each time you reveal a card for its mystic value, that card gets +1 to its mystic value.",
+    "abilityId": "roslin-prophecy",
     "flavorText": "\"She also wrote that the leader suffered a wasting disease and would not live to enter the new land. But you're not dying. Are you?\" —Elosha"
   },
   "BSG1-127": {
@@ -599,6 +622,7 @@
     "resource": "persuasion",
     "traits": ["Politician"],
     "abilityText": "Commit: Gain 1 influence.",
+    "abilityId": "roslin-influence",
     "flavorText": "\"I am committed to providing a future for our people.\" —President Roslin"
   },
   "BSG1-128": {
@@ -619,6 +643,7 @@
     "resource": "logistics",
     "traits": ["Officer"],
     "abilityText": "Each time this personnel challenges, you may ready it when that challenge ends. Play this ability only once each turn.",
+    "abilityId": "gaeta-ready",
     "flavorText": "\"Gun captains report weapons manned and ready.\" —Lt. Gaeta"
   },
   "BSG1-129": {
@@ -639,6 +664,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit: Choose target other unit. If that unit is challenging a Cylon threat, it gets +2 power.",
+    "abilityId": "gaeta-cylon-buff",
     "flavorText": "\"Dradis contact—strike that, multiple contacts. It's the Cylons.\" —Lt. Gaeta"
   },
   "BSG1-130": {
@@ -659,6 +685,7 @@
     "resource": "logistics",
     "traits": ["Cylon"],
     "abilityText": "Vision (This personnel can't challenge or defend.) Commit and sacrifice: Take an extra two actions after this one.",
+    "abilityId": "six-agent",
     "cylonThreatText": "Each player exhausts his or her base.",
     "flavorText": "\"Have you always been able to multitask like this?\" —Number Six"
   },
@@ -680,6 +707,7 @@
     "resource": "logistics",
     "traits": ["Civilian", "Cylon"],
     "abilityText": "Commit and exhaust: Ready target other Cylon personnel.",
+    "abilityId": "six-ready-cylon",
     "cylonThreatText": "Each player exhausts an asset he or she controls.",
     "flavorText": "\"I hope you're more convincing than that with him.\" —Number Six"
   },
@@ -701,6 +729,7 @@
     "resource": "security",
     "traits": ["Cylon"],
     "abilityText": "Vision (This personnel can't challenge or defend.) Commit: Exhaust target other personnel.",
+    "abilityId": "six-exhaust",
     "cylonThreatText": "Each player commits a personnel he or she controls.",
     "flavorText": "\"Parties full of young women drawn to men of power...\" —Number Six"
   },
@@ -742,6 +771,7 @@
     "resource": "logistics",
     "traits": ["Officer"],
     "abilityText": "Each time you are challenged, you may ready this personnel. When that challenge ends, commit and exhaust this personnel.",
+    "abilityId": "tigh-xo",
     "flavorText": "\"With all due respect, Madame President, this is damned lunacy.\" —Col. Tigh"
   },
   "BSG1-135": {
@@ -762,6 +792,7 @@
     "resource": "logistics",
     "traits": ["Civilian", "Cylon"],
     "abilityText": "Commit: Target opponent reveals his or her hand. You choose a personnel card in it. Put that card on top of its owner's deck.",
+    "abilityId": "godfrey-reveal",
     "cylonThreatText": "Each player puts one card from the top of his or her deck into his or her discard pile.",
     "flavorText": "\"Doctor Amarak told me he had evidence that Doctor Baltar was involved in the sneak attack.\" —Shelley Godfrey"
   },
@@ -783,6 +814,7 @@
     "resource": "security",
     "traits": ["Pilot"],
     "abilityText": "This personnel gets +1 power for each other Pilot you control.",
+    "abilityId": "starbuck-hotshot",
     "flavorText": "\"Pilots call me 'Starbuck'; you may refer to me as 'God.'\" —Lt. Thrace"
   },
   "BSG1-137": {
@@ -803,6 +835,7 @@
     "resource": "logistics",
     "traits": ["Pilot"],
     "abilityText": "Each time you reveal a mystic value, you may commit this personnel. If you do, ignore that mystic value and reveal another instead.",
+    "abilityId": "starbuck-reroll",
     "flavorText": "\"No guts, no glory, Doctor. See your five. Raise twenty.\" —Lt. Thrace"
   },
   "BSG1-138": {
@@ -843,6 +876,7 @@
     "resource": "security",
     "traits": ["Civilian"],
     "abilityText": "When this card enters play as a personnel, defeat target personnel.",
+    "abilityId": "zarek-etb",
     "flavorText": "\"Always better when the oppressed don't fight back, isn't it? Only the government gets to use force.\" —Tom Zarek"
   },
   "BSG1-140": {
@@ -903,6 +937,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit: Choose target other unit. If that unit is challenging, it gets +2 power.",
+    "abilityId": "adama-commit",
     "flavorText": "\"I've given all of us a fighting chance to survive.\" —Cmdr. Adama"
   },
   "BSG1-143": {
@@ -923,6 +958,7 @@
     "resource": "persuasion",
     "traits": ["Officer"],
     "abilityText": "While you control another alert personnel, this personnel gets +2 power.",
+    "abilityId": "adama-oldman",
     "flavorText": "\"...gotta make the Old Man look good.\" —Col. Tigh \"I always look good.\" —Cmdr. Adama"
   },
   "BSG2-113": {
@@ -943,6 +979,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "When this personnel is defeated, gain 2 influence.",
+    "abilityId": "helo-defeat",
     "flavorText": "\"Agathon, Karl C. Lieutenant, junior grade, Colonial fleet.\" —Lt. Karl \"Helo\" Agathon"
   },
   "BSG2-122": {
@@ -1003,6 +1040,7 @@
     "resource": "security",
     "traits": ["Civilian"],
     "abilityText": "All other Civilian units you control get +1 power.",
+    "abilityId": "anders-leader",
     "flavorText": "\"I want to blow these Cylons away before they ever knew what hit 'em.\" —Samuel Anders"
   },
   "BSG2-085": {
@@ -1023,6 +1061,7 @@
     "resource": "logistics",
     "traits": ["Pilot"],
     "abilityText": "Commit: Target other personnel gains Strafe. (This unit can challenge as a personnel or a ship. Make this choice before the defender is chosen.)",
+    "abilityId": "apollo-strafe",
     "flavorText": "\"I'm glad to hear that, sir; will that be all?\" —Capt. Lee \"Apollo\" Adama"
   },
   "BSG2-086": {
@@ -1042,7 +1081,8 @@
     "cylonThreat": 2,
     "resource": "security",
     "traits": ["Officer"],
-    "abilityText": "Commit: Put target Cylon threat into its owner's discard pile. The challenge ends. Commit the challenger."
+    "abilityText": "Commit: Put target Cylon threat into its owner's discard pile. The challenge ends. Commit the challenger.",
+    "abilityId": "apollo-dismiss"
   },
   "BSG2-087": {
     "id": "BSG2-087",
@@ -1062,6 +1102,7 @@
     "resource": "persuasion",
     "traits": ["Civilian", "Cylon"],
     "abilityText": "This personnel counts as 1 Civilian unit and 1 Cylon unit for the purpose of resolving a mission.",
+    "abilityId": "boomer-conspirator",
     "cylonThreatText": "Each player exhausts a personnel he or she controls.",
     "flavorText": "\"She's good.\" —Aaron Doral"
   },
@@ -1083,6 +1124,7 @@
     "resource": "logistics",
     "traits": ["Cylon"],
     "abilityText": "While you control an alert Helo, this personnel gets +1 power.",
+    "abilityId": "boomer-helo",
     "cylonThreatText": "Each player commits a Cylon unit he or she controls.",
     "flavorText": "\"Because I love you, Helo. No other reason.\" —Lt. Sharon \"Boomer\" Valerii"
   },
@@ -1104,6 +1146,7 @@
     "resource": "persuasion",
     "traits": ["Cylon", "Pilot"],
     "abilityText": "Commit and exhaust: Search your deck for a personnel card, reveal it, and then put it into your hand.",
+    "abilityId": "boomer-search",
     "flavorText": "\"All right, the kids go . . . and we can take three more people.\" —Lt. Sharon \"Boomer\" Valerii"
   },
   "BSG2-090": {
@@ -1123,7 +1166,8 @@
     "cylonThreat": 1,
     "resource": "logistics",
     "traits": ["Enlisted"],
-    "abilityText": "Commit: Restore target ship."
+    "abilityText": "Commit: Restore target ship.",
+    "abilityId": "cally-restore"
   },
   "BSG2-091": {
     "id": "BSG2-091",
@@ -1161,6 +1205,7 @@
     "resource": "security",
     "traits": ["Cylon", "Machine"],
     "abilityText": "Commit: Commit target personnel.",
+    "abilityId": "centurion-harass",
     "cylonThreatText": "Each player chooses target opponent. That opponent sacrifices a personnel he or she controls."
   },
   "BSG2-093": {
@@ -1180,6 +1225,7 @@
     "resource": "security",
     "traits": ["Cylon", "Machine"],
     "abilityText": "Commit target other Cylon personnel you control: This personnel gets +2 power. Play this ability only once each turn.",
+    "abilityId": "centurion-hunt",
     "cylonThreatText": "Each player discards a card."
   },
   "BSG2-094": {
@@ -1199,6 +1245,7 @@
     "resource": "logistics",
     "traits": ["Cylon", "Machine"],
     "abilityText": "Each time this personnel challenges, sacrifice it when that challenge ends.",
+    "abilityId": "centurion-tracker",
     "cylonThreatText": "Each player exhausts a personnel he or she controls."
   },
   "BSG2-095": {
@@ -1219,6 +1266,7 @@
     "resource": "logistics",
     "traits": ["Cylon"],
     "abilityText": "All Cylon threats get +1 power.",
+    "abilityId": "doral-overseer",
     "flavorText": "\"If he flees, he dies.\" —Aaron Doral"
   },
   "BSG2-096": {
@@ -1260,6 +1308,7 @@
     "resource": "logistics",
     "traits": ["Civilian", "Cylon"],
     "abilityText": "Commit: Exhaust target ship.",
+    "abilityId": "doral-exhaust",
     "cylonThreatText": "All Politicians get -1 power.",
     "flavorText": "\"There's a saying in the Colonial fleet that you can jam every sensor but the human brain.\" —Aaron Doral"
   },
@@ -1281,6 +1330,7 @@
     "resource": "security",
     "traits": ["Civilian"],
     "abilityText": "Commit target other personnel you control: This personnel gets +1 power.",
+    "abilityId": "baltar-boost",
     "flavorText": "\"I did not plant a bomb in the defense mainframe, and I did not conspire with the Cylons.\" —Dr. Gaius Baltar"
   },
   "BSG2-099": {
@@ -1321,6 +1371,7 @@
     "resource": "logistics",
     "traits": ["Civilian"],
     "abilityText": "Sacrifice target alert personnel: This personnel gets +3 power. Play this ability only once each turn.",
+    "abilityId": "baltar-sacrifice",
     "flavorText": "\"I have a highly developed sense of survival.\" —Dr. Gaius Baltar"
   },
   "BSG2-101": {
@@ -1341,6 +1392,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit: Target personnel gets -2 power.",
+    "abilityId": "cottle-debuff",
     "flavorText": "\"It's too damned late to operate; the cancer's too advanced.\" —Dr. Cottle"
   },
   "BSG2-102": {
@@ -1361,6 +1413,7 @@
     "resource": "persuasion",
     "traits": ["Officer"],
     "abilityText": "Commit and exhaust: Put target personnel from your discard pile into your hand.",
+    "abilityId": "cottle-recover",
     "flavorText": "\"This is the sick bay of a battlestar. I patch up wounded and send 'em home.\" —Dr. Cottle"
   },
   "BSG2-103": {
@@ -1381,6 +1434,7 @@
     "resource": "persuasion",
     "traits": ["Officer"],
     "abilityText": "Commit this personnel during a challenge: The unit that loses the challenge is exhausted instead of defeated.",
+    "abilityId": "cottle-surgeon",
     "flavorText": "\"You have a ship's doctor aboard Galactica?\" —President Laura Roslin\n\"Major Cottle.\" —Cmdr. William Adama"
   },
   "BSG2-104": {
@@ -1421,6 +1475,7 @@
     "resource": "logistics",
     "traits": ["Civilian"],
     "abilityText": "Commit: Target Officer gets +2 power.",
+    "abilityId": "ellen-buff",
     "flavorText": "\"Well, if being the XO's wife doesn't have some privileges, what's the point?\" —Ellen Tigh"
   },
   "BSG2-106": {
@@ -1461,6 +1516,7 @@
     "resource": "persuasion",
     "traits": ["Civilian"],
     "abilityText": "Commit: Reveal the top card of your deck. Target other unit gets +X power, where X is the revealed card's mystic value.",
+    "abilityId": "elosha-mystic-buff",
     "flavorText": "\"The scriptures tell us that Kobol points the way to Earth.\" —Elosha"
   },
   "BSG2-108": {
@@ -1480,7 +1536,8 @@
     "cylonThreat": 2,
     "resource": "persuasion",
     "traits": ["Civilian"],
-    "abilityText": "Commit during a challenge: When you reveal a mystic value this challenge, reveal an additional mystic value. Your mystic value is the sum of these two mystic values."
+    "abilityText": "Commit during a challenge: When you reveal a mystic value this challenge, reveal an additional mystic value. Your mystic value is the sum of these two mystic values.",
+    "abilityId": "elosha-double"
   },
   "BSG2-109": {
     "id": "BSG2-109",
@@ -1500,6 +1557,7 @@
     "resource": "logistics",
     "traits": ["Enlisted"],
     "abilityText": "When this card enters play as a personnel, ready a ship you control.",
+    "abilityId": "tyrol-etb",
     "flavorText": "\"Morning, sir. Chief Tyrol—I'll be your crew chief while you're aboard.\" —Chief Galen Tyrol"
   },
   "BSG2-110": {
@@ -1520,6 +1578,7 @@
     "resource": "security",
     "traits": ["Enlisted"],
     "abilityText": "Commit: Commit and exhaust target personnel with power 2 or less.",
+    "abilityId": "hadrian-tribunal",
     "flavorText": "\"A tribunal has been formed to look into the Cylon penetration of our defenses.\" —Sgt. Hadrian"
   },
   "BSG2-111": {
@@ -1540,6 +1599,7 @@
     "resource": "security",
     "traits": ["Enlisted"],
     "abilityText": "Commit: Commit and exhaust target Enlisted or Cylon personnel.",
+    "abilityId": "hadrian-investigate",
     "flavorText": "\"I'll need statements from you and the rest of your deck gang.\" —Sgt. Hadrian"
   },
   "BSG2-112": {
@@ -1560,6 +1620,7 @@
     "resource": "security",
     "traits": ["Enlisted"],
     "abilityText": "The fleet defense level gets +1.",
+    "abilityId": "hadrian-defense",
     "flavorText": "\"As master-at-arms, she'll be investigating this incident.\" —Cmdr. William Adama"
   },
   "BSG2-114": {
@@ -1580,6 +1641,7 @@
     "resource": "persuasion",
     "traits": ["Officer"],
     "abilityText": "Commit: Target other defending personnel gets +2 power.",
+    "abilityId": "helo-protect",
     "flavorText": "\"I'm not gonna let you kill her!\" —Lt. Karl \"Helo\" Agathon"
   },
   "BSG2-115": {
@@ -1599,7 +1661,8 @@
     "cylonThreat": 1,
     "resource": "logistics",
     "traits": ["Officer"],
-    "abilityText": "Each time this personnel challenges while you control an alert Boomer, you can ready this personnel when the challenge ends. Play this ability only once each turn."
+    "abilityText": "Each time this personnel challenges while you control an alert Boomer, you can ready this personnel when the challenge ends. Play this ability only once each turn.",
+    "abilityId": "helo-toaster"
   },
   "BSG2-116": {
     "id": "BSG2-116",
@@ -1619,6 +1682,7 @@
     "resource": "persuasion",
     "traits": ["Politician"],
     "abilityText": "Commit: Ready target mission.",
+    "abilityId": "roslin-mission",
     "flavorText": "\"If you bring me the Arrow, I will show us the way.\" —President Laura Roslin"
   },
   "BSG2-117": {
@@ -1639,6 +1703,7 @@
     "resource": "logistics",
     "traits": ["Politician"],
     "abilityText": "Commit: Target other personnel gets +2 power.",
+    "abilityId": "roslin-buff",
     "flavorText": "\"We're in the middle of a war, and you want to take orders from a school teacher?\" —Cmdr. William Adama"
   },
   "BSG2-118": {
@@ -1659,6 +1724,7 @@
     "resource": "persuasion",
     "traits": ["Civilian", "Cylon"],
     "abilityText": "Commit: Target personnel gains the Cylon trait.",
+    "abilityId": "leoben-cylon",
     "cylonThreatText": "All Officers get -1 power.",
     "flavorText": "\"Adama is a Cylon.\" —Leoben Conoy"
   },
@@ -1680,6 +1746,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit: Cylon threat of target card gets -1 until the end of the turn.",
+    "abilityId": "gaeta-cylon-reduce",
     "flavorText": "\"Damned nice work, Lieutenant.\" —Col. Saul Tigh"
   },
   "BSG2-120": {
@@ -1720,6 +1787,7 @@
     "resource": "persuasion",
     "traits": ["Cylon"],
     "abilityText": "Vision (This unit can't challenge or defend.)\nEach time a personnel challenges and there is no defender, you can commit this personnel. If you do, the challenger gets +2 power.",
+    "abilityId": "six-seductress",
     "cylonThreatText": "Each player discards a card."
   },
   "BSG2-123": {
@@ -1740,6 +1808,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit and exhaust: Commit and exhaust target personnel.",
+    "abilityId": "tigh-lockdown",
     "flavorText": "\"Do your job or get back to the brig.\" —Col. Saul Tigh"
   },
   "BSG2-124": {
@@ -1760,6 +1829,7 @@
     "resource": "logistics",
     "traits": ["Civilian"],
     "abilityText": "Commit: Restore target personnel.",
+    "abilityId": "simon-restore",
     "cylonThreatText": "Each player exhausts a personnel he or she controls.",
     "flavorText": "\"I'm Simon. Can you tell me your name?\" —Simon"
   },
@@ -1801,6 +1871,7 @@
     "resource": "persuasion",
     "traits": ["Pilot"],
     "abilityText": "Commit and exhaust: Put target alert personnel into its owner's hand.",
+    "abilityId": "starbuck-bounce",
     "flavorText": "\"You should go. I'm getting the urge to hit another superior asshole.\" —Lt. Kara \"Starbuck\" Thrace"
   },
   "BSG2-127": {
@@ -1821,6 +1892,7 @@
     "resource": "logistics",
     "traits": ["Officer"],
     "abilityText": "Commit and exhaust: Exhaust target resource stack.",
+    "abilityId": "starbuck-sabotage",
     "flavorText": "\"We could use some professional advice.\" —Samuel Anders"
   },
   "BSG2-128": {
@@ -1841,6 +1913,7 @@
     "resource": "security",
     "traits": ["Officer"],
     "abilityText": "Commit and exhaust: Defeat target Cylon personnel.",
+    "abilityId": "starbuck-slay",
     "flavorText": "\"I never told you my callsign was 'Starbuck.'\" —Lt. Kara \"Starbuck\" Thrace"
   },
   "BSG2-129": {
@@ -1880,6 +1953,7 @@
     "cylonThreat": 2,
     "resource": "security",
     "traits": ["Officer"],
-    "abilityText": "Commit: Target other personnel gains Sniper. (Each time this unit challenges, you can choose the defender.)"
+    "abilityText": "Commit: Target other personnel gains Sniper. (Each time this unit challenges, you can choose the defender.)",
+    "abilityId": "adama-sniper"
   }
 }

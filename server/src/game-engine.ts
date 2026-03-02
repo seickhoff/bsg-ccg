@@ -8,7 +8,6 @@ import type {
   ResourceStack,
   UnitStack,
   ChallengeState,
-  CylonThreatCard,
   BaseCardDef,
   CardDef,
   CardCost,
@@ -16,11 +15,72 @@ import type {
   ReadyStep,
   OpponentView,
 } from "@bsg/shared";
+import {
+  canUnitChallenge,
+  canUnitDefend,
+  getDefenderSelector,
+  getUndefendedEffect,
+  getMissionDestination,
+} from "./keyword-rules.js";
+import {
+  getBaseAbilityActions,
+  resolveBaseAbilityEffect,
+  getOnChallengedTrigger,
+  interceptInfluenceLoss,
+  hasColonialHeavy798,
+  exhaustColonialHeavy798,
+  setBaseAbilityCardRegistry,
+} from "./base-abilities.js";
+import {
+  getUnitAbilityActions,
+  resolveUnitAbility,
+  getUnitAbilityCost,
+  canUnitAbilityChallenge,
+  computePassivePowerModifier,
+  computeFleetDefenseModifiers,
+  computeCylonThreatBonus,
+  fireOnEnterPlay,
+  fireOnDefeat,
+  fireOnChallengeEnd,
+  fireOnMysticReveal,
+  fireOnShipEnterPlay,
+  fireOnChallengeInit,
+  fireOnChallengeWin,
+  setUnitAbilityCardRegistry,
+} from "./unit-abilities.js";
+import {
+  resolveEventAbility,
+  canPlayEvent,
+  isEventPlayableIn,
+  setEventGameHelpers,
+  setEventAbilityCardRegistry,
+} from "./event-abilities.js";
 // Card registry — populated at startup via setCardRegistry()
 let cardRegistry: Record<string, CardDef> = {};
 
-export function setCardRegistry(cards: Record<string, CardDef>): void {
+export function setCardRegistry(
+  cards: Record<string, CardDef>,
+  bases: Record<string, BaseCardDef>,
+): void {
   cardRegistry = cards;
+  setBaseAbilityCardRegistry(cards);
+  setUnitAbilityCardRegistry(cards);
+  setEventAbilityCardRegistry(cards);
+  setEventGameHelpers({
+    getCardDef,
+    cardName,
+    defeatUnit,
+    commitUnit,
+    drawCards,
+    applyPowerBuff,
+    applyInfluenceLoss,
+    revealMysticValue(state: GameState, playerIndex: number, log: string[]): number {
+      const player = state.players[playerIndex];
+      const result = revealMysticValue(player, log, `Player ${playerIndex + 1}`);
+      return result.value;
+    },
+    bases,
+  });
 }
 
 // ============================================================
@@ -108,16 +168,16 @@ function findOverlayTarget(
 function computeCylonThreatLevel(state: GameState): number {
   let total = 0;
   for (const player of state.players) {
-    for (const stack of player.zones.alert) {
-      const topCard = stack.cards[0];
-      if (topCard && topCard.faceUp) {
-        total += getCardDef(topCard.defId).cylonThreat ?? 0;
-      }
-    }
-    for (const stack of player.zones.reserve) {
-      const topCard = stack.cards[0];
-      if (topCard && topCard.faceUp) {
-        total += getCardDef(topCard.defId).cylonThreat ?? 0;
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const topCard = stack.cards[0];
+        if (topCard && topCard.faceUp) {
+          let threat = getCardDef(topCard.defId).cylonThreat ?? 0;
+          // Apply Gaeta Brilliant temporary Cylon threat mods
+          const mod = player.temporaryCylonThreatMods?.[topCard.instanceId];
+          if (mod) threat = Math.max(0, threat + mod);
+          total += threat;
+        }
       }
     }
   }
@@ -353,6 +413,14 @@ export function getValidActions(
   // --- Game over ---
   if (state.phase === "gameOver") return actions;
 
+  // --- Pending choice (e.g. Celestra deck manipulation) ---
+  if (state.pendingChoice) {
+    if (playerIndex === state.pendingChoice.playerIndex) {
+      return getPendingChoiceActions(state);
+    }
+    return actions; // other player waits
+  }
+
   // --- Challenge sub-state ---
   if (state.challenge) {
     return getChallengeActions(state, playerIndex, bases);
@@ -409,49 +477,55 @@ export function getValidActions(
       });
     }
 
-    // Play ability (base exhaust abilities, unit commit/exhaust abilities)
+    // Play ability (base exhaust abilities via registry)
     const baseDef = bases[player.baseDefId];
-    if (baseDef?.abilityId && !player.zones.resourceStacks[0].exhausted) {
-      actions.push({
-        type: "playAbility",
-        description: `Use ${baseDef.title} ability: ${baseDef.abilityText}`,
-        cardDefId: baseDef.id,
-        selectableInstanceIds: [player.zones.resourceStacks[0].topCard.instanceId],
-      });
+    if (baseDef?.abilityId) {
+      actions.push(
+        ...getBaseAbilityActions(baseDef.abilityId, state, playerIndex, bases, "execution"),
+      );
     }
-    // Unit abilities (e.g., Adama's Commit)
+    // Unit abilities (via registry)
     for (const stack of player.zones.alert) {
       const topCard = stack.cards[0];
-      if (topCard && topCard.faceUp && !stack.exhausted) {
+      if (topCard && topCard.faceUp) {
         const def = getCardDef(topCard.defId);
-        if (def.abilityId && def.abilityText.startsWith("Commit:")) {
-          actions.push({
-            type: "playAbility",
-            description: `${cardName(def)}: ${def.abilityText}`,
-            cardDefId: def.id,
-            selectableInstanceIds: [topCard.instanceId],
-          });
+        if (def.abilityId) {
+          actions.push(
+            ...getUnitAbilityActions(
+              def.abilityId,
+              state,
+              playerIndex,
+              topCard.instanceId,
+              "execution",
+            ),
+          );
         }
       }
     }
 
-    // Challenge with an alert unit
-    const challengeUnits: string[] = [];
-    for (const stack of player.zones.alert) {
-      const topCard = stack.cards[0];
-      if (topCard && topCard.faceUp && !stack.exhausted) {
-        const def = getCardDef(topCard.defId);
-        if (isUnit(def)) {
-          challengeUnits.push(topCard.instanceId);
+    // Challenge with an alert unit (Showdown: no challenges rest of phase)
+    if (!state.noChallenges) {
+      const challengeUnits: string[] = [];
+      for (const stack of player.zones.alert) {
+        const topCard = stack.cards[0];
+        if (topCard && topCard.faceUp && !stack.exhausted) {
+          const def = getCardDef(topCard.defId);
+          if (
+            isUnit(def) &&
+            canUnitChallenge(def) &&
+            (!def.abilityId || canUnitAbilityChallenge(def.abilityId))
+          ) {
+            challengeUnits.push(topCard.instanceId);
+          }
         }
       }
-    }
-    if (challengeUnits.length > 0) {
-      actions.push({
-        type: "challenge",
-        description: "Challenge opponent",
-        selectableInstanceIds: challengeUnits,
-      });
+      if (challengeUnits.length > 0) {
+        actions.push({
+          type: "challenge",
+          description: "Challenge opponent",
+          selectableInstanceIds: challengeUnits,
+        });
+      }
     }
 
     // Resolve a mission
@@ -462,7 +536,7 @@ export function getValidActions(
           const def = getCardDef(topCard.defId);
           if (isMission(def)) {
             // Check if mission requirements are met
-            if (canResolveMission(player, def)) {
+            if (canResolveMission(player, def, bases)) {
               actions.push({
                 type: "resolveMission",
                 description: `Resolve ${cardName(def)}: ${def.abilityText}`,
@@ -488,7 +562,11 @@ export function getValidActions(
       const topCard = stack.cards[0];
       if (topCard && topCard.faceUp && !stack.exhausted) {
         const def = getCardDef(topCard.defId);
-        if (isUnit(def)) {
+        if (
+          isUnit(def) &&
+          canUnitChallenge(def) &&
+          (!def.abilityId || canUnitAbilityChallenge(def.abilityId))
+        ) {
           units.push(topCard.instanceId);
         }
       }
@@ -519,27 +597,68 @@ function getChallengeActions(
   const challenge = state.challenge!;
   const player = state.players[playerIndex];
 
+  // Pending triggered ability (Agro Ship / Flattop) — before defender selection
+  if (challenge.pendingTrigger) {
+    if (playerIndex === challenge.pendingTrigger.playerIndex) {
+      const baseDef = bases[player.baseDefId];
+      const trigger = getOnChallengedTrigger(state, playerIndex, bases);
+      if (trigger) {
+        for (const targetId of trigger.targets) {
+          const targetDef = findCardDefByInstanceId(state, targetId);
+          const targetLabel = targetDef ? cardName(targetDef) : "unit";
+          actions.push({
+            type: "useTriggeredAbility",
+            description: `${baseDef.title}: Ready ${targetLabel}`,
+            cardDefId: baseDef.id,
+            targetInstanceId: targetId,
+          });
+        }
+      }
+      actions.push({ type: "declineTrigger", description: "Decline" });
+      return actions;
+    }
+    return actions; // other player waits
+  }
+
   // Waiting for defender choice
-  if (challenge.waitingForDefender && playerIndex === challenge.defenderPlayerIndex) {
-    // Find eligible defenders (same type as challenger, face-up alert)
-    const challengerDef = findCardDefByInstanceId(state, challenge.challengerInstanceId);
-    if (challengerDef) {
-      for (const stack of player.zones.alert) {
-        const topCard = stack.cards[0];
-        if (topCard && topCard.faceUp && !stack.exhausted) {
-          const def = getCardDef(topCard.defId);
-          if (isUnit(def) && def.type === challengerDef.type) {
-            actions.push({
-              type: "defend",
-              description: `Defend with ${cardName(def)}`,
-              cardDefId: def.id,
-              selectableInstanceIds: [topCard.instanceId],
-            });
+  if (challenge.waitingForDefender) {
+    // Determine who is selecting the defender (Sniper → challenger picks)
+    const selectorPlayerIndex =
+      challenge.defenderSelector === "challenger"
+        ? challenge.challengerPlayerIndex
+        : challenge.defenderPlayerIndex;
+
+    if (playerIndex === selectorPlayerIndex) {
+      const challengerDef = findCardDefByInstanceId(state, challenge.challengerInstanceId);
+      if (challengerDef) {
+        // Always search the DEFENDING player's board for eligible units
+        const defendingPlayer = state.players[challenge.defenderPlayerIndex];
+        for (const stack of defendingPlayer.zones.alert) {
+          const topCard = stack.cards[0];
+          if (topCard && topCard.faceUp && !stack.exhausted) {
+            const def = getCardDef(topCard.defId);
+            if (
+              isUnit(def) &&
+              canUnitDefend(def, challengerDef) &&
+              !(state.politiciansCantDefend && def.traits?.includes("Politician"))
+            ) {
+              const label =
+                challenge.defenderSelector === "challenger"
+                  ? `Choose defender: ${cardName(def)}`
+                  : `Defend with ${cardName(def)}`;
+              actions.push({
+                type: "defend",
+                description: label,
+                cardDefId: def.id,
+                selectableInstanceIds: [topCard.instanceId],
+              });
+            }
           }
         }
       }
+      actions.push({ type: "defend", description: "Decline to defend" });
+      return actions;
     }
-    actions.push({ type: "defend", description: "Decline to defend" });
     return actions;
   }
 
@@ -558,20 +677,31 @@ function getChallengeActions(
       }
     }
 
-    // Can play abilities (commit/exhaust abilities on alert units)
+    // Can play abilities (unit abilities via registry)
     for (const stack of player.zones.alert) {
       const topCard = stack.cards[0];
       if (topCard && topCard.faceUp) {
         const def = getCardDef(topCard.defId);
-        if (def.abilityId && def.abilityText.startsWith("Commit:")) {
-          actions.push({
-            type: "playAbility",
-            description: `${cardName(def)}: ${def.abilityText}`,
-            cardDefId: def.id,
-            selectableInstanceIds: [topCard.instanceId],
-          });
+        if (def.abilityId) {
+          const context = challenge.isCylonChallenge ? "cylon-challenge" : "challenge";
+          actions.push(
+            ...getUnitAbilityActions(
+              def.abilityId,
+              state,
+              playerIndex,
+              topCard.instanceId,
+              context,
+            ),
+          );
         }
       }
+    }
+
+    // Base exhaust abilities usable during challenges
+    const baseDef = bases[player.baseDefId];
+    if (baseDef?.abilityId) {
+      const context = challenge.isCylonChallenge ? "cylon-challenge" : "challenge";
+      actions.push(...getBaseAbilityActions(baseDef.abilityId, state, playerIndex, bases, context));
     }
 
     actions.push({ type: "challengePass", description: "Pass" });
@@ -600,7 +730,32 @@ function findCardDefByInstanceId(state: GameState, instanceId: string): CardDef 
 
 function canAfford(player: PlayerState, def: CardDef, bases: Record<string, BaseCardDef>): boolean {
   if (!def.cost) return true;
+
+  // Ragnar Anchorage override: if any single logistics stack generates ≥2,
+  // treat it as 3 of any one resource type
+  if (player.ragnarResourceOverride) {
+    // Find best logistics stack
+    let bestLogistics = 0;
+    for (const stack of player.zones.resourceStacks) {
+      if (stack.exhausted) continue;
+      if (getStackResourceTypeFromPlayer(stack, bases, player) === "logistics") {
+        bestLogistics = Math.max(bestLogistics, stackResourceCount(stack));
+      }
+    }
+    if (bestLogistics >= 2) {
+      // Check if the total cost is ≤ 3 of a single type (can be paid by override)
+      const costEntries = Object.entries(def.cost) as [ResourceType, number][];
+      if (costEntries.length === 1 && costEntries[0][1] <= 3) {
+        return true; // Ragnar can cover any single-type cost ≤ 3
+      }
+    }
+  }
+
   for (const [resType, amount] of Object.entries(def.cost) as [ResourceType, number][]) {
+    // Apply cost reduction (Refinery Ship)
+    const reduction = player.costReduction?.[resType as keyof typeof player.costReduction] ?? 0;
+    const effectiveAmount = Math.max(0, amount - reduction);
+    if (effectiveAmount === 0) continue;
     let available = 0;
     for (const stack of player.zones.resourceStacks) {
       if (stack.exhausted) continue;
@@ -608,7 +763,7 @@ function canAfford(player: PlayerState, def: CardDef, bases: Record<string, Base
         available += stackResourceCount(stack);
       }
     }
-    if (available < amount) return false;
+    if (available < effectiveAmount) return false;
   }
   return true;
 }
@@ -625,23 +780,116 @@ function getStackResourceTypeFromPlayer(
   return cardDef?.resource ?? null;
 }
 
-function canResolveMission(player: PlayerState, missionDef: CardDef): boolean {
-  // Simple parsing of mission requirements from abilityText
-  // Format: "Resolve: 1 ship. ..." or "Resolve: 1 personnel. ..."
-  const match = missionDef.abilityText.match(/Resolve:\s*(\d+)\s+(ship|personnel)/i);
-  if (!match) return true;
-  const count = parseInt(match[1]);
-  const reqType = match[2].toLowerCase();
+/** Parsed mission requirement: count + filter function. */
+interface MissionRequirement {
+  count: number;
+  label: string;
+  matches: (def: CardDef) => boolean;
+}
 
-  let available = 0;
+/**
+ * Parse mission resolveText into structured requirements.
+ * Handles: "Resolve: 1 Officer.", "Resolve: 1 Civilian unit and 1 Politician.", etc.
+ */
+function parseMissionRequirements(missionDef: CardDef): MissionRequirement[] {
+  const resolveText = missionDef.resolveText ?? "";
+  const resolveMatch = resolveText.match(/Resolve:\s*(.+)/);
+  if (!resolveMatch) return [];
+
+  const requirementStr = resolveMatch[1].replace(/\.$/, "");
+  const parts = requirementStr.split(/\s+and\s+/);
+  const requirements: MissionRequirement[] = [];
+
+  for (const part of parts) {
+    const match = part.trim().match(/^(\d+)\s+(.+?)s?$/);
+    if (!match) continue;
+    const count = parseInt(match[1]);
+    const desc = match[2].trim();
+    const descLower = desc.toLowerCase();
+
+    let matchFn: (def: CardDef) => boolean;
+
+    // Order matters — check compound descriptors first
+    if (descLower === "cylon unit" || descLower === "cylon units") {
+      matchFn = (d) =>
+        (d.type === "personnel" || d.type === "ship") && (d.traits?.includes("Cylon") ?? false);
+    } else if (descLower === "cylon personnel") {
+      matchFn = (d) => d.type === "personnel" && (d.traits?.includes("Cylon") ?? false);
+    } else if (descLower === "cylon ship" || descLower === "cylon ships") {
+      matchFn = (d) => d.type === "ship" && (d.traits?.includes("Cylon") ?? false);
+    } else if (descLower === "civilian unit" || descLower === "civilian units") {
+      matchFn = (d) =>
+        (d.type === "personnel" || d.type === "ship") && (d.traits?.includes("Civilian") ?? false);
+    } else if (descLower === "ship" || descLower === "ships") {
+      matchFn = (d) => d.type === "ship";
+    } else if (descLower === "personnel") {
+      matchFn = (d) => d.type === "personnel";
+    } else if (descLower === "unit" || descLower === "units") {
+      matchFn = (d) => d.type === "personnel" || d.type === "ship";
+    } else {
+      // Trait-based: Officer, Pilot, Politician, Civilian, Enlisted, Fighter, etc.
+      const traitName = desc.charAt(0).toUpperCase() + desc.slice(1).replace(/s$/, "");
+      matchFn = (d) =>
+        (d.type === "personnel" || d.type === "ship") &&
+        (d.traits?.some((t) => t === traitName) ?? false);
+    }
+
+    requirements.push({ count, label: desc, matches: matchFn });
+  }
+
+  return requirements;
+}
+
+function canResolveMission(
+  player: PlayerState,
+  missionDef: CardDef,
+  bases?: Record<string, BaseCardDef>,
+): boolean {
+  const requirements = parseMissionRequirements(missionDef);
+  if (requirements.length === 0) return true;
+
+  // Collect available alert face-up units
+  const availableUnits: CardDef[] = [];
   for (const stack of player.zones.alert) {
     const topCard = stack.cards[0];
     if (topCard && topCard.faceUp && !stack.exhausted) {
       const def = getCardDef(topCard.defId);
-      if (def.type === reqType) available++;
+      if (def.type === "personnel" || def.type === "ship") {
+        availableUnits.push(def);
+      }
     }
   }
-  return available >= count;
+
+  // Greedy assignment: for each requirement, count matching units
+  // Each unit can only satisfy one requirement
+  const used = new Set<number>();
+
+  for (const req of requirements) {
+    let satisfied = 0;
+    for (let i = 0; i < availableUnits.length; i++) {
+      if (used.has(i)) continue;
+      if (req.matches(availableUnits[i])) {
+        used.add(i);
+        satisfied++;
+        if (satisfied >= req.count) break;
+      }
+    }
+
+    // Check Colonial Heavy 798 for Civilian requirements
+    if (satisfied < req.count && req.label.toLowerCase().includes("civilian") && bases) {
+      const baseDef = bases[player.baseDefId];
+      if (baseDef?.abilityId === "colonial-heavy-798") {
+        const baseStack = player.zones.resourceStacks[0];
+        if (baseStack && !baseStack.exhausted) {
+          satisfied++;
+        }
+      }
+    }
+
+    if (satisfied < req.count) return false;
+  }
+
+  return true;
 }
 
 // ============================================================
@@ -739,8 +987,28 @@ export function applyAction(
       if (!card) break;
       const def = getCardDef(card.defId);
 
+      // Validate affordability before spending
+      if (!canAfford(player, def, bases)) {
+        log.push(`${pLabel} cannot afford ${cardName(def)}.`);
+        break;
+      }
+
+      // Apply cost reduction (Refinery Ship)
+      let effectiveCost = def.cost;
+      if (player.costReduction && def.cost) {
+        const reduced: Record<string, number> = {};
+        for (const [resType, amount] of Object.entries(def.cost) as [string, number][]) {
+          const reduction = player.costReduction[resType as keyof typeof player.costReduction] ?? 0;
+          const newAmount = Math.max(0, amount - reduction);
+          if (newAmount > 0) reduced[resType] = newAmount;
+        }
+        effectiveCost = Object.keys(reduced).length > 0 ? (reduced as typeof def.cost) : null;
+        player.costReduction = undefined;
+        log.push("Refinery Ship: Cost reduced by 1.");
+      }
+
       // Pay cost
-      payResourceCost(player, def.cost, bases);
+      payResourceCost(player, effectiveCost, bases);
       player.hand.splice(action.cardIndex, 1);
 
       if (isUnit(def) || isMission(def)) {
@@ -761,11 +1029,22 @@ export function applyAction(
           player.zones.reserve.push({ cards: [card], exhausted: false });
           log.push(`${pLabel} plays ${cardName(def)} to reserve.`);
         }
+        // Fire enter-play triggers for units
+        if (isUnit(def)) {
+          fireOnEnterPlay(s, playerIndex, def, card.instanceId, log);
+          // Fire ship-enter-play trigger (Galen Tyrol The Chief)
+          if (def.type === "ship") {
+            fireOnShipEnterPlay(s, playerIndex, card.instanceId, log);
+          }
+        }
       } else if (def.type === "event") {
         // Resolve event effect
         log.push(`${pLabel} plays event ${cardName(def)}.`);
         resolveEventEffect(s, playerIndex, def, log, undefined);
-        player.discard.push(card);
+        if (!s.skipEventDiscard) {
+          player.discard.push(card);
+        }
+        s.skipEventDiscard = undefined;
       }
 
       resetConsecutivePasses(s);
@@ -785,40 +1064,109 @@ export function applyAction(
       const baseStack = player.zones.resourceStacks[0];
       if (baseStack && baseStack.topCard.instanceId === sourceInstanceId) {
         const baseDef = bases[player.baseDefId];
-        baseStack.exhausted = true;
-        log.push(`${pLabel} exhausts ${baseDef.title} to use its ability.`);
-        resolveBaseAbility(s, playerIndex, baseDef, targetInstanceId, log);
-        resetConsecutivePasses(s);
-        player.consecutivePasses = 0;
-        checkVictory(s, log);
-        if (s.phase !== "gameOver") {
-          if (s.challenge) {
-            advanceChallengeEffectTurn(s);
-          } else {
-            advanceExecutionTurn(s);
+        if (baseDef?.abilityId) {
+          baseStack.exhausted = true;
+          log.push(`${pLabel} exhausts ${baseDef.title} to use its ability.`);
+          resolveBaseAbilityEffect(baseDef.abilityId, s, playerIndex, targetInstanceId, log, bases);
+          resetConsecutivePasses(s);
+          player.consecutivePasses = 0;
+          checkVictory(s, log);
+          if (s.phase !== "gameOver") {
+            // Celestra: if pendingChoice was set, don't advance turn yet
+            if (s.pendingChoice) {
+              // Stay on same player — they need to resolve the choice
+            } else if (s.challenge) {
+              advanceChallengeEffectTurn(s);
+            } else {
+              advanceExecutionTurn(s);
+            }
           }
         }
         break;
       }
 
-      // Check alert units (Commit abilities)
+      // Check alert units (unit abilities via registry)
       for (const stack of player.zones.alert) {
         const topCard = stack.cards[0];
         if (topCard && topCard.instanceId === sourceInstanceId) {
           const def = getCardDef(topCard.defId);
-          if (def.abilityId === "adama-commit") {
-            // Commit Adama, give target +2 power
+          if (!def.abilityId) break;
+
+          const costType = getUnitAbilityCost(def.abilityId);
+          log.push(`${pLabel} uses ${cardName(def)}'s ability.`);
+
+          // Pay activation cost
+          if (costType === "commit") {
             commitUnit(player, sourceInstanceId);
-            log.push(`${pLabel} commits ${cardName(def)} to give a unit +2 power.`);
+          } else if (costType === "commit-exhaust") {
+            commitUnit(player, sourceInstanceId);
+            const found = findUnitInAnyZone(player, sourceInstanceId);
+            if (found) found.stack.exhausted = true;
+          } else if (costType === "commit-sacrifice") {
+            // Remove unit entirely (sacrifice)
+            const found = findUnitInAnyZone(player, sourceInstanceId);
+            if (found) {
+              const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+              zone.splice(found.index, 1);
+              for (const card of found.stack.cards) {
+                player.discard.push(card);
+              }
+            }
+          } else if (costType === "exhaust") {
+            // Exhaust-only: flip face-down but stay in current zone
+            stack.exhausted = true;
+          } else if (costType === "commit-other" || costType === "sacrifice-other") {
+            // The target IS the other unit to commit/sacrifice as cost
             if (targetInstanceId) {
-              applyPowerBuff(s, targetInstanceId, 2, log);
+              if (costType === "commit-other") {
+                commitUnit(player, targetInstanceId);
+              } else {
+                // sacrifice-other
+                const found = findUnitInAnyZone(player, targetInstanceId);
+                if (found) {
+                  const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+                  zone.splice(found.index, 1);
+                  for (const card of found.stack.cards) {
+                    player.discard.push(card);
+                  }
+                }
+              }
+            }
+            // For commit-other/sacrifice-other, the source unit stays in play
+            // but the self-buff is applied via challenge state
+            if (s.challenge && s.challenge.challengerInstanceId === sourceInstanceId) {
+              const buffAmount =
+                costType === "sacrifice-other" ? 3 : def.abilityId === "centurion-hunt" ? 2 : 1;
+              s.challenge.challengerPowerBuff = (s.challenge.challengerPowerBuff ?? 0) + buffAmount;
+            } else if (s.challenge && s.challenge.defenderInstanceId === sourceInstanceId) {
+              const buffAmount =
+                costType === "sacrifice-other" ? 3 : def.abilityId === "centurion-hunt" ? 2 : 1;
+              s.challenge.defenderPowerBuff = (s.challenge.defenderPowerBuff ?? 0) + buffAmount;
             }
           }
+
+          // Resolve the ability effect
+          resolveUnitAbility(
+            def.abilityId,
+            s,
+            playerIndex,
+            sourceInstanceId,
+            targetInstanceId,
+            log,
+          );
+
           resetConsecutivePasses(s);
           player.consecutivePasses = 0;
           checkVictory(s, log);
           if (s.phase !== "gameOver") {
-            if (s.challenge) {
+            // Cloud 9 Transport Hub: forceEnd ends the challenge immediately
+            if (s.challenge?.forceEnd) {
+              fireOnChallengeEnd(s, s.challenge, log);
+              s.challenge = null;
+              advanceExecutionTurn(s);
+            } else if (s.pendingChoice) {
+              // Stay on same player for choice resolution
+            } else if (s.challenge) {
               advanceChallengeEffectTurn(s);
             } else {
               advanceExecutionTurn(s);
@@ -837,12 +1185,28 @@ export function applyAction(
       const def = getCardDef(found.stack.cards[0].defId);
 
       log.push(`${pLabel} resolves mission ${cardName(def)}.`);
+
+      // Auto-exhaust Colonial Heavy 798 if needed for Civilian requirements
+      if (hasColonialHeavy798(s, playerIndex, bases)) {
+        const reqs = parseMissionRequirements(def);
+        const hasCivilianReq = reqs.some((r) => r.label.toLowerCase().includes("civilian"));
+        if (hasCivilianReq) {
+          exhaustColonialHeavy798(s, playerIndex, log);
+        }
+      }
+
       resolveMissionEffect(s, playerIndex, def, log);
 
-      // Remove mission from alert and put in discard
+      // Remove mission from alert — destination depends on keywords (e.g. Persistent)
       const [missionStack] = player.zones.alert.splice(found.index, 1);
-      for (const card of missionStack.cards) {
-        player.discard.push(card);
+      const destination = getMissionDestination(def);
+      if (destination === "reserve") {
+        player.zones.reserve.push(missionStack);
+        log.push(`${cardName(def)} is Persistent — placed in reserve area.`);
+      } else {
+        for (const card of missionStack.cards) {
+          player.discard.push(card);
+        }
       }
 
       player.hasResolvedMission = true;
@@ -861,6 +1225,7 @@ export function applyAction(
       const challengerDef = findCardDefByInstanceId(s, challengerInstanceId);
       if (!challengerDef) break;
 
+      const selector = getDefenderSelector(challengerDef);
       log.push(`${pLabel} challenges with ${cardName(challengerDef)}.`);
 
       s.challenge = {
@@ -872,14 +1237,28 @@ export function applyAction(
         challengerMysticValue: null,
         defenderMysticValue: null,
         waitingForDefender: true,
+        defenderSelector: selector,
         consecutivePasses: 0,
         isCylonChallenge: false,
       };
 
       resetConsecutivePasses(s);
       player.consecutivePasses = 0;
-      // Active player becomes the defender for defend choice
-      s.activePlayerIndex = 1 - playerIndex;
+
+      // Fire onChallengeInit triggers (e.g., Viper 762: commit Pilot for +3)
+      fireOnChallengeInit(s, playerIndex, challengerInstanceId, log);
+
+      // Check for Agro Ship / Flattop trigger on the defending player
+      const defenderIdx = 1 - playerIndex;
+      const trigger = getOnChallengedTrigger(s, defenderIdx, bases);
+      if (trigger) {
+        s.challenge.pendingTrigger = { abilityId: trigger.abilityId, playerIndex: defenderIdx };
+        s.challenge.waitingForDefender = false; // trigger resolves first
+        s.activePlayerIndex = defenderIdx;
+      } else {
+        // Who picks the defender: Sniper → challenger, otherwise → defending player
+        s.activePlayerIndex = selector === "challenger" ? playerIndex : 1 - playerIndex;
+      }
       break;
     }
 
@@ -928,10 +1307,20 @@ export function applyAction(
 
       log.push(`${pLabel} plays ${cardName(def)} during challenge.`);
       resolveEventEffect(s, playerIndex, def, log, action.targetInstanceId);
-      player.discard.push(card);
+      if (!s.skipEventDiscard) {
+        player.discard.push(card);
+      }
+      s.skipEventDiscard = undefined;
 
       s.challenge!.consecutivePasses = 0;
-      advanceChallengeEffectTurn(s);
+      // Sign / forceEnd: end challenge immediately
+      if (s.challenge?.forceEnd) {
+        fireOnChallengeEnd(s, s.challenge, log);
+        s.challenge = null;
+        advanceExecutionTurn(s);
+      } else {
+        advanceChallengeEffectTurn(s);
+      }
       break;
     }
 
@@ -974,6 +1363,7 @@ export function applyAction(
         challengerMysticValue: null,
         defenderMysticValue: null,
         waitingForDefender: false,
+        defenderSelector: "defender", // N/A for Cylon challenges
         consecutivePasses: 0,
         isCylonChallenge: true,
         cylonThreatIndex: threatIdx,
@@ -988,9 +1378,9 @@ export function applyAction(
 
     // --- Cylon phase: pass ---
     case "passCylon": {
-      player.influence -= 1;
+      applyInfluenceLoss(s, playerIndex, 1, log, bases);
       player.consecutivePasses++;
-      log.push(`${pLabel} passes in Cylon phase and loses 1 influence. (Now ${player.influence})`);
+      log.push(`${pLabel} passes in Cylon phase. (Now ${player.influence})`);
       checkVictory(s, log);
       if (s.phase !== "gameOver") {
         // Check if all passed consecutively or no threats remain
@@ -999,6 +1389,82 @@ export function applyAction(
         } else {
           advanceCylonTurn(s);
         }
+      }
+      break;
+    }
+
+    // --- Triggered ability: use (Agro Ship / Flattop) ---
+    case "useTriggeredAbility": {
+      if (!s.challenge?.pendingTrigger) break;
+      const triggerAbilityId = s.challenge.pendingTrigger.abilityId;
+      const triggerPlayerIdx = s.challenge.pendingTrigger.playerIndex;
+      const triggerPlayer = s.players[triggerPlayerIdx];
+
+      // Exhaust the base
+      const triggerBaseStack = triggerPlayer.zones.resourceStacks[0];
+      if (triggerBaseStack) {
+        triggerBaseStack.exhausted = true;
+      }
+      const triggerBaseDef = bases[triggerPlayer.baseDefId];
+      log.push(`${pLabel} exhausts ${triggerBaseDef.title}.`);
+
+      // Resolve the trigger (readies the target unit)
+      resolveBaseAbilityEffect(
+        triggerAbilityId,
+        s,
+        triggerPlayerIdx,
+        action.targetInstanceId,
+        log,
+        bases,
+      );
+
+      // Clear trigger, proceed to defender selection
+      s.challenge.pendingTrigger = undefined;
+      s.challenge.waitingForDefender = true;
+      s.activePlayerIndex =
+        s.challenge.defenderSelector === "challenger"
+          ? s.challenge.challengerPlayerIndex
+          : s.challenge.defenderPlayerIndex;
+      break;
+    }
+
+    // --- Triggered ability: decline ---
+    case "declineTrigger": {
+      if (!s.challenge?.pendingTrigger) break;
+      log.push(`${pLabel} declines to use triggered ability.`);
+      s.challenge.pendingTrigger = undefined;
+      s.challenge.waitingForDefender = true;
+      s.activePlayerIndex =
+        s.challenge.defenderSelector === "challenger"
+          ? s.challenge.challengerPlayerIndex
+          : s.challenge.defenderPlayerIndex;
+      break;
+    }
+
+    // --- Pending choice resolution (Celestra) ---
+    case "makeChoice": {
+      if (!s.pendingChoice) break;
+      const choice = s.pendingChoice;
+      if (choice.type === "celestra") {
+        const chosenCard = choice.cards[action.choiceIndex];
+        const otherCard = choice.cards[1 - action.choiceIndex];
+        if (chosenCard && otherCard) {
+          const chosenDef = getCardDef(chosenCard.defId);
+          const otherDef = getCardDef(otherCard.defId);
+          // Put chosen on top, other on bottom
+          player.deck.unshift(chosenCard);
+          player.deck.push(otherCard);
+          log.push(
+            `${pLabel} puts ${cardName(chosenDef)} on top and ${cardName(otherDef)} on the bottom.`,
+          );
+        }
+      }
+      s.pendingChoice = undefined;
+      // Now advance turn (the ability action already reset passes)
+      if (s.challenge) {
+        advanceChallengeEffectTurn(s);
+      } else {
+        advanceExecutionTurn(s);
       }
       break;
     }
@@ -1047,6 +1513,17 @@ function startReadyPhase(s: GameState, log: string[], bases: Record<string, Base
     }
   }
 
+  // Clear once-per-turn tracking and temporary modifiers
+  for (const player of s.players) {
+    player.oncePerTurnUsed = undefined;
+    player.temporaryTraitGrants = undefined;
+    player.temporaryKeywordGrants = undefined;
+    player.temporaryCylonThreatMods = undefined;
+    player.temporaryTraitRemovals = undefined;
+    player.extraActionsRemaining = undefined;
+    player.costReduction = undefined;
+  }
+
   // Step 2: Restore exhausted cards
   for (const player of s.players) {
     for (const stack of player.zones.resourceStacks) {
@@ -1093,6 +1570,11 @@ function startExecutionPhase(s: GameState, log: string[]): void {
   s.phase = "execution";
   s.firstPlayerIndex = determineFirstPlayer(s);
   s.activePlayerIndex = s.firstPlayerIndex;
+  // Clear phase-scoped event flags
+  s.preventInfluenceLoss = undefined;
+  s.preventInfluenceGain = undefined;
+  s.noChallenges = undefined;
+  s.politiciansCantDefend = undefined;
   for (const player of s.players) {
     player.consecutivePasses = 0;
     player.hasResolvedMission = false;
@@ -1101,6 +1583,19 @@ function startExecutionPhase(s: GameState, log: string[]): void {
 }
 
 function advanceExecutionTurn(s: GameState): void {
+  const current = s.players[s.activePlayerIndex];
+  // Ragnar Anchorage: skip turn advance, grant extra action
+  if (current.ragnarExtraAction) {
+    current.ragnarExtraAction = false;
+    return; // stay on same player
+  }
+  // Number Six Agent Provocateur: extra actions remaining
+  if (current.extraActionsRemaining && current.extraActionsRemaining > 0) {
+    current.extraActionsRemaining--;
+    return; // stay on same player
+  }
+  // Clear Ragnar resource override if it wasn't used during the extra action
+  current.ragnarResourceOverride = false;
   s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;
 }
 
@@ -1108,11 +1603,17 @@ function startCylonPhase(s: GameState, log: string[], bases: Record<string, Base
   s.phase = "cylon";
   s.firstPlayerIndex = determineFirstPlayer(s);
   s.activePlayerIndex = s.firstPlayerIndex;
+  // Clear phase-scoped event flags
+  s.preventInfluenceLoss = undefined;
+  s.preventInfluenceGain = undefined;
+  s.noChallenges = undefined;
+  s.politiciansCantDefend = undefined;
 
   const threatLevel = computeCylonThreatLevel(s);
-  log.push(`Cylon phase: threat level is ${threatLevel}, fleet defense is ${s.fleetDefenseLevel}.`);
+  const effectiveDefense = s.fleetDefenseLevel + computeFleetDefenseModifiers(s);
+  log.push(`Cylon phase: threat level is ${threatLevel}, fleet defense is ${effectiveDefense}.`);
 
-  if (threatLevel <= s.fleetDefenseLevel) {
+  if (threatLevel <= effectiveDefense) {
     log.push("No Cylon attack this turn.");
     endCylonPhase(s, log, bases);
     return;
@@ -1121,17 +1622,20 @@ function startCylonPhase(s: GameState, log: string[], bases: Record<string, Base
   log.push("Cylon attack! Each player reveals a threat.");
 
   // Each player reveals top card as Cylon threat
+  const doralBonus = computeCylonThreatBonus(s);
   s.cylonThreats = [];
   for (let i = 0; i < s.players.length; i++) {
     const result = revealMysticValue(s.players[i], log, `Player ${i + 1}`);
     const def = getCardDef(result.card.defId);
-    const threatPower = def.cylonThreat ?? 0;
+    const threatPower = (def.cylonThreat ?? 0) + doralBonus;
     s.cylonThreats.push({
       card: result.card,
       power: threatPower,
       ownerIndex: i,
     });
-    log.push(`Player ${i + 1} reveals ${cardName(def)} as Cylon threat (power ${threatPower}).`);
+    log.push(
+      `Player ${i + 1} reveals ${cardName(def)} as Cylon threat (power ${threatPower}${doralBonus > 0 ? `, includes +${doralBonus} Doral` : ""}).`,
+    );
   }
 
   // Check if all have Cylon trait → fleet jumps (not implementing trait check for boilerplate)
@@ -1200,53 +1704,236 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
   }
 
   const challengerPower =
-    getUnitPower(challengerStack.stack) + (challenge.challengerPowerBuff ?? 0);
+    getUnitPower(challengerStack.stack) +
+    (challenge.challengerPowerBuff ?? 0) +
+    computePassivePowerModifier(s, challengerStack.stack, challenge.challengerPlayerIndex, {
+      phase: s.phase,
+      isChallenger: true,
+    });
 
   if (!challenge.defenderInstanceId) {
-    // Undefended challenge
-    const damage = challengerPower;
-    defenderPlayer.influence -= damage;
-    log.push(
-      `Undefended! Player ${challenge.defenderPlayerIndex + 1} loses ${damage} influence. (Now ${defenderPlayer.influence})`,
-    );
+    // Undefended challenge — add Six Seductress buff if applicable
+    const undefendedPower = challengerPower + (challenge.sixSeductressBuff ?? 0);
+    const challengerDef = getCardDef(challengerStack.stack.cards[0].defId);
+    const effect = getUndefendedEffect(challengerDef);
+    if (effect === "gain-influence") {
+      if (s.preventInfluenceGain) {
+        log.push("Standoff: influence gain prevented.");
+      } else {
+        attackerPlayer.influence += undefendedPower;
+        log.push(
+          `Manipulate! Player ${challenge.challengerPlayerIndex + 1} gains ${undefendedPower} influence. (Now ${attackerPlayer.influence})`,
+        );
+      }
+    } else {
+      applyInfluenceLoss(s, challenge.defenderPlayerIndex, undefendedPower, log, bases);
+      log.push(
+        `Undefended! Player ${challenge.defenderPlayerIndex + 1} loses influence. (Now ${defenderPlayer.influence})`,
+      );
+    }
     commitUnit(attackerPlayer, challenge.challengerInstanceId);
   } else {
-    // Defended challenge — reveal mystic values
+    // Defended challenge — reveal mystic values (with hooks)
+    let atkMysticValue: number;
+    let defMysticValue: number;
+
+    // Attacker mystic reveal
     const atkMystic = revealMysticValue(
       attackerPlayer,
       log,
       `Player ${challenge.challengerPlayerIndex + 1}`,
     );
+    atkMysticValue = fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic.value);
+    // Double mystic reveal (Elosha Priestess / Channel the Lords)
+    if (challenge.doubleMysticReveal === challenge.challengerPlayerIndex) {
+      const atkMystic2 = revealMysticValue(
+        attackerPlayer,
+        log,
+        `Player ${challenge.challengerPlayerIndex + 1} (double)`,
+      );
+      atkMysticValue += fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic2.value);
+      log.push(`Double mystic reveal total = ${atkMysticValue}.`);
+    }
+    // Spot Judgment: reveal 2, pick best
+    if (challenge.selfDoubleMystic === challenge.challengerPlayerIndex) {
+      const atkMystic2 = revealMysticValue(
+        attackerPlayer,
+        log,
+        `Player ${challenge.challengerPlayerIndex + 1} (Spot Judgment)`,
+      );
+      const val2 = fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic2.value);
+      atkMysticValue = Math.max(atkMysticValue, val2);
+      log.push(`Spot Judgment: best mystic value = ${atkMysticValue}.`);
+    }
+
+    // Defender mystic reveal
     const defMystic = revealMysticValue(
       defenderPlayer,
       log,
       `Player ${challenge.defenderPlayerIndex + 1}`,
     );
+    defMysticValue = fireOnMysticReveal(s, challenge.defenderPlayerIndex, defMystic.value);
+    if (challenge.doubleMysticReveal === challenge.defenderPlayerIndex) {
+      const defMystic2 = revealMysticValue(
+        defenderPlayer,
+        log,
+        `Player ${challenge.defenderPlayerIndex + 1} (double)`,
+      );
+      defMysticValue += fireOnMysticReveal(s, challenge.defenderPlayerIndex, defMystic2.value);
+      log.push(`Double mystic reveal total = ${defMysticValue}.`);
+    }
+    // Spot Judgment: reveal 2, pick best (defender)
+    if (challenge.selfDoubleMystic === challenge.defenderPlayerIndex) {
+      const defMystic2 = revealMysticValue(
+        defenderPlayer,
+        log,
+        `Player ${challenge.defenderPlayerIndex + 1} (Spot Judgment)`,
+      );
+      const val2 = fireOnMysticReveal(s, challenge.defenderPlayerIndex, defMystic2.value);
+      defMysticValue = Math.max(defMysticValue, val2);
+      log.push(`Spot Judgment: best mystic value = ${defMysticValue}.`);
+    }
+    // False Sense of Security: opponent reveals 2, controller picks worst
+    if (challenge.opponentDoubleMystic) {
+      const odm = challenge.opponentDoubleMystic;
+      const oppPlayer = s.players[odm.opponentIndex];
+      const oppMystic2 = revealMysticValue(
+        oppPlayer,
+        log,
+        `Player ${odm.opponentIndex + 1} (False Sense of Security)`,
+      );
+      const val2 = fireOnMysticReveal(s, odm.opponentIndex, oppMystic2.value);
+      if (odm.opponentIndex === challenge.challengerPlayerIndex) {
+        atkMysticValue = Math.min(atkMysticValue, val2);
+        log.push(`False Sense of Security: opponent's worst mystic = ${atkMysticValue}.`);
+      } else {
+        defMysticValue = Math.min(defMysticValue, val2);
+        log.push(`False Sense of Security: opponent's worst mystic = ${defMysticValue}.`);
+      }
+    }
 
-    const atkTotal = challengerPower + atkMystic.value;
+    // Defender-left-play: if defender left play during effects, challenge ends
     const defenderStack = findUnitInAnyZone(defenderPlayer, challenge.defenderInstanceId);
-    const defPower = defenderStack
-      ? getUnitPower(defenderStack.stack) + (challenge.defenderPowerBuff ?? 0)
-      : 0;
-    const defTotal = defPower + defMystic.value;
+    if (!defenderStack) {
+      log.push("Defender left play during challenge. Challenge ends. Challenger commits.");
+      commitUnit(attackerPlayer, challenge.challengerInstanceId);
+      s.challenge = null;
+      checkVictory(s, log);
+      if (s.phase !== "gameOver") {
+        advanceExecutionTurn(s);
+      }
+      return;
+    }
 
-    log.push(`Challenger total: ${atkTotal} (${challengerPower} + ${atkMystic.value})`);
-    log.push(`Defender total: ${defTotal} (${defPower} + ${defMystic.value})`);
+    const atkTotal = challengerPower + atkMysticValue;
+    const defPower =
+      getUnitPower(defenderStack.stack) +
+      (challenge.defenderPowerBuff ?? 0) +
+      computePassivePowerModifier(s, defenderStack.stack, challenge.defenderPlayerIndex, {
+        phase: s.phase,
+        isDefender: true,
+      });
+    const defTotal = defPower + defMysticValue;
+
+    log.push(`Challenger total: ${atkTotal} (${challengerPower} + ${atkMysticValue})`);
+    log.push(`Defender total: ${defTotal} (${defPower} + ${defMysticValue})`);
 
     if (atkTotal >= defTotal) {
       // Challenger wins (ties go to challenger)
       log.push("Challenger wins!");
       commitUnit(attackerPlayer, challenge.challengerInstanceId);
-      if (defenderStack) {
-        defeatUnit(defenderPlayer, challenge.defenderInstanceId, log);
+      // Discourage Pursuit: defender immune to defeat
+      if (challenge.defenderImmune) {
+        commitUnit(defenderPlayer, challenge.defenderInstanceId);
+        log.push("Discourage Pursuit: defender is immune to defeat (committed instead).");
+      } else if (challenge.losesExhaustedNotDefeated) {
+        // Dr. Cottle Surgeon: exhaust instead of defeat
+        const dStack = findUnitInAnyZone(defenderPlayer, challenge.defenderInstanceId);
+        if (dStack) {
+          dStack.stack.exhausted = true;
+          log.push("Dr. Cottle: Loser is exhausted instead of defeated.");
+        }
+      } else {
+        defeatUnit(
+          defenderPlayer,
+          challenge.defenderInstanceId,
+          log,
+          s,
+          challenge.defenderPlayerIndex,
+        );
       }
+      // Discourage Pursuit: challenger defeated if they win
+      if (challenge.defeatChallengerOnWin) {
+        defeatUnit(
+          attackerPlayer,
+          challenge.challengerInstanceId,
+          log,
+          s,
+          challenge.challengerPlayerIndex,
+        );
+        log.push("Discourage Pursuit: challenger is defeated for winning.");
+      }
+      // Fire onChallengeWin triggers (e.g., Nuclear-Armed Raider: defeat asset)
+      fireOnChallengeWin(s, challenge.challengerPlayerIndex, challenge.challengerInstanceId, log);
     } else {
       // Defender wins
       log.push("Defender wins!");
-      if (defenderStack) {
-        commitUnit(defenderPlayer, challenge.defenderInstanceId);
+      commitUnit(defenderPlayer, challenge.defenderInstanceId);
+      if (challenge.losesExhaustedNotDefeated) {
+        const aStack = findUnitInAnyZone(attackerPlayer, challenge.challengerInstanceId);
+        if (aStack) {
+          aStack.stack.exhausted = true;
+          log.push("Dr. Cottle: Loser is exhausted instead of defeated.");
+        }
+      } else {
+        defeatUnit(
+          attackerPlayer,
+          challenge.challengerInstanceId,
+          log,
+          s,
+          challenge.challengerPlayerIndex,
+        );
       }
-      defeatUnit(attackerPlayer, challenge.challengerInstanceId, log);
+      // Fire onChallengeWin triggers for defender win
+      fireOnChallengeWin(s, challenge.defenderPlayerIndex, challenge.defenderInstanceId!, log);
+    }
+  }
+
+  // Fire challenge-end triggers (Gaeta ready, Tigh XO, Centurion Tracker, Helo Toaster-Lover)
+  fireOnChallengeEnd(s, challenge, log);
+
+  // Agro Ship / Flattop: commit the readied unit at end of challenge
+  if (s.challenge!.triggerReadiedInstanceId) {
+    const triggerOwner = s.players[s.challenge!.defenderPlayerIndex];
+    const readiedId = s.challenge!.triggerReadiedInstanceId;
+    const readiedUnit = findUnitInAnyZone(triggerOwner, readiedId);
+    if (readiedUnit && readiedUnit.zone === "alert") {
+      commitUnit(triggerOwner, readiedId);
+      log.push("Triggered unit commits at end of challenge.");
+    }
+  }
+
+  // Stims: exhaust unit at challenge end
+  if (challenge.exhaustAtChallengeEnd) {
+    for (const p of s.players) {
+      const found = findUnitInAnyZone(p, challenge.exhaustAtChallengeEnd);
+      if (found) {
+        found.stack.exhausted = true;
+        log.push("Stims wears off: unit is exhausted.");
+        break;
+      }
+    }
+  }
+
+  // Unwelcome Visitor: defeat unit at challenge end
+  if (challenge.defeatAtChallengeEnd) {
+    for (let pi = 0; pi < s.players.length; pi++) {
+      const found = findUnitInAnyZone(s.players[pi], challenge.defeatAtChallengeEnd);
+      if (found) {
+        defeatUnit(s.players[pi], challenge.defeatAtChallengeEnd, log, s, pi);
+        log.push("Unwelcome Visitor: unit is defeated.");
+        break;
+      }
     }
   }
 
@@ -1274,14 +1961,20 @@ function resolveCylonChallenge(
   }
 
   const challengerPower =
-    getUnitPower(challengerStack.stack) + (challenge.challengerPowerBuff ?? 0);
+    getUnitPower(challengerStack.stack) +
+    (challenge.challengerPowerBuff ?? 0) +
+    computePassivePowerModifier(s, challengerStack.stack, challenge.challengerPlayerIndex, {
+      phase: "cylon",
+      isChallenger: true,
+    });
 
-  // Reveal mystic values
+  // Reveal mystic values (with hooks)
   const atkMystic = revealMysticValue(
     attackerPlayer,
     log,
     `Player ${challenge.challengerPlayerIndex + 1}`,
   );
+  const atkMysticValue = fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic.value);
   const defMystic = revealMysticValue(
     cylonPlayer,
     log,
@@ -1295,28 +1988,45 @@ function resolveCylonChallenge(
     return;
   }
 
-  const atkTotal = challengerPower + atkMystic.value;
+  const atkTotal = challengerPower + atkMysticValue;
   const defTotal = threat.power + defMystic.value;
 
-  log.push(`Challenger total: ${atkTotal} (${challengerPower} + ${atkMystic.value})`);
+  log.push(`Challenger total: ${atkTotal} (${challengerPower} + ${atkMysticValue})`);
   log.push(`Cylon threat total: ${defTotal} (${threat.power} + ${defMystic.value})`);
 
   if (atkTotal >= defTotal) {
     log.push("Challenger defeats the Cylon threat!");
     // Gain influence (2 in 2-player, 1 in 3+ player)
     const gain = s.players.length === 2 ? 2 : 1;
-    attackerPlayer.influence += gain;
-    log.push(
-      `Player ${challenge.challengerPlayerIndex + 1} gains ${gain} influence. (Now ${attackerPlayer.influence})`,
-    );
+    if (s.preventInfluenceGain) {
+      log.push("Standoff: influence gain prevented.");
+    } else {
+      attackerPlayer.influence += gain;
+      log.push(
+        `Player ${challenge.challengerPlayerIndex + 1} gains ${gain} influence. (Now ${attackerPlayer.influence})`,
+      );
+    }
     commitUnit(attackerPlayer, challenge.challengerInstanceId);
+    // Fire onChallengeWin triggers (e.g., Nuclear-Armed Raider)
+    fireOnChallengeWin(s, challenge.challengerPlayerIndex, challenge.challengerInstanceId, log);
     // Put threat into owner's discard
     s.players[threat.ownerIndex].discard.push(threat.card);
     s.cylonThreats.splice(threatIdx, 1);
   } else {
     log.push("Cylon threat wins!");
-    defeatUnit(attackerPlayer, challenge.challengerInstanceId, log);
+    defeatUnit(
+      attackerPlayer,
+      challenge.challengerInstanceId,
+      log,
+      s,
+      challenge.challengerPlayerIndex,
+    );
     // Threat remains
+  }
+
+  // Fire challenge-end triggers for Cylon challenges too
+  if (s.challenge) {
+    fireOnChallengeEnd(s, challenge, log);
   }
 
   s.challenge = null;
@@ -1366,10 +2076,20 @@ function commitUnit(player: PlayerState, instanceId: string): void {
   }
 }
 
-function defeatUnit(player: PlayerState, instanceId: string, log: string[]): void {
+function defeatUnit(
+  player: PlayerState,
+  instanceId: string,
+  log: string[],
+  state?: GameState,
+  playerIndex?: number,
+): void {
   const found = findUnitInAnyZone(player, instanceId);
   if (found) {
     const def = getCardDef(found.stack.cards[0].defId);
+    // Fire onDefeat trigger before moving to discard
+    if (state && playerIndex !== undefined) {
+      fireOnDefeat(state, playerIndex, def, instanceId, log);
+    }
     log.push(`${cardName(def)} is defeated.`);
     const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
     zone.splice(found.index, 1);
@@ -1385,6 +2105,27 @@ function payResourceCost(
   bases: Record<string, BaseCardDef>,
 ): void {
   if (!cost) return;
+
+  // Ragnar Anchorage override: logistics ≥2 generates 3 of any one resource type
+  if (player.ragnarResourceOverride) {
+    const costEntries = Object.entries(cost) as [ResourceType, number][];
+    if (costEntries.length === 1 && costEntries[0][1] <= 3) {
+      // Try to pay with a logistics stack that generates ≥ 2
+      for (const stack of player.zones.resourceStacks) {
+        if (stack.exhausted) continue;
+        if (getStackResourceTypeFromPlayer(stack, bases, player) === "logistics") {
+          if (stackResourceCount(stack) >= 2) {
+            stack.exhausted = true;
+            player.ragnarResourceOverride = false;
+            return; // paid via Ragnar override
+          }
+        }
+      }
+    }
+    // If override wasn't used, clear it anyway (one-shot)
+    player.ragnarResourceOverride = false;
+  }
+
   for (const [resType, amount] of Object.entries(cost) as [ResourceType, number][]) {
     let remaining = amount;
     for (const stack of player.zones.resourceStacks) {
@@ -1402,6 +2143,42 @@ function resetConsecutivePasses(s: GameState): void {
   for (const p of s.players) {
     p.consecutivePasses = 0;
   }
+}
+
+/** Apply influence loss with prevention check and I.H.T. Colonial One interception. */
+function applyInfluenceLoss(
+  s: GameState,
+  playerIndex: number,
+  amount: number,
+  log: string[],
+  bases: Record<string, BaseCardDef>,
+): void {
+  if (s.preventInfluenceLoss) {
+    log.push("Executive Privilege: influence loss prevented.");
+    return;
+  }
+  const adjusted = interceptInfluenceLoss(s, playerIndex, amount, log, bases);
+  if (adjusted > 0) {
+    s.players[playerIndex].influence -= adjusted;
+  }
+}
+
+/** Get valid actions for a pending choice (e.g. Celestra). */
+function getPendingChoiceActions(state: GameState): ValidAction[] {
+  const choice = state.pendingChoice;
+  if (!choice) return [];
+  const actions: ValidAction[] = [];
+  if (choice.type === "celestra") {
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      actions.push({
+        type: "makeChoice",
+        description: `Keep ${cardName(def)} on top`,
+        cardDefId: def.id,
+      });
+    }
+  }
+  return actions;
 }
 
 function advanceChallengeEffectTurn(s: GameState): void {
@@ -1446,68 +2223,10 @@ function resolveEventEffect(
   log: string[],
   targetInstanceId: string | undefined,
 ): void {
-  switch (def.abilityId) {
-    case "fire-support": {
-      if (targetInstanceId) {
-        applyPowerBuff(s, targetInstanceId, 2, log);
-        log.push("Fire Support: target ship gets +2 power.");
-      }
-      break;
-    }
-    case "shuttle-diplomacy": {
-      const opp = s.players[1 - playerIndex];
-      opp.influence -= 1;
-      log.push(`Shuttle Diplomacy: opponent loses 1 influence. (Now ${opp.influence})`);
-      break;
-    }
-    case "condition-one": {
-      // Ready all units the player controls (move reserve → alert)
-      const player = s.players[playerIndex];
-      const toReady = [...player.zones.reserve];
-      player.zones.reserve = [];
-      player.zones.alert.push(...toReady);
-      log.push("Condition One: all units readied.");
-      break;
-    }
-    case "presidential-candidate": {
-      if (targetInstanceId) {
-        applyPowerBuff(s, targetInstanceId, 1, log);
-        log.push("Presidential Candidate: target personnel gets +1 power.");
-      }
-      break;
-    }
-    case "outmaneuvered": {
-      if (targetInstanceId) {
-        applyPowerBuff(s, targetInstanceId, -2, log);
-        log.push("Outmaneuvered: target unit gets -2 power.");
-      }
-      break;
-    }
-    default:
-      log.push(`Event ${cardName(def)} resolved (no special effect implemented).`);
-  }
-}
-
-function resolveBaseAbility(
-  s: GameState,
-  playerIndex: number,
-  baseDef: BaseCardDef,
-  targetInstanceId: string | undefined,
-  log: string[],
-): void {
-  switch (baseDef.abilityId) {
-    case "galactica-exhaust": {
-      const opp = s.players[1 - playerIndex];
-      opp.influence -= 1;
-      log.push(`Galactica ability: opponent loses 1 influence. (Now ${opp.influence})`);
-      break;
-    }
-    case "colonial-one-exhaust": {
-      const player = s.players[playerIndex];
-      player.influence += 1;
-      log.push(`Colonial One ability: gain 1 influence. (Now ${player.influence})`);
-      break;
-    }
+  if (def.abilityId) {
+    resolveEventAbility(def.abilityId, s, playerIndex, targetInstanceId, log);
+  } else {
+    log.push(`Event ${cardName(def)} resolved (no effect).`);
   }
 }
 
