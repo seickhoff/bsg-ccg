@@ -6,6 +6,10 @@ import type { Keyword } from "./keywords.js";
 export type { Keyword };
 export { extractKeywords, hasKeyword } from "./keywords.js";
 
+// --- Game Mode ---
+
+export type GameMode = "vs-ai" | "ai-vs-ai" | "vs-player";
+
 // --- Resource & Card Types ---
 
 export type ResourceType = "persuasion" | "logistics" | "security";
@@ -288,7 +292,7 @@ export interface ActionNotification {
 }
 
 export type ClientMessage =
-  | { type: "joinGame"; roomId?: string }
+  | { type: "joinGame"; roomId?: string; mode?: GameMode; joinCode?: string }
   | { type: "submitDeck"; baseId: string; deckCardIds: string[] }
   | { type: "action"; action: GameAction }
   | { type: "continue" }
@@ -298,6 +302,7 @@ export type ServerMessage =
   | { type: "cardRegistry"; registry: CardRegistry }
   | { type: "deckRequired" }
   | { type: "waitingForOpponent" }
+  | { type: "gameSetup"; mode: GameMode; joinCode?: string }
   | {
       type: "gameState";
       state: PlayerGameView;

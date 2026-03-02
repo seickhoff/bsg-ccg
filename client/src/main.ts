@@ -37,9 +37,20 @@ function sendAction(action: GameAction): void {
   sendMessage({ type: "action", action });
 }
 
+function newGame(): void {
+  // Remove modals attached to document.body
+  document
+    .querySelectorAll(".action-modal-overlay, .player-action-overlay, .log-modal-overlay")
+    .forEach((el) => el.remove());
+  // Clear old room and start fresh
+  sessionStorage.removeItem("bsg-roomId");
+  currentRoomId = null;
+  sendMessage({ type: "joinGame", mode: "vs-ai" });
+}
+
 setActionHandler(sendAction);
 setContinueHandler(() => sendMessage({ type: "continue" }));
-setResetGameHandler(() => sendMessage({ type: "resetGame" }));
+setResetGameHandler(newGame);
 
 function handleDeckSubmit(submission: DeckSubmission): void {
   sendMessage({
@@ -62,10 +73,8 @@ function connect(): void {
   const wsUrl = import.meta.env.VITE_WS_URL;
   let url: string;
   if (wsUrl) {
-    // Production: connect to configured server URL
     url = wsUrl;
   } else {
-    // Dev: use Vite proxy on same host
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     url = `${protocol}//${location.host}/ws`;
   }
@@ -73,7 +82,7 @@ function connect(): void {
 
   ws.addEventListener("open", () => {
     console.log("Connected to server");
-    sendMessage({ type: "joinGame", roomId: currentRoomId ?? undefined });
+    sendMessage({ type: "joinGame", roomId: currentRoomId ?? undefined, mode: "vs-ai" });
   });
 
   ws.addEventListener("close", () => {
@@ -112,7 +121,6 @@ function connect(): void {
         break;
 
       case "deckRequired":
-        // Remove any leftover game modals attached to document.body
         document
           .querySelectorAll(".action-modal-overlay, .player-action-overlay, .log-modal-overlay")
           .forEach((el) => el.remove());

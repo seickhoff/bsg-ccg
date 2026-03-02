@@ -7,7 +7,9 @@ import type {
   BaseCardDef,
   GameState,
   GameAction,
+  GameMode,
   ActionNotification,
+  ValidAction,
 } from "@bsg/shared";
 import { validateDeck } from "@bsg/shared";
 import {
@@ -23,7 +25,7 @@ import { makeAIDecision } from "./ai-player.js";
 
 // ============================================================
 // BSG CCG — WebSocket Server
-// Supports 1 human player vs 1 AI opponent per room.
+// Supports: Human vs AI, AI vs AI (spectate), Human vs Human
 // ============================================================
 
 // --- Load card registry at startup ---
@@ -44,33 +46,56 @@ const wss = new WebSocketServer({ port: PORT });
 
 // --- Game Room ---
 
-const AI_PLAYER_INDEX = 1;
-const HUMAN_PLAYER_INDEX = 0;
+interface PlayerSlot {
+  type: "human" | "ai";
+  ws: WebSocket | null; // null for AI players
+  deck: DeckSubmission | null;
+}
 
 interface GameRoom {
   id: string;
-  humanWs: WebSocket | null;
-  humanDeck: DeckSubmission | null;
-  aiDeck: DeckSubmission | null;
+  mode: GameMode;
+  joinCode: string; // short code for PvP room sharing
+  players: [PlayerSlot, PlayerSlot];
+  spectators: WebSocket[]; // for AI-vs-AI viewers
   gameState: GameState | null;
   aiProcessing: boolean;
   pendingNotification: ActionNotification | null;
   continueResolve: (() => void) | null;
 }
 
-const ROOM_CLEANUP_MS = 5 * 60 * 1000; // keep room alive 5 minutes after disconnect
+const ROOM_CLEANUP_MS = 5 * 60 * 1000;
 
 const rooms: GameRoom[] = [];
 const roomsById = new Map<string, GameRoom>();
-const playerRoomMap = new Map<WebSocket, GameRoom>();
+const roomsByJoinCode = new Map<string, GameRoom>();
+const wsRoomMap = new Map<WebSocket, GameRoom>();
+const wsPlayerIndex = new Map<WebSocket, number>(); // -1 = spectator
 const roomCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function createRoom(ws: WebSocket): GameRoom {
+function generateJoinCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1 to avoid confusion
+  let code: string;
+  do {
+    code = "";
+    for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  } while (roomsByJoinCode.has(code));
+  return code;
+}
+
+function createRoom(mode: GameMode): GameRoom {
+  const isVsAi = mode === "vs-ai";
+  const isAiVsAi = mode === "ai-vs-ai";
+
   const room: GameRoom = {
     id: `room-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    humanWs: ws,
-    humanDeck: null,
-    aiDeck: null,
+    mode,
+    joinCode: generateJoinCode(),
+    players: [
+      { type: isAiVsAi ? "ai" : "human", ws: null, deck: null },
+      { type: isVsAi || isAiVsAi ? "ai" : "human", ws: null, deck: null },
+    ],
+    spectators: [],
     gameState: null,
     aiProcessing: false,
     pendingNotification: null,
@@ -78,7 +103,7 @@ function createRoom(ws: WebSocket): GameRoom {
   };
   rooms.push(room);
   roomsById.set(room.id, room);
-  playerRoomMap.set(ws, room);
+  roomsByJoinCode.set(room.joinCode, room);
   return room;
 }
 
@@ -86,8 +111,16 @@ function destroyRoom(room: GameRoom): void {
   const idx = rooms.indexOf(room);
   if (idx !== -1) rooms.splice(idx, 1);
   roomsById.delete(room.id);
-  if (room.humanWs) {
-    playerRoomMap.delete(room.humanWs);
+  roomsByJoinCode.delete(room.joinCode);
+  for (const slot of room.players) {
+    if (slot.ws) {
+      wsRoomMap.delete(slot.ws);
+      wsPlayerIndex.delete(slot.ws);
+    }
+  }
+  for (const ws of room.spectators) {
+    wsRoomMap.delete(ws);
+    wsPlayerIndex.delete(ws);
   }
   const timer = roomCleanupTimers.get(room.id);
   if (timer) {
@@ -96,19 +129,20 @@ function destroyRoom(room: GameRoom): void {
   }
 }
 
-function rejoinRoom(room: GameRoom, ws: WebSocket): void {
+function assignWsToRoom(ws: WebSocket, room: GameRoom, playerIdx: number): void {
+  wsRoomMap.set(ws, room);
+  wsPlayerIndex.set(ws, playerIdx);
+  if (playerIdx >= 0) {
+    room.players[playerIdx].ws = ws;
+  } else {
+    room.spectators.push(ws);
+  }
   // Cancel any pending cleanup
   const timer = roomCleanupTimers.get(room.id);
   if (timer) {
     clearTimeout(timer);
     roomCleanupTimers.delete(room.id);
   }
-  // Swap the WebSocket
-  if (room.humanWs) {
-    playerRoomMap.delete(room.humanWs);
-  }
-  room.humanWs = ws;
-  playerRoomMap.set(ws, room);
 }
 
 function sendToPlayer(ws: WebSocket, msg: ServerMessage): void {
@@ -117,38 +151,56 @@ function sendToPlayer(ws: WebSocket, msg: ServerMessage): void {
   }
 }
 
+/** Send appropriate game view to all connected humans + spectators. */
 function broadcastGameState(room: GameRoom): void {
-  if (!room.gameState || !room.humanWs) return;
+  if (!room.gameState) return;
 
-  const view = getPlayerView(room.gameState, HUMAN_PLAYER_INDEX);
-  // Don't show valid actions while AI is stepping through actions
-  const validActions = room.aiProcessing
-    ? []
-    : getValidActions(room.gameState, HUMAN_PLAYER_INDEX, bases);
-  sendToPlayer(room.humanWs, {
-    type: "gameState",
-    state: view,
-    validActions,
-    log: room.gameState.log.slice(-50),
-    aiActing: room.aiProcessing || undefined,
-    notification: room.pendingNotification || undefined,
-  });
+  for (let i = 0; i < 2; i++) {
+    const slot = room.players[i];
+    if (slot.type === "human" && slot.ws) {
+      const view = getPlayerView(room.gameState, i);
+      const validActions = room.aiProcessing ? [] : getValidActions(room.gameState, i, bases);
+      sendToPlayer(slot.ws, {
+        type: "gameState",
+        state: view,
+        validActions,
+        log: room.gameState.log.slice(-50),
+        aiActing: room.aiProcessing || undefined,
+        notification: room.pendingNotification || undefined,
+      });
+    }
+  }
+
+  // Spectators see player 0's perspective but with no valid actions
+  for (const ws of room.spectators) {
+    const view = getPlayerView(room.gameState, 0);
+    sendToPlayer(ws, {
+      type: "gameState",
+      state: view,
+      validActions: [],
+      log: room.gameState.log.slice(-50),
+      aiActing: room.aiProcessing || undefined,
+      notification: room.pendingNotification || undefined,
+    });
+  }
+}
+
+function allDecksReady(room: GameRoom): boolean {
+  return room.players.every((slot) => slot.deck !== null);
 }
 
 function startGame(room: GameRoom): void {
-  if (!room.humanDeck || !room.aiDeck) return;
+  const deck0 = room.players[0].deck!;
+  const deck1 = room.players[1].deck!;
+  const base0 = registry.bases[deck0.baseId];
+  const base1 = registry.bases[deck1.baseId];
 
-  const humanBase = registry.bases[room.humanDeck.baseId];
-  const aiBase = registry.bases[room.aiDeck.baseId];
+  room.gameState = createGame(base0, [...deck0.deckCardIds], base1, [...deck1.deckCardIds]);
 
-  room.gameState = createGame(humanBase, [...room.humanDeck.deckCardIds], aiBase, [
-    ...room.aiDeck.deckCardIds,
-  ]);
-
-  console.log(`Game started in ${room.id}`);
+  console.log(`Game started in ${room.id} (${room.mode})`);
   broadcastGameState(room);
 
-  // AI may need to act first (setup phase — mulligan)
+  // Process any AI turns (setup phase mulligan, etc.)
   processAITurns(room).catch((err) => {
     console.error(`AI processing error in ${room.id}:`, err);
     room.aiProcessing = false;
@@ -207,7 +259,17 @@ function defIdFromInstanceId(state: GameState, instanceId: string): string[] {
   return [];
 }
 
-/** Wait for the client to send a "continue" message, with a timeout safety. */
+/** Check if the given player index can act right now. */
+function canPlayerAct(state: GameState, playerIndex: number): boolean {
+  if (state.phase === "setup") return true; // simultaneous mulligan
+  if (state.activePlayerIndex === playerIndex) return true;
+  if (state.challenge?.waitingForDefender && state.challenge.defenderPlayerIndex === playerIndex)
+    return true;
+  if (state.challenge?.step === 2 && state.activePlayerIndex === playerIndex) return true;
+  return false;
+}
+
+/** Wait for any connected human (player or spectator) to send "continue". */
 function waitForContinue(room: GameRoom): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -223,45 +285,52 @@ function waitForContinue(room: GameRoom): Promise<void> {
   });
 }
 
-/** Run AI turns until it's the human's turn or game is over.
+/** Has at least one human viewer (player or spectator) connected? */
+function hasHumanViewer(room: GameRoom): boolean {
+  for (const slot of room.players) {
+    if (slot.type === "human" && slot.ws) return true;
+  }
+  if (room.spectators.length > 0) return true;
+  return false;
+}
+
+/** Run AI turns until a human player needs to act or game is over.
  *  Broadcasts state with a notification modal after each action,
- *  waiting for the human to click "Continue" before proceeding. */
+ *  waiting for a human to click "Continue" before proceeding. */
 async function processAITurns(room: GameRoom): Promise<void> {
   if (!room.gameState) return;
 
   room.aiProcessing = true;
 
   let iterations = 0;
-  const MAX_ITERATIONS = 100; // safety limit
+  const MAX_ITERATIONS = 200; // higher for ai-vs-ai which runs full games
 
   while (room.gameState.phase !== "gameOver" && iterations < MAX_ITERATIONS) {
-    const aiActions = getValidActions(room.gameState, AI_PLAYER_INDEX, bases);
+    // Find an AI player that can act
+    let aiIdx = -1;
+    let aiActions: ValidAction[] = [];
 
-    // If AI has no actions, it's not their turn
-    if (aiActions.length === 0) break;
+    for (let i = 0; i < 2; i++) {
+      if (room.players[i].type !== "ai") continue;
+      if (!canPlayerAct(room.gameState, i)) continue;
+      const actions = getValidActions(room.gameState, i, bases);
+      if (actions.length > 0) {
+        aiIdx = i;
+        aiActions = actions;
+        break;
+      }
+    }
 
-    // Check if it's actually the AI's turn to act
-    const isAITurn =
-      room.gameState.activePlayerIndex === AI_PLAYER_INDEX ||
-      // Setup phase is simultaneous — AI mulligans regardless of activePlayerIndex
-      room.gameState.phase === "setup" ||
-      // During challenge, defender might be AI
-      (room.gameState.challenge?.waitingForDefender &&
-        room.gameState.challenge.defenderPlayerIndex === AI_PLAYER_INDEX) ||
-      // During challenge step 2, AI might need to play effects
-      (room.gameState.challenge?.step === 2 &&
-        room.gameState.activePlayerIndex === AI_PLAYER_INDEX);
+    if (aiIdx === -1 || aiActions.length === 0) break;
 
-    if (!isAITurn) break;
-
-    const decision = makeAIDecision(room.gameState, AI_PLAYER_INDEX, aiActions, registry);
+    const decision = makeAIDecision(room.gameState, aiIdx, aiActions, registry);
 
     // Resolve card IDs before applying action (card may leave hand after)
-    const cardDefIds = resolveActionCardIds(room.gameState, AI_PLAYER_INDEX, decision);
+    const cardDefIds = resolveActionCardIds(room.gameState, aiIdx, decision);
     const logLenBefore = room.gameState.log.length;
 
     try {
-      const result = applyAction(room.gameState, AI_PLAYER_INDEX, decision, bases);
+      const result = applyAction(room.gameState, aiIdx, decision, bases);
       room.gameState = result.state;
     } catch (err) {
       console.error(`AI action error: ${err instanceof Error ? err.message : err}`);
@@ -274,14 +343,13 @@ async function processAITurns(room: GameRoom): Promise<void> {
     const newEntries = room.gameState.log.slice(logLenBefore);
     const notificationText = newEntries.join("\n");
 
-    if (room.gameState.phase !== "setup" && notificationText) {
+    if (room.gameState.phase !== "setup" && notificationText && hasHumanViewer(room)) {
       // Show modal and wait for human to click Continue
       room.pendingNotification = { text: notificationText, cardDefIds };
       broadcastGameState(room);
       room.pendingNotification = null;
       await waitForContinue(room);
     } else {
-      // Setup phase or no log text — skip modal
       broadcastGameState(room);
     }
   }
@@ -293,7 +361,7 @@ async function processAITurns(room: GameRoom): Promise<void> {
   room.aiProcessing = false;
   room.pendingNotification = null;
 
-  // Final broadcast with valid actions now available to human
+  // Final broadcast with valid actions now available
   broadcastGameState(room);
 }
 
@@ -317,53 +385,142 @@ wss.on("connection", (ws) => {
 
     switch (msg.type) {
       case "joinGame": {
-        // Already in a room via this WebSocket?
-        if (playerRoomMap.has(ws)) {
-          const room = playerRoomMap.get(ws)!;
+        // If client explicitly wants a new game (has mode or joinCode), leave old room first
+        if (wsRoomMap.has(ws) && (msg.mode || msg.joinCode)) {
+          const oldRoom = wsRoomMap.get(ws)!;
+          const oldIdx = wsPlayerIndex.get(ws);
+          if (oldIdx !== undefined && oldIdx >= 0) {
+            oldRoom.players[oldIdx].ws = null;
+          } else {
+            const specIdx = oldRoom.spectators.indexOf(ws);
+            if (specIdx !== -1) oldRoom.spectators.splice(specIdx, 1);
+          }
+          wsRoomMap.delete(ws);
+          wsPlayerIndex.delete(ws);
+          console.log(`Player left ${oldRoom.id} to start new game`);
+        }
+
+        // Already in a room via this WebSocket? (reconnection — no mode/joinCode)
+        if (wsRoomMap.has(ws)) {
+          const room = wsRoomMap.get(ws)!;
+          const pIdx = wsPlayerIndex.get(ws) ?? -1;
           sendToPlayer(ws, { type: "joined", roomId: room.id });
           sendToPlayer(ws, { type: "cardRegistry", registry });
           if (room.gameState) {
             broadcastGameState(room);
+          } else if (pIdx >= 0 && room.players[pIdx].type === "human") {
+            sendToPlayer(ws, { type: "deckRequired" });
+          }
+          return;
+        }
+
+        // --- Joining an existing PvP room by join code ---
+        if (msg.joinCode) {
+          const code = msg.joinCode.toUpperCase();
+          const existing = roomsByJoinCode.get(code);
+          if (!existing) {
+            sendToPlayer(ws, { type: "error", message: `Room not found: ${code}` });
+            return;
+          }
+          if (existing.mode !== "vs-player") {
+            sendToPlayer(ws, { type: "error", message: "That room is not a PvP game" });
+            return;
+          }
+          // Find an open human slot
+          const openIdx = existing.players.findIndex((s) => s.type === "human" && !s.ws);
+          if (openIdx === -1) {
+            sendToPlayer(ws, { type: "error", message: "Room is full" });
+            return;
+          }
+          assignWsToRoom(ws, existing, openIdx);
+          console.log(`Player 2 joined PvP room ${existing.id} (code ${code})`);
+          sendToPlayer(ws, { type: "joined", roomId: existing.id });
+          sendToPlayer(ws, { type: "cardRegistry", registry });
+          if (existing.gameState) {
+            broadcastGameState(existing);
           } else {
             sendToPlayer(ws, { type: "deckRequired" });
           }
           return;
         }
 
-        // Try to rejoin an existing room by roomId (reconnection)
+        // --- Reconnection by roomId ---
         if (msg.roomId) {
           const existing = roomsById.get(msg.roomId);
           if (existing) {
-            rejoinRoom(existing, ws);
+            // Find which slot this player was in
+            let reconnectedIdx = -1;
+            for (let i = 0; i < 2; i++) {
+              if (existing.players[i].type === "human" && !existing.players[i].ws) {
+                reconnectedIdx = i;
+                break;
+              }
+            }
+            // Could also be a spectator reconnecting
+            if (reconnectedIdx === -1 && existing.mode === "ai-vs-ai") {
+              reconnectedIdx = -1; // spectator
+            }
+
+            if (reconnectedIdx >= 0) {
+              assignWsToRoom(ws, existing, reconnectedIdx);
+            } else {
+              // Spectator reconnect
+              assignWsToRoom(ws, existing, -1);
+            }
+
             console.log(`Player reconnected to ${existing.id}`);
             sendToPlayer(ws, { type: "joined", roomId: existing.id });
-            // Always send registry so client can resolve card images/data
             sendToPlayer(ws, { type: "cardRegistry", registry });
             if (existing.gameState) {
               broadcastGameState(existing);
-            } else {
+            } else if (reconnectedIdx >= 0 && existing.players[reconnectedIdx].type === "human") {
               sendToPlayer(ws, { type: "deckRequired" });
             }
             return;
           }
-          // Room not found — fall through to create new
           console.log(`Room ${msg.roomId} not found, creating new room`);
         }
 
-        const room = createRoom(ws);
-        console.log(`Player joined ${room.id}`);
+        // --- Create new room ---
+        const mode: GameMode = msg.mode ?? "vs-ai";
+        const room = createRoom(mode);
+
+        if (mode === "ai-vs-ai") {
+          // Human is a spectator, not a player
+          assignWsToRoom(ws, room, -1);
+        } else {
+          // Human is player 0
+          assignWsToRoom(ws, room, 0);
+        }
+
+        console.log(`Player joined ${room.id} (mode: ${mode}, code: ${room.joinCode})`);
 
         sendToPlayer(ws, { type: "joined", roomId: room.id });
-        // Send card registry so client can build deck
         sendToPlayer(ws, { type: "cardRegistry", registry });
-        sendToPlayer(ws, { type: "deckRequired" });
+
+        if (mode === "ai-vs-ai") {
+          // Generate both AI decks and start immediately
+          room.players[0].deck = buildAIDeck(registry);
+          room.players[1].deck = buildAIDeck(registry);
+          console.log(
+            `AI decks ready in ${room.id} — P1: ${room.players[0].deck.baseId}, P2: ${room.players[1].deck.baseId}`,
+          );
+          startGame(room);
+        } else if (mode === "vs-player") {
+          // Send join code so player 1 can share it; client will start deck builder from there
+          sendToPlayer(ws, { type: "gameSetup", mode, joinCode: room.joinCode });
+        } else {
+          // vs-ai: just show deck builder
+          sendToPlayer(ws, { type: "deckRequired" });
+        }
         break;
       }
 
       case "submitDeck": {
-        const room = playerRoomMap.get(ws);
-        if (!room) {
-          sendToPlayer(ws, { type: "error", message: "Not in a room" });
+        const room = wsRoomMap.get(ws);
+        const pIdx = wsPlayerIndex.get(ws);
+        if (!room || pIdx === undefined || pIdx < 0) {
+          sendToPlayer(ws, { type: "error", message: "Not in a room as a player" });
           return;
         }
 
@@ -381,21 +538,28 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        room.humanDeck = submission;
+        room.players[pIdx].deck = submission;
+        console.log(`Player ${pIdx} submitted deck in ${room.id} (base: ${submission.baseId})`);
 
-        // Generate AI deck
-        room.aiDeck = buildAIDeck(registry);
-        console.log(
-          `Decks ready in ${room.id} — human: ${submission.baseId}, AI: ${room.aiDeck.baseId}`,
-        );
+        // For vs-ai: generate AI deck for the other slot
+        if (room.mode === "vs-ai") {
+          const aiIdx = pIdx === 0 ? 1 : 0;
+          room.players[aiIdx].deck = buildAIDeck(registry);
+          console.log(`AI deck ready in ${room.id} — AI: ${room.players[aiIdx].deck.baseId}`);
+        }
 
-        // Start the game
-        startGame(room);
+        // Check if all decks are ready
+        if (allDecksReady(room)) {
+          startGame(room);
+        } else {
+          // PvP: waiting for opponent's deck
+          sendToPlayer(ws, { type: "waitingForOpponent" });
+        }
         break;
       }
 
       case "continue": {
-        const room = playerRoomMap.get(ws);
+        const room = wsRoomMap.get(ws);
         if (room?.continueResolve) {
           room.continueResolve();
         }
@@ -403,26 +567,40 @@ wss.on("connection", (ws) => {
       }
 
       case "resetGame": {
-        const room = playerRoomMap.get(ws);
+        const room = wsRoomMap.get(ws);
         if (!room) {
           sendToPlayer(ws, { type: "error", message: "Not in a room" });
           return;
         }
         room.gameState = null;
-        room.humanDeck = null;
-        room.aiDeck = null;
+        room.players[0].deck = null;
+        room.players[1].deck = null;
         room.aiProcessing = false;
         room.pendingNotification = null;
         room.continueResolve = null;
         console.log(`Game reset in ${room.id}`);
-        sendToPlayer(ws, { type: "deckRequired" });
+
+        if (room.mode === "ai-vs-ai") {
+          // Re-generate AI decks and restart
+          room.players[0].deck = buildAIDeck(registry);
+          room.players[1].deck = buildAIDeck(registry);
+          startGame(room);
+        } else {
+          // Tell all human players to rebuild decks
+          for (const slot of room.players) {
+            if (slot.type === "human" && slot.ws) {
+              sendToPlayer(slot.ws, { type: "deckRequired" });
+            }
+          }
+        }
         break;
       }
 
       case "action": {
-        const room = playerRoomMap.get(ws);
-        if (!room?.gameState) {
-          sendToPlayer(ws, { type: "error", message: "Not in a game" });
+        const room = wsRoomMap.get(ws);
+        const pIdx = wsPlayerIndex.get(ws);
+        if (!room?.gameState || pIdx === undefined || pIdx < 0) {
+          sendToPlayer(ws, { type: "error", message: "Not in a game as a player" });
           return;
         }
         if (room.aiProcessing) {
@@ -431,7 +609,7 @@ wss.on("connection", (ws) => {
         }
 
         try {
-          const result = applyAction(room.gameState, HUMAN_PLAYER_INDEX, msg.action, bases);
+          const result = applyAction(room.gameState, pIdx, msg.action, bases);
           room.gameState = result.state;
           broadcastGameState(room);
 
@@ -453,19 +631,35 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    const room = playerRoomMap.get(ws);
+    const room = wsRoomMap.get(ws);
     if (room) {
-      playerRoomMap.delete(ws);
-      room.humanWs = null;
+      const pIdx = wsPlayerIndex.get(ws);
+
+      // Remove from player slot or spectator list
+      if (pIdx !== undefined && pIdx >= 0) {
+        room.players[pIdx].ws = null;
+      } else {
+        const specIdx = room.spectators.indexOf(ws);
+        if (specIdx !== -1) room.spectators.splice(specIdx, 1);
+      }
+
+      wsRoomMap.delete(ws);
+      wsPlayerIndex.delete(ws);
+
       console.log(`Player disconnected from ${room.id}`);
 
-      // Keep the room alive for reconnection; destroy after timeout
-      const timer = setTimeout(() => {
-        roomCleanupTimers.delete(room.id);
-        destroyRoom(room);
-        console.log(`Room ${room.id} cleaned up after timeout`);
-      }, ROOM_CLEANUP_MS);
-      roomCleanupTimers.set(room.id, timer);
+      // Check if any humans are still connected
+      const anyConnected = room.players.some((s) => s.ws !== null) || room.spectators.length > 0;
+
+      if (!anyConnected) {
+        // Keep the room alive for reconnection; destroy after timeout
+        const timer = setTimeout(() => {
+          roomCleanupTimers.delete(room.id);
+          destroyRoom(room);
+          console.log(`Room ${room.id} cleaned up after timeout`);
+        }, ROOM_CLEANUP_MS);
+        roomCleanupTimers.set(room.id, timer);
+      }
     }
     console.log("Client disconnected");
   });
