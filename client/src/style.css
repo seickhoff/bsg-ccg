@@ -114,6 +114,10 @@ body {
   color: #888;
 }
 
+.info-item.threat-level {
+  color: #f66;
+}
+
 .header-btn {
   background: #222;
   color: #999;
@@ -983,6 +987,65 @@ body {
 .log-modal-body .log-entry {
   padding: 0.15rem 0;
   border-bottom: 1px solid #111;
+}
+
+/* --- Discard Browser --- */
+
+.discard-link {
+  cursor: pointer;
+  text-decoration: underline;
+  color: #8cf;
+}
+
+.discard-browser {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.discard-card-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  background: #1a1a2e;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.discard-card-entry:hover {
+  background: #2a2a4e;
+}
+
+.discard-thumb {
+  width: 36px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.discard-card-name {
+  font-size: 0.75rem;
+  flex: 1;
+}
+
+.discard-card-type {
+  font-size: 0.65rem;
+  color: #888;
+  text-transform: uppercase;
+}
+
+/* --- Persistent Mission Card --- */
+
+.persistent-mission {
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.persistent-mission .card-text-fallback {
+  border-color: #999;
 }
 
 /* --- Player Action Modal --- */

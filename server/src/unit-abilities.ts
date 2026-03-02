@@ -9,6 +9,7 @@ import type {
   ChallengeState,
 } from "@bsg/shared";
 import { hasKeyword } from "@bsg/shared";
+import { fireMissionOnDraw } from "./mission-abilities.js";
 
 // ============================================================
 // BSG CCG — Unit Ability Registry
@@ -25,6 +26,7 @@ export interface PowerContext {
   isChallenger?: boolean;
   isDefender?: boolean;
   challengerDef?: CardDef;
+  defenderDef?: CardDef;
 }
 
 export interface UnitAbilityHandler {
@@ -143,6 +145,32 @@ function getUnitPowerBasic(stack: UnitStack): number {
   const topCard = stack.cards[0];
   if (!topCard) return 0;
   return getCardDef(topCard.defId)?.power ?? 0;
+}
+
+/** Cloud 9, Cruise Ship: commit to reduce influence loss by 1. */
+function interceptCloud9Loss(
+  state: GameState,
+  playerIndex: number,
+  amount: number,
+  log: string[],
+): number {
+  if (amount <= 0) return amount;
+  const player = state.players[playerIndex];
+  for (let i = player.zones.alert.length - 1; i >= 0; i--) {
+    if (amount <= 0) break;
+    const stack = player.zones.alert[i];
+    if (stack.exhausted) continue;
+    const topCard = stack.cards[0];
+    if (!topCard?.faceUp) continue;
+    const def = getCardDef(topCard.defId);
+    if (!def || def.abilityId !== "cloud9-shield") continue;
+    // Commit: move from alert to reserve
+    player.zones.alert.splice(i, 1);
+    player.zones.reserve.push(stack);
+    amount = Math.max(0, amount - 1);
+    log.push(`Cloud 9, Cruise Ship: committed to reduce influence loss by 1.`);
+  }
+  return amount;
 }
 
 /** Get all face-up alert unit stacks for a player */
@@ -276,7 +304,14 @@ function findTargetUnits(
 }
 
 /** Draw cards from deck (handles reshuffle) */
-function drawCards(player: PlayerState, count: number, log: string[], playerLabel: string): void {
+function drawCards(
+  player: PlayerState,
+  count: number,
+  log: string[],
+  playerLabel: string,
+  state?: GameState,
+  playerIndex?: number,
+): void {
   for (let i = 0; i < count; i++) {
     if (player.deck.length === 0) {
       if (player.discard.length === 0) return;
@@ -291,6 +326,10 @@ function drawCards(player: PlayerState, count: number, log: string[], playerLabe
     }
     const card = player.deck.shift()!;
     player.hand.push(card);
+  }
+  // Tightening the Noose: fire onDraw hook during execution phase
+  if (state && playerIndex !== undefined && state.phase === "execution") {
+    fireMissionOnDraw(state, playerIndex, count, log);
   }
 }
 
@@ -438,8 +477,14 @@ register("boomer-saboteur", {
   getTargets: () => null,
   resolve(state, _pi, _sid, _tid, log) {
     for (let i = 0; i < state.players.length; i++) {
-      state.players[i].influence -= 1;
-      log.push(`Player ${i + 1} loses 1 influence. (Now ${state.players[i].influence})`);
+      let loss = 1;
+      loss = interceptCloud9Loss(state, i, loss, log);
+      if (loss > 0) {
+        state.players[i].influence -= loss;
+      }
+      log.push(
+        `Player ${i + 1} loses ${loss > 0 ? loss : "0 (prevented)"} influence. (Now ${state.players[i].influence})`,
+      );
     }
   },
 });
@@ -449,7 +494,7 @@ register("roslin-draw", {
   activation: { cost: "commit", usableIn: ["execution", "challenge"] },
   getTargets: () => null,
   resolve(state, playerIndex, _sid, _tid, log) {
-    drawCards(state.players[playerIndex], 1, log, `Player ${playerIndex + 1}`);
+    drawCards(state.players[playerIndex], 1, log, `Player ${playerIndex + 1}`, state, playerIndex);
     log.push(`Player ${playerIndex + 1} draws a card.`);
   },
 });
@@ -869,14 +914,28 @@ register("cottle-recover", {
   },
 });
 
-// Boomer Savior: "Commit and exhaust: Search your deck for a personnel card..." (simplified: draw top card)
+// Boomer Savior: "Commit and exhaust: Search your deck for a personnel card and put it into your hand."
 register("boomer-search", {
   activation: { cost: "commit-exhaust", usableIn: ["execution"] },
   getTargets: () => null,
   resolve(state, playerIndex, _sid, _tid, log) {
-    // Simplified: draw top card from deck (full search UI deferred)
-    drawCards(state.players[playerIndex], 1, log, `Player ${playerIndex + 1}`);
-    log.push(`Player ${playerIndex + 1} searches deck (draws top card).`);
+    const player = state.players[playerIndex];
+    // Find all personnel cards in deck
+    const personnel: import("@bsg/shared").CardInstance[] = [];
+    for (const card of player.deck) {
+      const def = getCardDef(card.defId);
+      if (def?.type === "personnel") personnel.push(card);
+    }
+    if (personnel.length === 0) {
+      log.push("Boomer: No personnel found in deck.");
+      return;
+    }
+    log.push("Boomer: Searching deck for a personnel card...");
+    state.pendingChoice = {
+      type: "boomer-search",
+      playerIndex,
+      cards: personnel,
+    };
   },
 });
 
@@ -1190,20 +1249,36 @@ register("six-agent", {
   },
 });
 
-// --- Shelley Godfrey: "Commit: opponent reveals hand, put personnel on top of deck." ---
-// (Simplified: put top card of opponent's deck into discard — full UI deferred)
+// --- Shelley Godfrey: "Commit: Target opponent reveals hand. Choose a personnel card and put it on top of that player's deck." ---
 register("godfrey-reveal", {
   activation: { cost: "commit", usableIn: ["execution"] },
   getTargets: () => null,
   resolve(state, playerIndex, _sid, _tid, log) {
     const oppIndex = 1 - playerIndex;
     const opp = state.players[oppIndex];
-    if (opp.deck.length > 0) {
-      const card = opp.deck.shift()!;
-      opp.discard.push(card);
+    // Find personnel in opponent's hand
+    const personnel: import("@bsg/shared").CardInstance[] = [];
+    for (const card of opp.hand) {
       const def = getCardDef(card.defId);
-      log.push(`Godfrey: Top card of opponent's deck (${def ? cardName(def) : "card"}) discarded.`);
+      if (def?.type === "personnel") personnel.push(card);
     }
+    const handNames = opp.hand
+      .map((c) => {
+        const d = getCardDef(c.defId);
+        return d ? cardName(d) : "unknown";
+      })
+      .join(", ");
+    log.push(`Godfrey: Opponent reveals hand: ${handNames || "(empty)"}`);
+    if (personnel.length === 0) {
+      log.push("Godfrey: No personnel in opponent's hand.");
+      return;
+    }
+    state.pendingChoice = {
+      type: "godfrey-reveal",
+      playerIndex,
+      cards: personnel,
+      context: { opponentIndex: oppIndex },
+    };
   },
 });
 
@@ -1358,10 +1433,9 @@ register("dee-cylon", {
 // Helo Raptor ECO: "This personnel gets +3 power while challenging a Cylon personnel."
 register("helo-anticylon", {
   getPowerModifier(_state, _unitStack, _ownerIndex, context) {
-    if (!context.isChallenger || !context.challengerDef) return 0;
-    // challengerDef is actually the DEFENDER def in this context (what we're challenging against)
-    // Wait, this is the unit itself — it's the challenger. The context should tell us about the defender.
-    // For now, return 0 — this requires defender info in context
+    if (!context.isChallenger || !context.defenderDef) return 0;
+    if (context.defenderDef.type === "personnel" && context.defenderDef.traits?.includes("Cylon"))
+      return 3;
     return 0;
   },
 });
@@ -1457,38 +1531,35 @@ register("billy-etb", {
 register("boomer-etb", {
   trigger: "onEnterPlay",
   resolve(state, playerIndex, _sid, _tid, log) {
-    drawCards(state.players[playerIndex], 1, log, `Player ${playerIndex + 1}`);
+    drawCards(state.players[playerIndex], 1, log, `Player ${playerIndex + 1}`, state, playerIndex);
     log.push("Boomer: Draw a card.");
   },
 });
 
 // Tom Zarek Political Prisoner: "When enters play, defeat target personnel."
-// (Simplified: AI auto-targets weakest; human gets auto-targeted opponent's weakest)
 register("zarek-etb", {
   trigger: "onEnterPlay",
-  resolve(state, playerIndex, _sid, targetId, log) {
-    // Defeat a personnel — target weakest opponent unit for now
-    const oppIndex = 1 - playerIndex;
-    const opp = state.players[oppIndex];
-    let weakest: { id: string; power: number } | null = null;
-    for (const zone of [opp.zones.alert, opp.zones.reserve]) {
-      for (const stack of zone) {
-        const tc = stack.cards[0];
-        if (tc?.faceUp) {
-          const def = getCardDef(tc.defId);
-          if (def?.type === "personnel") {
-            const pw = def.power ?? 0;
-            if (!weakest || pw < weakest.power) {
-              weakest = { id: tc.instanceId, power: pw };
-            }
+  resolve(state, playerIndex, _sid, _targetId, log) {
+    // Collect all face-up personnel on the board
+    const targets: import("@bsg/shared").CardInstance[] = [];
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const tc = stack.cards[0];
+          if (tc?.faceUp) {
+            const def = getCardDef(tc.defId);
+            if (def?.type === "personnel") targets.push(tc);
           }
         }
       }
     }
-    if (weakest) {
-      defeatUnitLocal(opp, weakest.id, log);
-      log.push("Tom Zarek: Defeats a personnel on entering play.");
-    }
+    if (targets.length === 0) return;
+    log.push("Tom Zarek: Choose a personnel to defeat.");
+    state.pendingChoice = {
+      type: "zarek-etb",
+      playerIndex,
+      cards: targets,
+    };
   },
 });
 
@@ -1690,20 +1761,45 @@ register("galactica-fighters", {
 
 // --- Commit Abilities (7 ships) ---
 
-// Mining Ship: "Commit: Reveal top 2 of deck; opponent chooses 1 for bottom, other to hand."
-// Simplified: draw top card (opponent-choice UI deferred).
+// Mining Ship: "Commit: Reveal top 2 of deck; target opponent chooses 1 for bottom, other to hand."
 register("mining-ship-dig", {
   activation: { cost: "commit", usableIn: ["execution"] },
   getTargets: () => null,
   resolve(state, playerIndex, _sid, _tid, log) {
     const player = state.players[playerIndex];
-    drawCards(player, 1, log, `Player ${playerIndex + 1}`);
-    log.push("Mining Ship: Drew top card (simplified).");
+    if (player.deck.length === 0) {
+      log.push("Mining Ship: Deck empty.");
+      return;
+    }
+    const revealed: import("@bsg/shared").CardInstance[] = [];
+    for (let i = 0; i < 2 && player.deck.length > 0; i++) {
+      revealed.push(player.deck.shift()!);
+    }
+    if (revealed.length === 1) {
+      // Only 1 card — goes straight to hand
+      player.hand.push(revealed[0]);
+      const def = getCardDef(revealed[0].defId);
+      log.push(`Mining Ship: Only 1 card in deck — ${def ? cardName(def) : "card"} goes to hand.`);
+      return;
+    }
+    const names = revealed
+      .map((c) => {
+        const d = getCardDef(c.defId);
+        return d ? cardName(d) : "card";
+      })
+      .join(", ");
+    log.push(`Mining Ship: Revealed ${names}. Opponent chooses which goes to bottom.`);
+    const oppIndex = 1 - playerIndex;
+    state.pendingChoice = {
+      type: "mining-ship-dig",
+      playerIndex: oppIndex, // opponent makes the choice
+      cards: revealed,
+      context: { ownerIndex: playerIndex },
+    };
   },
 });
 
 // Space Park: "Commit: Look at the top card of your deck. You may put that card on the bottom."
-// Simplified: auto-bottom if mystic < 2.
 register("space-park-scry", {
   activation: { cost: "commit", usableIn: ["execution"] },
   getTargets: () => null,
@@ -1713,17 +1809,15 @@ register("space-park-scry", {
       log.push("Space Park: Deck empty, no card to look at.");
       return;
     }
-    const topCard = player.deck[player.deck.length - 1];
+    // Remove top card from deck so it can be placed via choice
+    const topCard = player.deck.shift()!;
     const def = getCardDef(topCard.defId);
-    const mystic = def?.mysticValue ?? 0;
-    if (mystic < 2) {
-      // Auto-bottom low-value cards
-      player.deck.splice(player.deck.length - 1, 1);
-      player.deck.unshift(topCard);
-      log.push(`Space Park: Looked at top card (mystic ${mystic}), put on bottom.`);
-    } else {
-      log.push(`Space Park: Looked at top card (mystic ${mystic}), kept on top.`);
-    }
+    log.push(`Space Park: Looking at top card (${def ? cardName(def) : "card"}).`);
+    state.pendingChoice = {
+      type: "space-park-scry",
+      playerIndex,
+      cards: [topCard],
+    };
   },
 });
 
@@ -1922,11 +2016,10 @@ register("freighter-recover", {
 });
 
 // Astral Queen, Platform for Revolution: "Commit and exhaust: Exhaust two target personnel."
-// Simplified: target one personnel, auto-exhaust a second eligible one.
 register("astral-queen-exhaust2", {
   activation: { cost: "commit-exhaust", usableIn: ["execution"] },
   getTargets(state, _pi) {
-    // Target any face-up personnel (any player)
+    // Target any face-up non-exhausted personnel (any player)
     const targets: string[] = [];
     for (const p of state.players) {
       for (const stack of p.zones.alert) {
@@ -1939,9 +2032,8 @@ register("astral-queen-exhaust2", {
     }
     return targets.length > 0 ? targets : [];
   },
-  resolve(state, _pi, _sid, targetId, log) {
+  resolve(state, playerIndex, _sid, targetId, log) {
     if (!targetId) return;
-    let exhaustedCount = 0;
     // Exhaust the primary target
     for (const p of state.players) {
       const found = findUnitInZone(p.zones.alert, targetId);
@@ -1949,27 +2041,26 @@ register("astral-queen-exhaust2", {
         found.stack.exhausted = true;
         const def = getCardDef(found.stack.cards[0].defId);
         log.push(`${def ? cardName(def) : "Personnel"} exhausted.`);
-        exhaustedCount++;
         break;
       }
     }
-    // Auto-exhaust a second personnel if available
-    if (exhaustedCount > 0) {
-      for (const p of state.players) {
-        for (const stack of p.zones.alert) {
-          const tc = stack.cards[0];
-          if (tc?.faceUp && !stack.exhausted && tc.instanceId !== targetId) {
-            const def = getCardDef(tc.defId);
-            if (def?.type === "personnel") {
-              stack.exhausted = true;
-              log.push(`${def ? cardName(def) : "Personnel"} also exhausted.`);
-              exhaustedCount++;
-              break;
-            }
-          }
+    // Collect remaining eligible personnel for second target
+    const secondTargets: import("@bsg/shared").CardInstance[] = [];
+    for (const p of state.players) {
+      for (const stack of p.zones.alert) {
+        const tc = stack.cards[0];
+        if (tc?.faceUp && !stack.exhausted && tc.instanceId !== targetId) {
+          const def = getCardDef(tc.defId);
+          if (def?.type === "personnel") secondTargets.push(tc);
         }
-        if (exhaustedCount >= 2) break;
       }
+    }
+    if (secondTargets.length > 0) {
+      state.pendingChoice = {
+        type: "astral-queen-second",
+        playerIndex,
+        cards: secondTargets,
+      };
     }
   },
 });
@@ -2034,19 +2125,22 @@ register("doomed-liner-bounce", {
 
 // --- Triggered: ETB (1 ship) ---
 
-// Scouting Raider: "When this card enters play as a ship, look at the top card of target deck."
-// Simplified: auto-log top card of opponent's deck.
+// Scouting Raider: "When this card enters play as a ship, look at the top card of target opponent's deck."
+// In a 2-player game, always looks at opponent's deck. Info is private to the controller.
 register("scouting-raider-etb", {
   trigger: "onEnterPlay",
   resolve(state, playerIndex, _sid, _tid, log) {
     const opponentIndex = 1 - playerIndex;
     const opponent = state.players[opponentIndex];
     if (opponent.deck.length > 0) {
-      const topCard = opponent.deck[opponent.deck.length - 1];
+      const topCard = opponent.deck[0];
       const def = getCardDef(topCard.defId);
-      log.push(
-        `Scouting Raider: Looked at top of opponent's deck (${def ? cardName(def) : "unknown"}).`,
-      );
+      // Log privately — only the controlling player sees the actual card
+      // In the shared log, we just note the action happened
+      log.push(`Scouting Raider: Player ${playerIndex + 1} looks at top of opponent's deck.`);
+      // The actual card info is only useful in the log for the controlling player
+      // Since we can't do private logs easily, we include it (both players see the game log)
+      log.push(`  → ${def ? cardName(def) : "unknown card"}`);
     } else {
       log.push("Scouting Raider: Opponent's deck is empty.");
     }
@@ -2074,24 +2168,30 @@ register("nuclear-raider-win", {
   trigger: "onChallengeWin",
 });
 
-// --- Deferred (6 ships — registered for data, no logic) ---
+// --- Reactive triggers (handled via inline hooks, not registry activation) ---
 
 // Cloud 9, Cruise Ship: "Each time you lose influence, may commit to reduce by 1."
+// Logic in interceptCloud9Loss() above + game-engine.ts interceptCloud9() + base-abilities.ts
 register("cloud9-shield", {});
 
 // Ordnance Freighter: "Each time you spend a resource stack, may commit. Generate [security]."
+// Logic in game-engine.ts payResourceCost/spendAnyResources + FREIGHTER_RESOURCE map
 register("ordnance-freighter", {});
 
 // Supply Freighter: "Each time you spend a resource stack, may commit. Generate [logistics]."
+// Logic in game-engine.ts payResourceCost/spendAnyResources + FREIGHTER_RESOURCE map
 register("supply-freighter", {});
 
 // Troop Freighter: "Each time you spend a resource stack, may commit. Generate [persuasion]."
+// Logic in game-engine.ts payResourceCost/spendAnyResources + FREIGHTER_RESOURCE map
 register("troop-freighter", {});
 
 // Olympic Carrier: "When resolving Cylon mission, sacrifice for 2 requirements."
+// Logic in game-engine.ts canResolveMission + resolveMission handler
 register("olympic-carrier-mission", {});
 
 // Raptor 432: "Flash play from hand when challenged by ship to defend."
+// Logic in game-engine.ts getValidActions (defender selection) + defend case handler
 register("raptor432-flash", {});
 
 // ============================================================
@@ -2119,7 +2219,12 @@ export function getUnitAbilityActions(
   const sourceDef = findDefByInstanceIdFromPlayers(state, sourceInstanceId);
   if (!sourceDef) return [];
 
-  const targets = handler.getTargets?.(state, playerIndex, sourceInstanceId) ?? null;
+  let targets = handler.getTargets?.(state, playerIndex, sourceInstanceId) ?? null;
+
+  // Filter out units with "all" effect immunity (Fallout Shelter)
+  if (targets && state.effectImmunity) {
+    targets = targets.filter((id) => state.effectImmunity?.[id] !== "all");
+  }
 
   if (targets === null) {
     // No target needed

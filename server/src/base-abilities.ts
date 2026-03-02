@@ -132,7 +132,11 @@ registerBaseAbility("galactica", {
   resolve(state, playerIndex, _target, log, bases) {
     const oppIndex = 1 - playerIndex;
     // Route through interceptInfluenceLoss for I.H.T. Colonial One interception
-    const adjusted = interceptInfluenceLoss(state, oppIndex, 1, log, bases);
+    let adjusted = interceptInfluenceLoss(state, oppIndex, 1, log, bases);
+    // Cloud 9, Cruise Ship: commit to reduce influence loss by 1
+    if (adjusted > 0) {
+      adjusted = interceptCloud9InfluenceLoss(state, oppIndex, adjusted, log);
+    }
     if (adjusted > 0) {
       state.players[oppIndex].influence -= adjusted;
     }
@@ -356,13 +360,13 @@ registerBaseAbility("iht-colonial-one", {
 });
 
 // --- Blockading Base Star: prevent Cylon threat text ---
+// Handled directly in game-engine.ts fireCylonThreatRedText() — auto-exhausts base to prevent worst threat.
 registerBaseAbility("blockading-base-star", {
   usableIn: [],
   trigger: "onCylonReveal",
   getTargets: () => null,
-  resolve(_state, _playerIndex, _target, log) {
-    // No-op until Cylon threat red text is implemented
-    log.push("Blockading Base Star: Cylon threat text prevention (not yet implemented).");
+  resolve() {
+    // Logic is in game-engine.ts fireCylonThreatRedText
   },
 });
 
@@ -468,6 +472,34 @@ export function getOnChallengedTrigger(
   if (!targets || targets.length === 0) return null;
 
   return { abilityId: baseDef.abilityId, targets };
+}
+
+/**
+ * Cloud 9, Cruise Ship: commit to reduce influence loss by 1.
+ * Returns the adjusted loss amount after applying any reduction.
+ */
+function interceptCloud9InfluenceLoss(
+  state: GameState,
+  playerIndex: number,
+  amount: number,
+  log: string[],
+): number {
+  if (amount <= 0) return amount;
+  const player = state.players[playerIndex];
+  for (const stack of player.zones.alert) {
+    if (amount <= 0) break;
+    if (stack.exhausted) continue;
+    const topCard = stack.cards[0];
+    if (!topCard?.faceUp) continue;
+    const def = cardRegistryRef[topCard.defId];
+    if (!def || def.abilityId !== "cloud9-shield") continue;
+    // Commit: move from alert to reserve
+    player.zones.alert.splice(player.zones.alert.indexOf(stack), 1);
+    player.zones.reserve.push(stack);
+    amount = Math.max(0, amount - 1);
+    log.push(`Cloud 9, Cruise Ship: committed to reduce influence loss by 1.`);
+  }
+  return amount;
 }
 
 /**

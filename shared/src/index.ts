@@ -192,10 +192,16 @@ export interface GameState {
   politiciansCantDefend?: boolean; // Martial Law: politicians can't defend this phase
   skipEventDiscard?: boolean; // Top Off the Tank: event doesn't go to discard
   pendingChoice?: {
-    type: string; // e.g. "celestra"
+    type: string; // e.g. "celestra", "boomer-search", "godfrey-reveal", etc.
     playerIndex: number;
     cards: CardInstance[]; // revealed cards to choose between
+    context?: Record<string, unknown>; // ability-specific state (targetId, sourceId, etc.)
   };
+  extraPhases?: string[]; // queued extra phases (False Peace)
+  forceEndExecution?: boolean; // skip to Cylon phase immediately (False Peace)
+  effectImmunity?: Record<string, "power" | "all">; // instanceId → immunity type (Anti-Radiation / Fallout Shelter)
+  cylonPhaseFirstOverride?: number; // Cylon Betrayal: force this player as first in next Cylon phase
+  cylonThreatTextImmune?: number; // Blockading Base Star: this threat index is immune to red text for one player
 }
 
 // --- Player View (what the client sees) ---
@@ -205,6 +211,7 @@ export interface OpponentView {
   handCount: number;
   deckCount: number;
   discardCount: number;
+  discard: CardInstance[]; // rules: "Cards in discard piles can be viewed"
   influence: number;
 }
 
@@ -215,6 +222,7 @@ export interface PlayerGameView {
     hand: CardInstance[];
     deckCount: number;
     discardCount: number;
+    discard: CardInstance[]; // your own discard pile
     influence: number;
   };
   opponent: OpponentView;
@@ -252,7 +260,9 @@ export type GameAction =
   | { type: "useTriggeredAbility"; targetInstanceId?: string }
   | { type: "declineTrigger" }
   | { type: "makeChoice"; choiceIndex: number }
-  | { type: "strafeChoice"; challengeAs: "personnel" | "ship" };
+  | { type: "strafeChoice"; challengeAs: "personnel" | "ship" }
+  | { type: "sacrificeFromStack"; stackInstanceId: string; cardInstanceId: string }
+  | { type: "reorderStack"; stackInstanceId: string; newTopDefId: string };
 
 // --- Valid Actions (server → client) ---
 

@@ -136,7 +136,14 @@ export interface MissionGameHelpers {
     playerIndex: number,
   ): void;
   commitUnit(player: PlayerState, instanceId: string): void;
-  drawCards(player: PlayerState, count: number, log: string[], label: string): void;
+  drawCards(
+    player: PlayerState,
+    count: number,
+    log: string[],
+    label: string,
+    state?: GameState,
+    playerIndex?: number,
+  ): void;
   applyPowerBuff(state: GameState, instanceId: string, amount: number, log: string[]): void;
   applyInfluenceLoss(
     state: GameState,
@@ -612,7 +619,14 @@ register("green-normal-human", {
 register("hand-of-god", {
   category: "one-shot",
   onResolve(state, playerIndex, _targetId, log) {
-    helpers.drawCards(state.players[playerIndex], 2, log, `Player ${playerIndex + 1}`);
+    helpers.drawCards(
+      state.players[playerIndex],
+      2,
+      log,
+      `Player ${playerIndex + 1}`,
+      state,
+      playerIndex,
+    );
     log.push("Hand Of God: draw 2 cards.");
   },
 });
@@ -1054,11 +1068,13 @@ register("assassination", {
   },
 });
 
-// BSG2-061 False Peace — DEFERRED (no-op)
+// BSG2-061 False Peace — End execution, extra execution+cylon phases after normal cylon
 register("false-peace", {
   category: "one-shot",
-  onResolve(_state, _playerIndex, _targetId, log) {
-    log.push("False Peace resolved (effect not yet implemented).");
+  onResolve(state, _playerIndex, _targetId, log) {
+    state.extraPhases = ["execution"];
+    state.forceEndExecution = true;
+    log.push("False Peace: execution phase ends. Extra execution and Cylon phases will follow.");
   },
 });
 
@@ -1307,7 +1323,7 @@ register("multiple-contacts", {
       (m) => getCardDef(m.defId)?.abilityId === "multiple-contacts",
     );
     if (has) {
-      helpers.drawCards(player, 1, log, `Player ${playerIndex + 1}`);
+      helpers.drawCards(player, 1, log, `Player ${playerIndex + 1}`, state, playerIndex);
       log.push("Multiple Contacts: draw 1 card at ready phase start.");
     }
   },
@@ -1465,9 +1481,12 @@ register("cylon-betrayal", {
         const [mission] = missions.splice(idx, 1);
         player.discard.push(mission);
       }
-      // In a 2-player game, the opponent goes first in cylon phase
-      // This is simplified: we just log it (first player determination is complex)
-      log.push("Cylon Betrayal: sacrificed. Target player goes first in next Cylon phase.");
+      // In a 2-player game, the opponent goes first in Cylon phase
+      const oppIndex = 1 - playerIndex;
+      state.cylonPhaseFirstOverride = oppIndex;
+      log.push(
+        `Cylon Betrayal: sacrificed. Player ${oppIndex + 1} goes first in next Cylon phase.`,
+      );
     },
   },
 });

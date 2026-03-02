@@ -15,12 +15,12 @@ import type {
   ReadyStep,
   OpponentView,
 } from "@bsg/shared";
+import { hasKeyword } from "@bsg/shared";
 import {
   canUnitChallenge,
   canUnitDefend,
   getDefenderSelector,
   getUndefendedEffect,
-  getMissionDestination,
 } from "./keyword-rules.js";
 import {
   getBaseAbilityActions,
@@ -55,6 +55,30 @@ import {
   setEventGameHelpers,
   setEventAbilityCardRegistry,
 } from "./event-abilities.js";
+import {
+  resolveMissionAbility,
+  getMissionCategory,
+  getLinkTargetType,
+  computeMissionPowerModifier,
+  computeMissionFleetDefenseModifier,
+  computeMissionCylonThreatBonus,
+  getMissionKeywordGrants,
+  canLinkedUnitChallenge,
+  getMissionActivationActions,
+  resolveMissionActivation,
+  fireMissionOnEventPlay,
+  fireMissionOnReadyPhaseStart,
+  interceptMissionDefeat,
+  cleanupLinkedMissions,
+  fireMissionOnCylonDefeat,
+  fireMissionOnChallengeWin as fireMissionOnChallengeWinHook,
+  fireMissionOnDraw,
+  checkMissionOverlayPrevention,
+  getMissionChallengeCost,
+  hasIndependentTribunal,
+  setMissionAbilityCardRegistry,
+  setMissionGameHelpers,
+} from "./mission-abilities.js";
 // Card registry — populated at startup via setCardRegistry()
 let cardRegistry: Record<string, CardDef> = {};
 
@@ -66,6 +90,17 @@ export function setCardRegistry(
   setBaseAbilityCardRegistry(cards);
   setUnitAbilityCardRegistry(cards);
   setEventAbilityCardRegistry(cards);
+  setMissionAbilityCardRegistry(cards);
+  setMissionGameHelpers({
+    getCardDef,
+    cardName,
+    defeatUnit,
+    commitUnit,
+    drawCards,
+    applyPowerBuff,
+    applyInfluenceLoss,
+    bases,
+  });
   setEventGameHelpers({
     getCardDef,
     cardName,
@@ -202,7 +237,14 @@ function cloneState(state: GameState): GameState {
 
 // --- Draw cards from deck (handles reshuffle) ---
 
-function drawCards(player: PlayerState, count: number, log: string[], playerLabel: string): void {
+function drawCards(
+  player: PlayerState,
+  count: number,
+  log: string[],
+  playerLabel: string,
+  state?: GameState,
+  playerIndex?: number,
+): void {
   for (let i = 0; i < count; i++) {
     if (player.deck.length === 0) {
       if (player.discard.length === 0) {
@@ -217,6 +259,10 @@ function drawCards(player: PlayerState, count: number, log: string[], playerLabe
     }
     const card = player.deck.shift()!;
     player.hand.push(card);
+  }
+  // Tightening the Noose: fire onDraw hook during execution phase
+  if (state && playerIndex !== undefined && state.phase === "execution") {
+    fireMissionOnDraw(state, playerIndex, count, log);
   }
 }
 
@@ -362,6 +408,7 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     handCount: opp.hand.length,
     deckCount: opp.deck.length,
     discardCount: opp.discard.length,
+    discard: opp.discard,
     influence: opp.influence,
   };
 
@@ -372,6 +419,7 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
       hand: you.hand,
       deckCount: you.deck.length,
       discardCount: you.discard.length,
+      discard: you.discard,
       influence: you.influence,
     },
     opponent: oppView,
@@ -456,6 +504,23 @@ export function getValidActions(
   }
 
   if (state.phase === "ready" && state.readyStep === 5 && isActive) {
+    // Offer reorder actions for stacks with 2+ cards
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        if (stack.cards.length >= 2) {
+          const topDef = getCardDef(stack.cards[0].defId);
+          for (let ci = 1; ci < stack.cards.length; ci++) {
+            const altDef = getCardDef(stack.cards[ci].defId);
+            actions.push({
+              type: "reorderStack" as GameAction["type"],
+              description: `Reorder: ${cardName(altDef)} to top (currently ${cardName(topDef)})`,
+              cardDefId: altDef.id,
+              selectableInstanceIds: [stack.cards[0].instanceId],
+            });
+          }
+        }
+      }
+    }
     actions.push({ type: "doneReorder", description: "Done reordering stacks" });
     return actions;
   }
@@ -503,6 +568,25 @@ export function getValidActions(
       }
     }
 
+    // Mission activated abilities (persistent + link)
+    actions.push(...getMissionActivationActions(state, playerIndex, "execution"));
+
+    // Sacrifice from unit stack: sacrifice non-top card for +1 power
+    for (const stack of player.zones.alert) {
+      if (stack.cards.length >= 2 && stack.cards[0]?.faceUp) {
+        const topDef = getCardDef(stack.cards[0].defId);
+        for (let ci = 1; ci < stack.cards.length; ci++) {
+          const sacrificeDef = getCardDef(stack.cards[ci].defId);
+          actions.push({
+            type: "sacrificeFromStack",
+            description: `Sacrifice ${cardName(sacrificeDef)} from ${cardName(topDef)} stack (+1 power)`,
+            cardDefId: sacrificeDef.id,
+            selectableInstanceIds: [stack.cards[0].instanceId],
+          });
+        }
+      }
+    }
+
     // Challenge with an alert unit (Showdown: no challenges rest of phase)
     if (!state.noChallenges) {
       const challengeUnits: string[] = [];
@@ -513,17 +597,26 @@ export function getValidActions(
           if (
             isUnit(def) &&
             canUnitChallenge(def) &&
-            (!def.abilityId || canUnitAbilityChallenge(def.abilityId))
+            (!def.abilityId || canUnitAbilityChallenge(def.abilityId)) &&
+            canLinkedUnitChallenge(state, stack)
           ) {
             challengeUnits.push(topCard.instanceId);
           }
         }
       }
       if (challengeUnits.length > 0) {
+        const challengeCost = getMissionChallengeCost(state, playerIndex, 1 - playerIndex);
+        const availableStacks =
+          player.zones.resourceStacks.filter((s: ResourceStack) => !s.exhausted).length +
+          countAllFreighters(player);
         actions.push({
           type: "challenge",
-          description: "Challenge opponent",
+          description:
+            challengeCost > 0
+              ? `Challenge opponent (costs ${challengeCost} resource)`
+              : "Challenge opponent",
           selectableInstanceIds: challengeUnits,
+          ...(challengeCost > 0 && availableStacks < challengeCost ? { disabled: true } : {}),
         });
       }
     }
@@ -565,7 +658,8 @@ export function getValidActions(
         if (
           isUnit(def) &&
           canUnitChallenge(def) &&
-          (!def.abilityId || canUnitAbilityChallenge(def.abilityId))
+          (!def.abilityId || canUnitAbilityChallenge(def.abilityId)) &&
+          canLinkedUnitChallenge(state, stack)
         ) {
           units.push(topCard.instanceId);
         }
@@ -637,10 +731,25 @@ function getChallengeActions(
           const topCard = stack.cards[0];
           if (topCard && topCard.faceUp && !stack.exhausted) {
             const def = getCardDef(topCard.defId);
+            // Check mission-granted keywords (Scramble allows cross-type defense)
+            const challengerStack = findUnitInAnyZone(
+              state.players[challenge.challengerPlayerIndex],
+              challenge.challengerInstanceId,
+            );
+            const missionKws = getMissionKeywordGrants(state, stack, challenge.defenderPlayerIndex);
+            const hasScrambleFromMission = missionKws.includes("Scramble" as any);
+            const canDefend =
+              canUnitDefend(def, challengerDef) || (hasScrambleFromMission && isUnit(def));
+            // Independent Tribunal: units power ≤2 can't defend against this challenger
+            const tribunalBlock =
+              challengerStack &&
+              hasIndependentTribunal(challengerStack.stack) &&
+              (def.power ?? 0) <= 2;
             if (
               isUnit(def) &&
-              canUnitDefend(def, challengerDef) &&
-              !(state.politiciansCantDefend && def.traits?.includes("Politician"))
+              canDefend &&
+              !(state.politiciansCantDefend && def.traits?.includes("Politician")) &&
+              !tribunalBlock
             ) {
               const label =
                 challenge.defenderSelector === "challenger"
@@ -656,6 +765,22 @@ function getChallengeActions(
           }
         }
       }
+      // Raptor 432: flash play from hand to defend against a ship challenger
+      if (challengerDef?.type === "ship" && playerIndex === challenge.defenderPlayerIndex) {
+        for (let i = 0; i < player.hand.length; i++) {
+          const handDef = getCardDef(player.hand[i].defId);
+          if (handDef.abilityId === "raptor432-flash" && canAfford(player, handDef, bases)) {
+            actions.push({
+              type: "defend",
+              description: `Flash play ${cardName(handDef)} from hand to defend`,
+              cardDefId: handDef.id,
+              selectableCardIndices: [i],
+              selectableInstanceIds: [player.hand[i].instanceId],
+            });
+          }
+        }
+      }
+
       actions.push({ type: "defend", description: "Decline to defend" });
       return actions;
     }
@@ -667,7 +792,13 @@ function getChallengeActions(
     // Can play events from hand
     for (let i = 0; i < player.hand.length; i++) {
       const def = getCardDef(player.hand[i].defId);
-      if (def.type === "event" && canAfford(player, def, bases)) {
+      const challengeContext = challenge.isCylonChallenge ? "cylon-challenge" : "challenge";
+      if (
+        def.type === "event" &&
+        canAfford(player, def, bases) &&
+        (!def.abilityId || isEventPlayableIn(def.abilityId, challengeContext)) &&
+        (!def.abilityId || canPlayEvent(def.abilityId, state, playerIndex))
+      ) {
         actions.push({
           type: "playEventInChallenge",
           description: `${cardName(def)} — Event${formatCost(def.cost) ? ` (${formatCost(def.cost)})` : ""}`,
@@ -693,6 +824,22 @@ function getChallengeActions(
               context,
             ),
           );
+        }
+      }
+    }
+
+    // Sacrifice from unit stack during challenge: +1 power
+    for (const stack of player.zones.alert) {
+      if (stack.cards.length >= 2 && stack.cards[0]?.faceUp) {
+        const topDef = getCardDef(stack.cards[0].defId);
+        for (let ci = 1; ci < stack.cards.length; ci++) {
+          const sacrificeDef = getCardDef(stack.cards[ci].defId);
+          actions.push({
+            type: "sacrificeFromStack",
+            description: `Sacrifice ${cardName(sacrificeDef)} from ${cardName(topDef)} stack (+1 power)`,
+            cardDefId: sacrificeDef.id,
+            selectableInstanceIds: [stack.cards[0].instanceId],
+          });
         }
       }
     }
@@ -762,6 +909,10 @@ function canAfford(player: PlayerState, def: CardDef, bases: Record<string, Base
       if (getStackResourceTypeFromPlayer(stack, bases, player) === resType) {
         available += stackResourceCount(stack);
       }
+    }
+    // Count alert freighters that generate this resource type
+    if (available < effectiveAmount) {
+      available += countFreighterBonus(player, resType as ResourceType);
     }
     if (available < effectiveAmount) return false;
   }
@@ -848,7 +999,7 @@ function canResolveMission(
   const requirements = parseMissionRequirements(missionDef);
   if (requirements.length === 0) return true;
 
-  // Collect available alert face-up units
+  // Collect available alert face-up units (exclude Olympic Carrier itself)
   const availableUnits: CardDef[] = [];
   for (const stack of player.zones.alert) {
     const topCard = stack.cards[0];
@@ -863,6 +1014,7 @@ function canResolveMission(
   // Greedy assignment: for each requirement, count matching units
   // Each unit can only satisfy one requirement
   const used = new Set<number>();
+  let totalShortfall = 0;
 
   for (const req of requirements) {
     let satisfied = 0;
@@ -886,10 +1038,32 @@ function canResolveMission(
       }
     }
 
-    if (satisfied < req.count) return false;
+    if (satisfied < req.count) {
+      totalShortfall += req.count - satisfied;
+    }
   }
 
-  return true;
+  if (totalShortfall === 0) return true;
+
+  // Olympic Carrier: sacrifice to meet any 2 requirements of a Cylon mission
+  if (totalShortfall <= 2 && missionDef.traits?.includes("Cylon") && findOlympicCarrier(player)) {
+    return true;
+  }
+
+  return false;
+}
+
+/** Find an alert, face-up Olympic Carrier (olympic-carrier-mission) in a player's fleet. */
+function findOlympicCarrier(player: PlayerState): { stack: UnitStack; index: number } | null {
+  for (let i = 0; i < player.zones.alert.length; i++) {
+    const stack = player.zones.alert[i];
+    if (stack.exhausted) continue;
+    const topCard = stack.cards[0];
+    if (!topCard?.faceUp) continue;
+    const def = getCardDef(topCard.defId);
+    if (def.abilityId === "olympic-carrier-mission") return { stack, index: i };
+  }
+  return null;
 }
 
 // ============================================================
@@ -975,6 +1149,26 @@ export function applyAction(
       break;
     }
 
+    // --- Ready phase step 5: reorder a stack ---
+    case "reorderStack": {
+      const { stackInstanceId, newTopDefId } = action;
+      // Find the stack and move the matching card to top
+      for (const zone of [player.zones.alert, player.zones.reserve]) {
+        for (const stack of zone) {
+          if (stack.cards[0]?.instanceId === stackInstanceId) {
+            const idx = stack.cards.findIndex((c) => c.defId === newTopDefId);
+            if (idx > 0) {
+              const [card] = stack.cards.splice(idx, 1);
+              stack.cards.unshift(card);
+              const def = getCardDef(newTopDefId);
+              log.push(`${pLabel} reorders stack: ${cardName(def)} is now on top.`);
+            }
+          }
+        }
+      }
+      break;
+    }
+
     // --- Ready phase step 5: done reorder ---
     case "doneReorder": {
       advanceReadyStep5(s, log, bases);
@@ -1008,13 +1202,69 @@ export function applyAction(
       }
 
       // Pay cost
-      payResourceCost(player, effectiveCost, bases);
+      const excessResources = payResourceCost(player, effectiveCost, bases, log);
       player.hand.splice(action.cardIndex, 1);
+
+      // Expedite: check if any card in hand has Expedite and can be paid with excess
+      const totalExcess =
+        excessResources.persuasion + excessResources.logistics + excessResources.security;
+      if (totalExcess > 0) {
+        for (let ei = player.hand.length - 1; ei >= 0; ei--) {
+          const expCard = player.hand[ei];
+          const expDef = getCardDef(expCard.defId);
+          if (!hasKeyword(expDef, "Expedite") || !expDef.cost) continue;
+          // Check if excess covers the Expedite card's cost
+          let canExpedite = true;
+          for (const [rt, amt] of Object.entries(expDef.cost) as [ResourceType, number][]) {
+            if ((excessResources[rt] ?? 0) < amt) {
+              canExpedite = false;
+              break;
+            }
+          }
+          if (!canExpedite) continue;
+          // Play the Expedite card for free using excess
+          player.hand.splice(ei, 1);
+          log.push(`Expedite! ${pLabel} plays ${cardName(expDef)} using excess resources.`);
+          if (isUnit(expDef) || isMission(expDef)) {
+            const expOverlay =
+              isUnit(expDef) &&
+              isSingular(expDef) &&
+              !checkMissionOverlayPrevention(s, playerIndex, expDef)
+                ? findOverlayTarget(player, expDef)
+                : null;
+            if (expOverlay) {
+              expOverlay.stack.cards.unshift(expCard);
+              expOverlay.stack.exhausted = false;
+              log.push(`${pLabel} overlays ${cardName(expDef)} (Expedite).`);
+            } else {
+              player.zones.reserve.push({ cards: [expCard], exhausted: false });
+            }
+            if (isUnit(expDef)) {
+              fireOnEnterPlay(s, playerIndex, expDef, expCard.instanceId, log);
+              if (expDef.type === "ship")
+                fireOnShipEnterPlay(s, playerIndex, expCard.instanceId, log);
+            }
+          } else if (expDef.type === "event") {
+            resolveEventEffect(s, playerIndex, expDef, log, undefined);
+            if (!s.skipEventDiscard) player.discard.push(expCard);
+            s.skipEventDiscard = undefined;
+            fireMissionOnEventPlay(s, playerIndex, log);
+          }
+          // Deduct from excess
+          for (const [rt, amt] of Object.entries(expDef.cost) as [ResourceType, number][]) {
+            excessResources[rt] -= amt;
+          }
+          break; // Only one Expedite per play
+        }
+      }
 
       if (isUnit(def) || isMission(def)) {
         // Singular units overlay onto existing stacks with the same title
+        // We'll See You Again: singular cards don't overlay Cylon stacks
         const overlayTarget =
-          isUnit(def) && isSingular(def) ? findOverlayTarget(player, def) : null;
+          isUnit(def) && isSingular(def) && !checkMissionOverlayPrevention(s, playerIndex, def)
+            ? findOverlayTarget(player, def)
+            : null;
 
         if (overlayTarget) {
           // Overlay: push new card on top of the stack
@@ -1045,13 +1295,19 @@ export function applyAction(
           player.discard.push(card);
         }
         s.skipEventDiscard = undefined;
+        // Fire mission event-play triggers (Dradis Contact: +1 influence per event)
+        fireMissionOnEventPlay(s, playerIndex, log);
       }
 
       resetConsecutivePasses(s);
       player.consecutivePasses = 0;
       checkVictory(s, log);
       if (s.phase !== "gameOver") {
-        advanceExecutionTurn(s);
+        if (s.pendingChoice) {
+          // Stay on same player for choice resolution (e.g. ETB triggers, event choices)
+        } else {
+          advanceExecutionTurn(s);
+        }
       }
       break;
     }
@@ -1175,6 +1431,70 @@ export function applyAction(
           break;
         }
       }
+
+      // Check mission activated abilities (persistent + link)
+      // For persistent missions: sourceInstanceId matches a persistent mission instanceId
+      // For link missions: sourceInstanceId matches the linked unit's instanceId
+      {
+        let handled = false;
+        // Check persistent missions
+        for (const mc of player.zones.persistentMissions ?? []) {
+          if (mc.instanceId === sourceInstanceId) {
+            const mDef = getCardDef(mc.defId);
+            if (mDef?.abilityId) {
+              log.push(`${pLabel} activates ${cardName(mDef)}.`);
+              resolveMissionActivation(
+                mDef.abilityId,
+                s,
+                playerIndex,
+                sourceInstanceId,
+                targetInstanceId,
+                log,
+              );
+              handled = true;
+              resetConsecutivePasses(s);
+              player.consecutivePasses = 0;
+              checkVictory(s, log);
+              if (s.phase !== "gameOver") advanceExecutionTurn(s);
+            }
+            break;
+          }
+        }
+        // Check linked missions on alert units (sourceInstanceId = unit's instanceId)
+        if (!handled) {
+          for (const stack of player.zones.alert) {
+            const top = stack.cards[0];
+            if (top?.instanceId === sourceInstanceId) {
+              for (const mc of stack.linkedMissions ?? []) {
+                const mDef = getCardDef(mc.defId);
+                if (mDef?.abilityId) {
+                  const cat = getMissionCategory(mDef.abilityId);
+                  if (cat === "link") {
+                    log.push(`${pLabel} activates ${cardName(mDef)} (linked).`);
+                    // Pay cost: commit the unit
+                    commitUnit(player, sourceInstanceId);
+                    resolveMissionActivation(
+                      mDef.abilityId,
+                      s,
+                      playerIndex,
+                      sourceInstanceId,
+                      targetInstanceId,
+                      log,
+                    );
+                    handled = true;
+                    resetConsecutivePasses(s);
+                    player.consecutivePasses = 0;
+                    checkVictory(s, log);
+                    if (s.phase !== "gameOver") advanceExecutionTurn(s);
+                    break;
+                  }
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
       break;
     }
 
@@ -1195,14 +1515,50 @@ export function applyAction(
         }
       }
 
+      // Olympic Carrier: sacrifice to meet 2 requirements of a Cylon mission
+      if (def.traits?.includes("Cylon")) {
+        const oc = findOlympicCarrier(player);
+        if (oc) {
+          // Only sacrifice if needed (can't resolve without it)
+          // Temporarily remove Olympic Carrier from alert to test
+          const [ocStack] = player.zones.alert.splice(oc.index, 1);
+          const canWithout = canResolveMission(player, def, bases);
+          if (!canWithout) {
+            // Sacrifice: send all cards to discard
+            for (const card of ocStack.cards) {
+              player.discard.push(card);
+            }
+            log.push("Olympic Carrier, Trojan Horse: sacrificed to meet 2 mission requirements.");
+          } else {
+            // Put it back — not needed
+            player.zones.alert.splice(oc.index, 0, ocStack);
+          }
+        }
+      }
+
       resolveMissionEffect(s, playerIndex, def, log);
 
-      // Remove mission from alert — destination depends on keywords (e.g. Persistent)
+      // Remove mission from alert — destination depends on category
       const [missionStack] = player.zones.alert.splice(found.index, 1);
-      const destination = getMissionDestination(def);
-      if (destination === "reserve") {
-        player.zones.reserve.push(missionStack);
-        log.push(`${cardName(def)} is Persistent — placed in reserve area.`);
+      const missionCard = missionStack.cards[0];
+      const category = def.abilityId ? getMissionCategory(def.abilityId) : "one-shot";
+
+      if (category === "persistent") {
+        if (!player.zones.persistentMissions) player.zones.persistentMissions = [];
+        player.zones.persistentMissions.push(missionCard);
+        log.push(`${cardName(def)} is Persistent — stays in play.`);
+      } else if (category === "link") {
+        const linkType = getLinkTargetType(def.abilityId!);
+        const linkTarget = pickLinkTarget(player, linkType, def);
+        if (linkTarget) {
+          if (!linkTarget.linkedMissions) linkTarget.linkedMissions = [];
+          linkTarget.linkedMissions.push(missionCard);
+          const targetDef = getCardDef(linkTarget.cards[0].defId);
+          log.push(`${cardName(def)} linked to ${cardName(targetDef)}.`);
+        } else {
+          player.discard.push(missionCard);
+          log.push(`${cardName(def)} — no valid link target, discarded.`);
+        }
       } else {
         for (const card of missionStack.cards) {
           player.discard.push(card);
@@ -1214,7 +1570,13 @@ export function applyAction(
       player.consecutivePasses = 0;
       checkVictory(s, log);
       if (s.phase !== "gameOver") {
-        advanceExecutionTurn(s);
+        if (s.forceEndExecution) {
+          s.forceEndExecution = undefined;
+          log.push("Execution phase ends (False Peace).");
+          startCylonPhase(s, log, bases);
+        } else {
+          advanceExecutionTurn(s);
+        }
       }
       break;
     }
@@ -1224,6 +1586,12 @@ export function applyAction(
       const challengerInstanceId = action.challengerInstanceId;
       const challengerDef = findCardDefByInstanceId(s, challengerInstanceId);
       if (!challengerDef) break;
+
+      // Difference of Opinion: pay resource cost for challenging
+      const challengeCost = getMissionChallengeCost(s, playerIndex, 1 - playerIndex);
+      if (challengeCost > 0) {
+        spendAnyResources(player, challengeCost, log);
+      }
 
       const selector = getDefenderSelector(challengerDef);
       log.push(`${pLabel} challenges with ${cardName(challengerDef)}.`);
@@ -1266,9 +1634,25 @@ export function applyAction(
     case "defend": {
       if (!s.challenge) break;
       if (action.defenderInstanceId) {
+        // Check if defender is being flash-played from hand (Raptor 432)
+        const handIndex = player.hand.findIndex((c) => c.instanceId === action.defenderInstanceId);
+        if (handIndex >= 0) {
+          const card = player.hand[handIndex];
+          const flashDef = getCardDef(card.defId);
+          payResourceCost(player, flashDef.cost, bases, log);
+          player.hand.splice(handIndex, 1);
+          // Play to reserve as a unit
+          player.zones.reserve.push({
+            cards: [card],
+            exhausted: false,
+          });
+          log.push(`${pLabel} flash plays ${cardName(flashDef)} from hand to defend.`);
+        }
         const defDef = findCardDefByInstanceId(s, action.defenderInstanceId);
         s.challenge.defenderInstanceId = action.defenderInstanceId;
-        log.push(`${pLabel} defends with ${defDef?.title ?? "unknown"}.`);
+        if (handIndex < 0) {
+          log.push(`${pLabel} defends with ${defDef?.title ?? defDef?.subtitle ?? "unknown"}.`);
+        }
       } else {
         log.push(`${pLabel} declines to defend.`);
       }
@@ -1302,7 +1686,7 @@ export function applyAction(
       if (!card) break;
       const def = getCardDef(card.defId);
 
-      payResourceCost(player, def.cost, bases);
+      payResourceCost(player, def.cost, bases, log);
       player.hand.splice(action.cardIndex, 1);
 
       log.push(`${pLabel} plays ${cardName(def)} during challenge.`);
@@ -1318,6 +1702,8 @@ export function applyAction(
         fireOnChallengeEnd(s, s.challenge, log);
         s.challenge = null;
         advanceExecutionTurn(s);
+      } else if (s.pendingChoice) {
+        // Stay on same player for choice resolution
       } else {
         advanceChallengeEffectTurn(s);
       }
@@ -1445,22 +1831,44 @@ export function applyAction(
     case "makeChoice": {
       if (!s.pendingChoice) break;
       const choice = s.pendingChoice;
-      if (choice.type === "celestra") {
-        const chosenCard = choice.cards[action.choiceIndex];
-        const otherCard = choice.cards[1 - action.choiceIndex];
-        if (chosenCard && otherCard) {
-          const chosenDef = getCardDef(chosenCard.defId);
-          const otherDef = getCardDef(otherCard.defId);
-          // Put chosen on top, other on bottom
-          player.deck.unshift(chosenCard);
-          player.deck.push(otherCard);
-          log.push(
-            `${pLabel} puts ${cardName(chosenDef)} on top and ${cardName(otherDef)} on the bottom.`,
-          );
+      resolvePendingChoice(s, choice, action.choiceIndex, player, playerIndex, log, bases);
+      s.pendingChoice = undefined;
+      // If the resolution set up a NEW pendingChoice (chained), stay on same player
+      if (s.pendingChoice) {
+        // Stay on same player for next choice
+      } else if (s.challenge) {
+        advanceChallengeEffectTurn(s);
+      } else {
+        advanceExecutionTurn(s);
+      }
+      break;
+    }
+
+    case "sacrificeFromStack": {
+      const { stackInstanceId, cardInstanceId } = action;
+      // Find the unit stack containing the top card
+      let targetStack: UnitStack | null = null;
+      for (const stack of player.zones.alert) {
+        if (stack.cards[0]?.instanceId === stackInstanceId) {
+          targetStack = stack;
+          break;
         }
       }
-      s.pendingChoice = undefined;
-      // Now advance turn (the ability action already reset passes)
+      if (!targetStack || targetStack.cards.length < 2) break;
+      // Find and remove the non-top card
+      const cardIdx = targetStack.cards.findIndex((c) => c.instanceId === cardInstanceId);
+      if (cardIdx <= 0) break; // can't sacrifice top card (index 0)
+      const [sacrificed] = targetStack.cards.splice(cardIdx, 1);
+      player.discard.push(sacrificed);
+      const topDef = getCardDef(targetStack.cards[0].defId);
+      const sacDef = getCardDef(sacrificed.defId);
+      log.push(
+        `${pLabel} sacrifices ${cardName(sacDef)} from ${cardName(topDef)} stack (+1 power).`,
+      );
+      // Apply +1 power buff to the top unit
+      applyPowerBuff(s, targetStack.cards[0].instanceId, 1, log);
+      resetConsecutivePasses(s);
+      player.consecutivePasses = 0;
       if (s.challenge) {
         advanceChallengeEffectTurn(s);
       } else {
@@ -1523,6 +1931,10 @@ function startReadyPhase(s: GameState, log: string[], bases: Record<string, Base
     player.extraActionsRemaining = undefined;
     player.costReduction = undefined;
   }
+  // Clear False Peace phase tracking
+  s.extraPhases = undefined;
+  s.forceEndExecution = undefined;
+  s.effectImmunity = undefined;
 
   // Step 2: Restore exhausted cards
   for (const player of s.players) {
@@ -1535,7 +1947,14 @@ function startReadyPhase(s: GameState, log: string[], bases: Record<string, Base
     for (const stack of player.zones.reserve) {
       stack.exhausted = false;
     }
+    // Restore persistent missions (they can be exhausted by activations)
+    for (const mc of player.zones.persistentMissions ?? []) {
+      mc.faceUp = true;
+    }
   }
+
+  // Fire mission ready-phase triggers (Multiple Contacts: draw 1 card)
+  fireMissionOnReadyPhaseStart(s, log);
 
   // Step 3: Wait for draw action
   s.readyStep = 3 as ReadyStep;
@@ -1575,6 +1994,7 @@ function startExecutionPhase(s: GameState, log: string[]): void {
   s.preventInfluenceGain = undefined;
   s.noChallenges = undefined;
   s.politiciansCantDefend = undefined;
+  s.effectImmunity = undefined;
   for (const player of s.players) {
     player.consecutivePasses = 0;
     player.hasResolvedMission = false;
@@ -1599,18 +2019,391 @@ function advanceExecutionTurn(s: GameState): void {
   s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;
 }
 
+/**
+ * Fire Cylon threat red text effects when threats are revealed.
+ * Per rules: "red Cylon threat text triggers at this time in turn order if more than one is revealed."
+ * Blockading Base Star can exhaust to prevent one threat's text from affecting one player.
+ */
+function fireCylonThreatRedText(
+  s: GameState,
+  log: string[],
+  bases: Record<string, BaseCardDef>,
+): void {
+  // Check for Blockading Base Star — if unexhausted, auto-prevent the worst threat's text
+  let preventedThreatIdx = -1;
+  for (let pi = 0; pi < s.players.length; pi++) {
+    const p = s.players[pi];
+    if (bases[p.baseDefId]?.abilityId === "blockading-base-star") {
+      const baseStack = p.zones.resourceStacks[0];
+      if (baseStack && !baseStack.exhausted) {
+        // Find the most harmful threat with red text
+        let worstIdx = -1;
+        let worstScore = -1;
+        for (let ti = 0; ti < s.cylonThreats.length; ti++) {
+          const def = getCardDef(s.cylonThreats[ti].card.defId);
+          if (def.cylonThreatText) {
+            const score = s.cylonThreats[ti].power + 1; // prefer higher-power threats
+            if (score > worstScore) {
+              worstScore = score;
+              worstIdx = ti;
+            }
+          }
+        }
+        if (worstIdx >= 0) {
+          baseStack.exhausted = true;
+          preventedThreatIdx = worstIdx;
+          const tDef = getCardDef(s.cylonThreats[worstIdx].card.defId);
+          log.push(
+            `Blockading Base Star: Exhausted to prevent ${cardName(tDef)}'s Cylon threat text.`,
+          );
+        }
+      }
+      break;
+    }
+  }
+
+  // Fire red text for each threat in turn order
+  for (let ti = 0; ti < s.cylonThreats.length; ti++) {
+    if (ti === preventedThreatIdx) continue; // prevented by Blockading Base Star
+    const threat = s.cylonThreats[ti];
+    const def = getCardDef(threat.card.defId);
+    if (!def.cylonThreatText) continue;
+
+    const text = def.cylonThreatText.toLowerCase();
+    log.push(`Cylon threat text (${cardName(def)}): "${def.cylonThreatText}"`);
+
+    // Parse and apply common patterns
+    if (text.includes("each player discards a card")) {
+      for (const p of s.players) {
+        if (p.hand.length > 0) {
+          // Discard lowest-mystic card
+          let worstIdx = 0;
+          let worstVal = Infinity;
+          for (let i = 0; i < p.hand.length; i++) {
+            const d = getCardDef(p.hand[i].defId);
+            if ((d.mysticValue ?? 0) < worstVal) {
+              worstVal = d.mysticValue ?? 0;
+              worstIdx = i;
+            }
+          }
+          const removed = p.hand.splice(worstIdx, 1)[0];
+          p.discard.push(removed);
+        }
+      }
+      log.push("  → Each player discards a card.");
+    } else if (text.includes("each player loses 1 influence")) {
+      for (let pi = 0; pi < s.players.length; pi++) {
+        applyInfluenceLoss(s, pi, 1, log, bases);
+      }
+      log.push("  → Each player loses 1 influence.");
+    } else if (
+      text.includes("each player puts the top card of his or her deck into his or her discard pile")
+    ) {
+      for (const p of s.players) {
+        if (p.deck.length > 0) {
+          const card = p.deck.shift()!;
+          p.discard.push(card);
+        }
+      }
+      log.push("  → Each player mills top card.");
+    } else if (text.includes("each player exhausts") && text.includes("base")) {
+      for (const p of s.players) {
+        const baseStack = p.zones.resourceStacks[0];
+        if (baseStack && !baseStack.exhausted) baseStack.exhausted = true;
+      }
+      log.push("  → Each player exhausts their base.");
+    } else if (
+      text.includes("each player exhausts") &&
+      text.includes("asset") &&
+      text.includes("no supply")
+    ) {
+      for (const p of s.players) {
+        for (let si = 1; si < p.zones.resourceStacks.length; si++) {
+          if (
+            !p.zones.resourceStacks[si].exhausted &&
+            p.zones.resourceStacks[si].supplyCards.length === 0
+          ) {
+            p.zones.resourceStacks[si].exhausted = true;
+            break;
+          }
+        }
+      }
+      log.push("  → Each player exhausts a bare asset.");
+    } else if (text.includes("each player exhausts") && text.includes("asset")) {
+      for (const p of s.players) {
+        for (let si = 1; si < p.zones.resourceStacks.length; si++) {
+          if (!p.zones.resourceStacks[si].exhausted) {
+            p.zones.resourceStacks[si].exhausted = true;
+            break;
+          }
+        }
+      }
+      log.push("  → Each player exhausts an asset.");
+    } else if (text.includes("each player exhausts") && text.includes("resource stack")) {
+      for (const p of s.players) {
+        for (const stack of p.zones.resourceStacks) {
+          if (!stack.exhausted) {
+            stack.exhausted = true;
+            break;
+          }
+        }
+      }
+      log.push("  → Each player exhausts a resource stack.");
+    } else if (text.includes("each player exhausts") && text.includes("reserve unit")) {
+      for (const p of s.players) {
+        for (const stack of p.zones.reserve) {
+          if (!stack.exhausted && stack.cards[0]?.faceUp) {
+            stack.exhausted = true;
+            break;
+          }
+        }
+      }
+      log.push("  → Each player exhausts a reserve unit.");
+    } else if (text.includes("each player exhausts") && text.includes("personnel")) {
+      for (const p of s.players) {
+        for (const zone of [p.zones.alert, p.zones.reserve]) {
+          let found = false;
+          for (const stack of zone) {
+            if (!stack.exhausted && stack.cards[0]?.faceUp) {
+              const d = getCardDef(stack.cards[0].defId);
+              if (d.type === "personnel") {
+                stack.exhausted = true;
+                found = true;
+                break;
+              }
+            }
+          }
+          if (found) break;
+        }
+      }
+      log.push("  → Each player exhausts a personnel.");
+    } else if (
+      text.includes("each player commits") &&
+      text.includes("exhausts") &&
+      text.includes("personnel")
+    ) {
+      for (const p of s.players) {
+        for (const stack of p.zones.alert) {
+          if (stack.cards[0]?.faceUp) {
+            const d = getCardDef(stack.cards[0].defId);
+            if (d.type === "personnel") {
+              commitUnit(p, stack.cards[0].instanceId);
+              const found = findUnitInAnyZone(p, stack.cards[0].instanceId);
+              if (found) found.stack.exhausted = true;
+              break;
+            }
+          }
+        }
+      }
+      log.push("  → Each player commits and exhausts a personnel.");
+    } else if (text.includes("each player commits") && text.includes("personnel")) {
+      for (const p of s.players) {
+        for (const stack of [...p.zones.alert]) {
+          if (stack.cards[0]?.faceUp) {
+            const d = getCardDef(stack.cards[0].defId);
+            if (d.type === "personnel") {
+              commitUnit(p, stack.cards[0].instanceId);
+              break;
+            }
+          }
+        }
+      }
+      log.push("  → Each player commits a personnel.");
+    } else if (text.includes("each player commits") && text.includes("cylon unit")) {
+      for (const p of s.players) {
+        for (const stack of [...p.zones.alert]) {
+          if (stack.cards[0]?.faceUp) {
+            const d = getCardDef(stack.cards[0].defId);
+            if (d.traits?.includes("Cylon")) {
+              commitUnit(p, stack.cards[0].instanceId);
+              break;
+            }
+          }
+        }
+      }
+      log.push("  → Each player commits a Cylon unit.");
+    } else if (text.includes("each player commits") && text.includes("ship")) {
+      for (const p of s.players) {
+        for (const stack of [...p.zones.alert]) {
+          if (stack.cards[0]?.faceUp) {
+            const d = getCardDef(stack.cards[0].defId);
+            if (d.type === "ship") {
+              commitUnit(p, stack.cards[0].instanceId);
+              break;
+            }
+          }
+        }
+      }
+      log.push("  → Each player commits a ship.");
+    } else if (text.includes("each player commits") && text.includes("unit")) {
+      for (const p of s.players) {
+        for (const stack of [...p.zones.alert]) {
+          if (stack.cards[0]?.faceUp) {
+            commitUnit(p, stack.cards[0].instanceId);
+            break;
+          }
+        }
+      }
+      log.push("  → Each player commits a unit.");
+    } else if (text.includes("each player sacrifices") && text.includes("reserve ship")) {
+      for (const p of s.players) {
+        for (let i = 0; i < p.zones.reserve.length; i++) {
+          const stack = p.zones.reserve[i];
+          if (stack.cards[0]?.faceUp) {
+            const d = getCardDef(stack.cards[0].defId);
+            if (d.type === "ship") {
+              p.zones.reserve.splice(i, 1);
+              for (const c of stack.cards) p.discard.push(c);
+              break;
+            }
+          }
+        }
+      }
+      log.push("  → Each player sacrifices a reserve ship.");
+    } else if (text.includes("each player sacrifices") && text.includes("reserve personnel")) {
+      for (const p of s.players) {
+        for (let i = 0; i < p.zones.reserve.length; i++) {
+          const stack = p.zones.reserve[i];
+          if (stack.cards[0]?.faceUp) {
+            const d = getCardDef(stack.cards[0].defId);
+            if (d.type === "personnel") {
+              p.zones.reserve.splice(i, 1);
+              for (const c of stack.cards) p.discard.push(c);
+              break;
+            }
+          }
+        }
+      }
+      log.push("  → Each player sacrifices a reserve personnel.");
+    } else if (text.includes("each player sacrifices") && text.includes("personnel")) {
+      for (const p of s.players) {
+        for (const zone of [p.zones.alert, p.zones.reserve]) {
+          let found = false;
+          for (let i = 0; i < zone.length; i++) {
+            const stack = zone[i];
+            if (stack.cards[0]?.faceUp) {
+              const d = getCardDef(stack.cards[0].defId);
+              if (d.type === "personnel") {
+                zone.splice(i, 1);
+                for (const c of stack.cards) p.discard.push(c);
+                found = true;
+                break;
+              }
+            }
+          }
+          if (found) break;
+        }
+      }
+      log.push("  → Each player sacrifices a personnel.");
+    } else if (text.includes("each player sacrifices") && text.includes("unit")) {
+      for (const p of s.players) {
+        for (const zone of [p.zones.alert, p.zones.reserve]) {
+          let found = false;
+          for (let i = 0; i < zone.length; i++) {
+            const stack = zone[i];
+            if (stack.cards[0]?.faceUp) {
+              zone.splice(i, 1);
+              for (const c of stack.cards) p.discard.push(c);
+              found = true;
+              break;
+            }
+          }
+          if (found) break;
+        }
+      }
+      log.push("  → Each player sacrifices a unit.");
+    } else if (
+      text.includes("all politicians get -1 power") ||
+      text.includes("all officers get -1 power") ||
+      text.includes("all ships get -1 power")
+    ) {
+      // Power debuffs last until end of phase — tracked via effectImmunity or similar
+      // For simplicity, just log (power modifiers during Cylon challenges are ephemeral)
+      log.push("  → Power debuff applied (lasts until end of phase).");
+    } else if (
+      text.includes("puts a card from") &&
+      text.includes("hand on top of") &&
+      text.includes("deck")
+    ) {
+      for (const p of s.players) {
+        if (p.hand.length > 0) {
+          // Put lowest-mystic card on top
+          let worstIdx = 0;
+          let worstVal = Infinity;
+          for (let i = 0; i < p.hand.length; i++) {
+            const d = getCardDef(p.hand[i].defId);
+            if ((d.mysticValue ?? 0) < worstVal) {
+              worstVal = d.mysticValue ?? 0;
+              worstIdx = i;
+            }
+          }
+          const card = p.hand.splice(worstIdx, 1)[0];
+          p.deck.unshift(card);
+        }
+      }
+      log.push("  → Each player puts a card from hand on top of deck.");
+    } else if (
+      text.includes("chooses a personnel card from") &&
+      text.includes("discard") &&
+      text.includes("hand")
+    ) {
+      for (const p of s.players) {
+        // Find personnel in discard
+        for (let i = 0; i < p.discard.length; i++) {
+          const d = getCardDef(p.discard[i].defId);
+          if (d.type === "personnel") {
+            const card = p.discard.splice(i, 1)[0];
+            p.hand.push(card);
+            break;
+          }
+        }
+      }
+      log.push("  → Each player recovers a personnel from discard.");
+    } else if (text.includes("readies a ship")) {
+      for (const p of s.players) {
+        for (const stack of p.zones.reserve) {
+          if (stack.cards[0]?.faceUp && !stack.exhausted) {
+            const d = getCardDef(stack.cards[0].defId);
+            if (d.type === "ship") {
+              const idx = p.zones.reserve.indexOf(stack);
+              if (idx >= 0) {
+                p.zones.reserve.splice(idx, 1);
+                p.zones.alert.push(stack);
+              }
+              break;
+            }
+          }
+        }
+      }
+      log.push("  → Each player readies a ship.");
+    } else {
+      // Unrecognized text — log it for visibility
+      log.push(`  → (Unhandled red text: "${def.cylonThreatText}")`);
+    }
+  }
+}
+
 function startCylonPhase(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
   s.phase = "cylon";
-  s.firstPlayerIndex = determineFirstPlayer(s);
+  // Cylon Betrayal override: use forced first player if set
+  if (s.cylonPhaseFirstOverride !== undefined) {
+    s.firstPlayerIndex = s.cylonPhaseFirstOverride;
+    s.cylonPhaseFirstOverride = undefined;
+    log.push(`Cylon Betrayal: Player ${s.firstPlayerIndex + 1} goes first.`);
+  } else {
+    s.firstPlayerIndex = determineFirstPlayer(s);
+  }
   s.activePlayerIndex = s.firstPlayerIndex;
   // Clear phase-scoped event flags
   s.preventInfluenceLoss = undefined;
   s.preventInfluenceGain = undefined;
   s.noChallenges = undefined;
   s.politiciansCantDefend = undefined;
+  s.effectImmunity = undefined;
 
   const threatLevel = computeCylonThreatLevel(s);
-  const effectiveDefense = s.fleetDefenseLevel + computeFleetDefenseModifiers(s);
+  const effectiveDefense =
+    s.fleetDefenseLevel + computeFleetDefenseModifiers(s) + computeMissionFleetDefenseModifier(s);
   log.push(`Cylon phase: threat level is ${threatLevel}, fleet defense is ${effectiveDefense}.`);
 
   if (threatLevel <= effectiveDefense) {
@@ -1622,7 +2415,7 @@ function startCylonPhase(s: GameState, log: string[], bases: Record<string, Base
   log.push("Cylon attack! Each player reveals a threat.");
 
   // Each player reveals top card as Cylon threat
-  const doralBonus = computeCylonThreatBonus(s);
+  const doralBonus = computeCylonThreatBonus(s) + computeMissionCylonThreatBonus(s);
   s.cylonThreats = [];
   for (let i = 0; i < s.players.length; i++) {
     const result = revealMysticValue(s.players[i], log, `Player ${i + 1}`);
@@ -1638,7 +2431,57 @@ function startCylonPhase(s: GameState, log: string[], bases: Record<string, Base
     );
   }
 
-  // Check if all have Cylon trait → fleet jumps (not implementing trait check for boilerplate)
+  // Fire Cylon threat red text (rules: "triggers at this time in turn order")
+  fireCylonThreatRedText(s, log, bases);
+
+  // Check if ALL revealed threats have the Cylon trait → fleet jumps
+  const allCylon = s.cylonThreats.every((t) => {
+    const def = getCardDef(t.card.defId);
+    return def.traits?.includes("Cylon");
+  });
+  if (allCylon) {
+    log.push("All Cylon threats have the Cylon trait — fleet must jump!");
+    for (let pi = 0; pi < s.players.length; pi++) {
+      const p = s.players[pi];
+      // AI: sacrifice smallest asset (no supply) first, then supply card from largest stack
+      let sacrificed = false;
+      // Try to sacrifice a bare asset (non-base resource stack with no supply cards)
+      for (let si = 1; si < p.zones.resourceStacks.length; si++) {
+        if (p.zones.resourceStacks[si].supplyCards.length === 0) {
+          const removed = p.zones.resourceStacks.splice(si, 1)[0];
+          p.discard.push(removed.topCard);
+          log.push(
+            `Player ${pi + 1} sacrifices asset ${cardName(getCardDef(removed.topCard.defId))}.`,
+          );
+          sacrificed = true;
+          break;
+        }
+      }
+      if (!sacrificed) {
+        // Sacrifice a supply card from any stack
+        for (const stack of p.zones.resourceStacks) {
+          if (stack.supplyCards.length > 0) {
+            const supply = stack.supplyCards.pop()!;
+            p.discard.push(supply);
+            log.push(`Player ${pi + 1} sacrifices a supply card.`);
+            sacrificed = true;
+            break;
+          }
+        }
+      }
+      if (!sacrificed) {
+        log.push(`Player ${pi + 1} has no asset or supply card to sacrifice.`);
+      }
+    }
+    // All threats go to discard
+    for (const t of s.cylonThreats) {
+      s.players[t.ownerIndex].discard.push(t.card);
+    }
+    s.cylonThreats = [];
+    endCylonPhase(s, log, bases);
+    return;
+  }
+
   // Remove 0-power threats
   s.cylonThreats = s.cylonThreats.filter((t) => {
     if (t.power === 0) {
@@ -1672,10 +2515,20 @@ function endCylonPhase(s: GameState, log: string[], bases: Record<string, BaseCa
   }
   s.cylonThreats = [];
 
-  log.push("Cylon phase ends. Turn ends.");
+  log.push("Cylon phase ends.");
   checkVictory(s, log);
   if (s.phase !== "gameOver") {
-    startReadyPhase(s, log, bases);
+    // False Peace: check for queued extra phases
+    if (s.extraPhases?.length) {
+      const next = s.extraPhases.shift()!;
+      if (next === "execution") {
+        log.push("Extra execution phase begins (False Peace).");
+        startExecutionPhase(s, log);
+      }
+    } else {
+      log.push("Turn ends.");
+      startReadyPhase(s, log, bases);
+    }
   }
 }
 
@@ -1703,15 +2556,23 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
     return;
   }
 
-  const challengerPower =
-    getUnitPower(challengerStack.stack) +
-    (challenge.challengerPowerBuff ?? 0) +
-    computePassivePowerModifier(s, challengerStack.stack, challenge.challengerPlayerIndex, {
-      phase: s.phase,
-      isChallenger: true,
-    });
-
   if (!challenge.defenderInstanceId) {
+    const challengerPowerContext = { phase: s.phase, isChallenger: true };
+    const challengerPower =
+      getUnitPower(challengerStack.stack) +
+      (challenge.challengerPowerBuff ?? 0) +
+      computePassivePowerModifier(
+        s,
+        challengerStack.stack,
+        challenge.challengerPlayerIndex,
+        challengerPowerContext,
+      ) +
+      computeMissionPowerModifier(
+        s,
+        challengerStack.stack,
+        challenge.challengerPlayerIndex,
+        challengerPowerContext,
+      );
     // Undefended challenge — add Six Seductress buff if applicable
     const undefendedPower = challengerPower + (challenge.sixSeductressBuff ?? 0);
     const challengerDef = getCardDef(challengerStack.stack.cards[0].defId);
@@ -1825,14 +2686,49 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
       return;
     }
 
+    const defenderDefForContext = getCardDef(defenderStack.stack.cards[0].defId);
+    const challengerDefForContext = getCardDef(challengerStack.stack.cards[0].defId);
+    const challengerPowerContext = {
+      phase: s.phase,
+      isChallenger: true,
+      defenderDef: defenderDefForContext,
+    };
+    const challengerPower =
+      getUnitPower(challengerStack.stack) +
+      (challenge.challengerPowerBuff ?? 0) +
+      computePassivePowerModifier(
+        s,
+        challengerStack.stack,
+        challenge.challengerPlayerIndex,
+        challengerPowerContext,
+      ) +
+      computeMissionPowerModifier(
+        s,
+        challengerStack.stack,
+        challenge.challengerPlayerIndex,
+        challengerPowerContext,
+      );
     const atkTotal = challengerPower + atkMysticValue;
+    const defPowerContext = {
+      phase: s.phase,
+      isDefender: true,
+      challengerDef: challengerDefForContext,
+    };
     const defPower =
       getUnitPower(defenderStack.stack) +
       (challenge.defenderPowerBuff ?? 0) +
-      computePassivePowerModifier(s, defenderStack.stack, challenge.defenderPlayerIndex, {
-        phase: s.phase,
-        isDefender: true,
-      });
+      computePassivePowerModifier(
+        s,
+        defenderStack.stack,
+        challenge.defenderPlayerIndex,
+        defPowerContext,
+      ) +
+      computeMissionPowerModifier(
+        s,
+        defenderStack.stack,
+        challenge.defenderPlayerIndex,
+        defPowerContext,
+      );
     const defTotal = defPower + defMysticValue;
 
     log.push(`Challenger total: ${atkTotal} (${challengerPower} + ${atkMysticValue})`);
@@ -1875,6 +2771,15 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
       }
       // Fire onChallengeWin triggers (e.g., Nuclear-Armed Raider: defeat asset)
       fireOnChallengeWin(s, challenge.challengerPlayerIndex, challenge.challengerInstanceId, log);
+      // Fire mission challenge-win triggers (Last Word: gain influence = power diff)
+      fireMissionOnChallengeWinHook(
+        s,
+        challenge.challengerPlayerIndex,
+        challengerStack.stack,
+        defenderStack.stack,
+        atkTotal - defTotal,
+        log,
+      );
     } else {
       // Defender wins
       log.push("Defender wins!");
@@ -1896,6 +2801,15 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
       }
       // Fire onChallengeWin triggers for defender win
       fireOnChallengeWin(s, challenge.defenderPlayerIndex, challenge.defenderInstanceId!, log);
+      // Fire mission challenge-win triggers for defender
+      fireMissionOnChallengeWinHook(
+        s,
+        challenge.defenderPlayerIndex,
+        defenderStack.stack,
+        challengerStack.stack,
+        defTotal - atkTotal,
+        log,
+      );
     }
   }
 
@@ -1960,13 +2874,22 @@ function resolveCylonChallenge(
     return;
   }
 
+  const cylonChallengerCtx = { phase: "cylon" as const, isChallenger: true };
   const challengerPower =
     getUnitPower(challengerStack.stack) +
     (challenge.challengerPowerBuff ?? 0) +
-    computePassivePowerModifier(s, challengerStack.stack, challenge.challengerPlayerIndex, {
-      phase: "cylon",
-      isChallenger: true,
-    });
+    computePassivePowerModifier(
+      s,
+      challengerStack.stack,
+      challenge.challengerPlayerIndex,
+      cylonChallengerCtx,
+    ) +
+    computeMissionPowerModifier(
+      s,
+      challengerStack.stack,
+      challenge.challengerPlayerIndex,
+      cylonChallengerCtx,
+    );
 
   // Reveal mystic values (with hooks)
   const atkMystic = revealMysticValue(
@@ -2009,6 +2932,13 @@ function resolveCylonChallenge(
     commitUnit(attackerPlayer, challenge.challengerInstanceId);
     // Fire onChallengeWin triggers (e.g., Nuclear-Armed Raider)
     fireOnChallengeWin(s, challenge.challengerPlayerIndex, challenge.challengerInstanceId, log);
+    // Fire mission Cylon defeat triggers (Nothin' But The Rain: +1 influence)
+    fireMissionOnCylonDefeat(
+      s,
+      challenge.challengerPlayerIndex,
+      challenge.challengerInstanceId,
+      log,
+    );
     // Put threat into owner's discard
     s.players[threat.ownerIndex].discard.push(threat.card);
     s.cylonThreats.splice(threatIdx, 1);
@@ -2051,6 +2981,47 @@ function resolveCylonChallenge(
 // Unit Helpers
 // ============================================================
 
+/** Pick best link target for a Link mission (AI: highest power matching unit in alert). */
+function pickLinkTarget(
+  player: PlayerState,
+  linkType: "personnel" | "ship" | "unit" | undefined,
+  _missionDef: CardDef,
+): UnitStack | null {
+  let best: UnitStack | null = null;
+  let bestPower = -1;
+  for (const stack of player.zones.alert) {
+    const top = stack.cards[0];
+    if (!top?.faceUp || stack.exhausted) continue;
+    const def = getCardDef(top.defId);
+    if (!isUnit(def)) continue;
+    if (linkType === "personnel" && def.type !== "personnel") continue;
+    if (linkType === "ship" && def.type !== "ship") continue;
+    // "unit" accepts both personnel and ship
+    const power = def.power ?? 0;
+    if (power > bestPower) {
+      bestPower = power;
+      best = stack;
+    }
+  }
+  // Also check reserve if no alert target found
+  if (!best) {
+    for (const stack of player.zones.reserve) {
+      const top = stack.cards[0];
+      if (!top?.faceUp) continue;
+      const def = getCardDef(top.defId);
+      if (!isUnit(def)) continue;
+      if (linkType === "personnel" && def.type !== "personnel") continue;
+      if (linkType === "ship" && def.type !== "ship") continue;
+      const power = def.power ?? 0;
+      if (power > bestPower) {
+        bestPower = power;
+        best = stack;
+      }
+    }
+  }
+  return best;
+}
+
 function findUnitInAnyZone(
   player: PlayerState,
   instanceId: string,
@@ -2086,11 +3057,22 @@ function defeatUnit(
   const found = findUnitInAnyZone(player, instanceId);
   if (found) {
     const def = getCardDef(found.stack.cards[0].defId);
+    // Mission defeat interception (Flight School, Misdirection, Beyond Insane)
+    if (state && playerIndex !== undefined) {
+      const unitType = def.type === "ship" ? "ship" : "personnel";
+      if (interceptMissionDefeat(state, playerIndex, unitType, instanceId, log)) {
+        return; // defeat prevented by mission sacrifice
+      }
+    }
     // Fire onDefeat trigger before moving to discard
     if (state && playerIndex !== undefined) {
       fireOnDefeat(state, playerIndex, def, instanceId, log);
     }
     log.push(`${cardName(def)} is defeated.`);
+    // Cleanup linked missions before removing the unit
+    if (state && playerIndex !== undefined) {
+      cleanupLinkedMissions(state, playerIndex, found.stack, log);
+    }
     const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
     zone.splice(found.index, 1);
     for (const card of found.stack.cards) {
@@ -2103,8 +3085,10 @@ function payResourceCost(
   player: PlayerState,
   cost: CardCost,
   bases: Record<string, BaseCardDef>,
-): void {
-  if (!cost) return;
+  log?: string[],
+): Record<ResourceType, number> {
+  const excess: Record<ResourceType, number> = { persuasion: 0, logistics: 0, security: 0 };
+  if (!cost) return excess;
 
   // Ragnar Anchorage override: logistics ≥2 generates 3 of any one resource type
   if (player.ragnarResourceOverride) {
@@ -2117,7 +3101,9 @@ function payResourceCost(
           if (stackResourceCount(stack) >= 2) {
             stack.exhausted = true;
             player.ragnarResourceOverride = false;
-            return; // paid via Ragnar override
+            // Ragnar generates 3 of any type; excess = 3 - cost
+            excess[costEntries[0][0]] = 3 - costEntries[0][1];
+            return excess;
           }
         }
       }
@@ -2126,6 +3112,7 @@ function payResourceCost(
     player.ragnarResourceOverride = false;
   }
 
+  let anyStackSpent = false;
   for (const [resType, amount] of Object.entries(cost) as [ResourceType, number][]) {
     let remaining = amount;
     for (const stack of player.zones.resourceStacks) {
@@ -2134,8 +3121,111 @@ function payResourceCost(
       if (getStackResourceTypeFromPlayer(stack, bases, player) === resType) {
         stack.exhausted = true;
         remaining -= stackResourceCount(stack);
+        anyStackSpent = true;
       }
     }
+    // Freighter bonus: commit freighters to cover remaining cost
+    if (remaining > 0 && anyStackSpent) {
+      remaining = commitFreightersForResource(player, resType as ResourceType, remaining, log);
+    }
+    // Track excess (negative remaining = excess)
+    if (remaining < 0) {
+      excess[resType as ResourceType] = Math.abs(remaining);
+    }
+  }
+  return excess;
+}
+
+/** Freighter resource type mapping. */
+const FREIGHTER_RESOURCE: Record<string, ResourceType> = {
+  "ordnance-freighter": "security",
+  "supply-freighter": "logistics",
+  "troop-freighter": "persuasion",
+};
+
+/** Commit alert freighters to generate their resource type, reducing remaining cost. */
+function commitFreightersForResource(
+  player: PlayerState,
+  resType: ResourceType,
+  remaining: number,
+  log?: string[],
+): number {
+  for (let i = player.zones.alert.length - 1; i >= 0; i--) {
+    if (remaining <= 0) break;
+    const stack = player.zones.alert[i];
+    if (stack.exhausted) continue;
+    const topCard = stack.cards[0];
+    if (!topCard?.faceUp) continue;
+    const def = getCardDef(topCard.defId);
+    if (!def.abilityId || FREIGHTER_RESOURCE[def.abilityId] !== resType) continue;
+    // Commit the freighter (move from alert to reserve)
+    player.zones.alert.splice(i, 1);
+    player.zones.reserve.push(stack);
+    remaining--;
+    log?.push(`${cardName(def)}: committed to generate ${resType}.`);
+  }
+  return remaining;
+}
+
+/** Count how many alert freighters can generate the given resource type (for affordability checks). */
+function countFreighterBonus(player: PlayerState, resType: ResourceType): number {
+  let count = 0;
+  for (const stack of player.zones.alert) {
+    if (stack.exhausted) continue;
+    const topCard = stack.cards[0];
+    if (!topCard?.faceUp) continue;
+    const def = getCardDef(topCard.defId);
+    if (def.abilityId && FREIGHTER_RESOURCE[def.abilityId] === resType) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/** Count all alert freighters of any type (for "any resource" affordability checks). */
+function countAllFreighters(player: PlayerState): number {
+  let count = 0;
+  for (const stack of player.zones.alert) {
+    if (stack.exhausted) continue;
+    const topCard = stack.cards[0];
+    if (!topCard?.faceUp) continue;
+    const def = getCardDef(topCard.defId);
+    if (def.abilityId && FREIGHTER_RESOURCE[def.abilityId]) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/** Spend N resource stacks of any type (Difference of Opinion challenge cost). Prefers smallest stacks. */
+function spendAnyResources(player: PlayerState, count: number, log: string[]): void {
+  const available = player.zones.resourceStacks
+    .filter((s) => !s.exhausted)
+    .sort((a, b) => stackResourceCount(a) - stackResourceCount(b));
+  let remaining = count;
+  for (const stack of available) {
+    if (remaining <= 0) break;
+    stack.exhausted = true;
+    remaining--;
+  }
+  // Freighters can cover remaining cost (each generates 1 resource of any type)
+  if (remaining > 0) {
+    for (let i = player.zones.alert.length - 1; i >= 0; i--) {
+      if (remaining <= 0) break;
+      const stack = player.zones.alert[i];
+      if (stack.exhausted) continue;
+      const topCard = stack.cards[0];
+      if (!topCard?.faceUp) continue;
+      const def = getCardDef(topCard.defId);
+      if (!def.abilityId || !FREIGHTER_RESOURCE[def.abilityId]) continue;
+      player.zones.alert.splice(i, 1);
+      player.zones.reserve.push(stack);
+      remaining--;
+      log.push(`${cardName(def)}: committed to generate ${FREIGHTER_RESOURCE[def.abilityId]}.`);
+    }
+  }
+  if (count > 0) {
+    log.push(`Paid ${count} resource(s) for challenge cost (Difference of Opinion).`);
   }
 }
 
@@ -2143,6 +3233,25 @@ function resetConsecutivePasses(s: GameState): void {
   for (const p of s.players) {
     p.consecutivePasses = 0;
   }
+}
+
+/** Cloud 9, Cruise Ship: commit to reduce influence loss by 1. */
+function interceptCloud9(s: GameState, playerIndex: number, amount: number, log: string[]): number {
+  if (amount <= 0) return amount;
+  const player = s.players[playerIndex];
+  for (const stack of player.zones.alert) {
+    if (amount <= 0) break;
+    if (stack.exhausted) continue;
+    const topCard = stack.cards[0];
+    if (!topCard?.faceUp) continue;
+    const def = getCardDef(topCard.defId);
+    if (def.abilityId !== "cloud9-shield") continue;
+    // Commit the ship to reduce loss by 1
+    commitUnit(player, topCard.instanceId);
+    amount = Math.max(0, amount - 1);
+    log.push(`Cloud 9, Cruise Ship: committed to reduce influence loss by 1.`);
+  }
+  return amount;
 }
 
 /** Apply influence loss with prevention check and I.H.T. Colonial One interception. */
@@ -2157,27 +3266,508 @@ function applyInfluenceLoss(
     log.push("Executive Privilege: influence loss prevented.");
     return;
   }
-  const adjusted = interceptInfluenceLoss(s, playerIndex, amount, log, bases);
+  let adjusted = interceptInfluenceLoss(s, playerIndex, amount, log, bases);
+  // Cloud 9, Cruise Ship: commit to reduce influence loss by 1
+  if (adjusted > 0) {
+    adjusted = interceptCloud9(s, playerIndex, adjusted, log);
+  }
   if (adjusted > 0) {
     s.players[playerIndex].influence -= adjusted;
   }
 }
 
-/** Get valid actions for a pending choice (e.g. Celestra). */
+/** Resolve a pending choice by type. */
+function resolvePendingChoice(
+  s: GameState,
+  choice: NonNullable<GameState["pendingChoice"]>,
+  choiceIndex: number,
+  player: PlayerState,
+  playerIndex: number,
+  log: string[],
+  _bases: Record<string, BaseCardDef>,
+): void {
+  const ctx = (choice.context ?? {}) as Record<string, unknown>;
+
+  switch (choice.type) {
+    case "celestra": {
+      const chosenCard = choice.cards[choiceIndex];
+      const otherCard = choice.cards[1 - choiceIndex];
+      if (chosenCard && otherCard) {
+        const chosenDef = getCardDef(chosenCard.defId);
+        const otherDef = getCardDef(otherCard.defId);
+        player.deck.unshift(chosenCard);
+        player.deck.push(otherCard);
+        log.push(
+          `Player ${playerIndex + 1} puts ${cardName(chosenDef)} on top and ${cardName(otherDef)} on the bottom.`,
+        );
+      }
+      break;
+    }
+
+    case "space-park-scry": {
+      const card = choice.cards[0];
+      if (!card) break;
+      const def = getCardDef(card.defId);
+      if (choiceIndex === 0) {
+        // Keep on top — card is already removed from deck, put back on top
+        player.deck.unshift(card);
+        log.push(`Space Park: Kept ${cardName(def)} on top.`);
+      } else {
+        // Put on bottom
+        player.deck.push(card);
+        log.push(`Space Park: Put ${cardName(def)} on bottom.`);
+      }
+      break;
+    }
+
+    case "mining-ship-dig": {
+      // Opponent chose which card goes to bottom; the other goes to the owner's hand
+      const ownerIdx = ctx.ownerIndex as number;
+      const owner = s.players[ownerIdx];
+      const bottomCard = choice.cards[choiceIndex];
+      const handCard = choice.cards[1 - choiceIndex];
+      if (bottomCard && handCard) {
+        owner.deck.push(bottomCard);
+        owner.hand.push(handCard);
+        const bDef = getCardDef(bottomCard.defId);
+        const hDef = getCardDef(handCard.defId);
+        log.push(`Mining Ship: ${cardName(bDef)} goes to bottom, ${cardName(hDef)} goes to hand.`);
+      }
+      break;
+    }
+
+    case "boomer-search": {
+      if (choiceIndex >= choice.cards.length) {
+        // "Take nothing" option
+        log.push("Boomer: Chose not to take a personnel.");
+        // Shuffle deck (we searched it)
+        for (let j = player.deck.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [player.deck[j], player.deck[k]] = [player.deck[k], player.deck[j]];
+        }
+      } else {
+        const card = choice.cards[choiceIndex];
+        const def = getCardDef(card.defId);
+        // Remove from deck and add to hand
+        const deckIdx = player.deck.findIndex((c) => c.instanceId === card.instanceId);
+        if (deckIdx >= 0) player.deck.splice(deckIdx, 1);
+        player.hand.push(card);
+        log.push(`Boomer: Searched deck and found ${cardName(def)}.`);
+        // Shuffle remaining deck
+        for (let j = player.deck.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [player.deck[j], player.deck[k]] = [player.deck[k], player.deck[j]];
+        }
+      }
+      break;
+    }
+
+    case "godfrey-reveal": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      const oppIdx = ctx.opponentIndex as number;
+      const opp = s.players[oppIdx];
+      const def = getCardDef(chosenCard.defId);
+      // Remove from opponent's hand and put on top of their deck
+      const handIdx = opp.hand.findIndex((c) => c.instanceId === chosenCard.instanceId);
+      if (handIdx >= 0) {
+        opp.hand.splice(handIdx, 1);
+        opp.deck.unshift(chosenCard);
+        log.push(`Godfrey: ${cardName(def)} put on top of opponent's deck.`);
+      }
+      break;
+    }
+
+    case "act-of-contrition": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      const oppIdx = ctx.opponentIndex as number;
+      const opp = s.players[oppIdx];
+      const def = getCardDef(chosenCard.defId);
+      const handIdx = opp.hand.findIndex((c) => c.instanceId === chosenCard.instanceId);
+      if (handIdx >= 0) {
+        opp.hand.splice(handIdx, 1);
+        opp.discard.push(chosenCard);
+        log.push(`Act of Contrition: ${cardName(def)} discarded from opponent's hand.`);
+      }
+      break;
+    }
+
+    case "zarek-etb": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      // Find which player owns this unit and defeat it
+      for (let pi = 0; pi < s.players.length; pi++) {
+        const p = s.players[pi];
+        const found = findUnitInAnyZone(p, chosenCard.instanceId);
+        if (found) {
+          defeatUnit(p, chosenCard.instanceId, log, s, pi);
+          log.push("Tom Zarek: Defeats a personnel on entering play.");
+          break;
+        }
+      }
+      break;
+    }
+
+    case "astral-queen-second": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      // Exhaust the second target
+      for (const p of s.players) {
+        const found = findUnitInAnyZone(p, chosenCard.instanceId);
+        if (found) {
+          found.stack.exhausted = true;
+          const def = getCardDef(found.stack.cards[0].defId);
+          log.push(`Astral Queen: ${cardName(def)} also exhausted.`);
+          break;
+        }
+      }
+      break;
+    }
+
+    case "covering-fire-commit": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      const commitDef = getCardDef(chosenCard.defId);
+      commitUnit(player, chosenCard.instanceId);
+      log.push(`Covering Fire: ${cardName(commitDef)} committed.`);
+      // Apply +2 power to the original target
+      const targetId = ctx.targetId as string;
+      if (targetId) {
+        applyPowerBuff(s, targetId, 2, log);
+        log.push("Covering Fire: target unit gets +2 power.");
+      }
+      break;
+    }
+
+    case "distraction-commit": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      const commitDef = getCardDef(chosenCard.defId);
+      commitUnit(player, chosenCard.instanceId);
+      log.push(`Distraction: ${cardName(commitDef)} committed.`);
+      // Commit+exhaust the original target
+      const targetId = ctx.targetId as string;
+      if (targetId) {
+        for (const p of s.players) {
+          const found = findUnitInAnyZone(p, targetId);
+          if (found && found.zone === "alert") {
+            p.zones.alert.splice(found.index, 1);
+            found.stack.exhausted = true;
+            p.zones.reserve.push(found.stack);
+            log.push("Distraction: target unit committed and exhausted.");
+            break;
+          }
+        }
+      }
+      break;
+    }
+
+    case "military-coup-exhaust": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      // Exhaust chosen own personnel
+      const found = findUnitInAnyZone(player, chosenCard.instanceId);
+      if (found) found.stack.exhausted = true;
+      const ownDef = getCardDef(chosenCard.defId);
+      log.push(`Military Coup: ${cardName(ownDef)} exhausted.`);
+      // Exhaust target opponent personnel
+      const targetId = ctx.targetId as string;
+      if (targetId) {
+        for (const p of s.players) {
+          const tgt = findUnitInAnyZone(p, targetId);
+          if (tgt) {
+            tgt.stack.exhausted = true;
+            log.push("Military Coup: target opponent personnel exhausted.");
+            break;
+          }
+        }
+      }
+      break;
+    }
+
+    case "painful-recovery-cylon": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      // Remove chosen Cylon unit from play and put on top of deck
+      const found = findUnitInAnyZone(player, chosenCard.instanceId);
+      if (found) {
+        const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+        zone.splice(found.index, 1);
+        for (const card of found.stack.cards.reverse()) {
+          player.deck.unshift(card);
+        }
+        const d = getCardDef(chosenCard.defId);
+        log.push(`Painful Recovery: ${cardName(d)} put on top of deck.`);
+      }
+      // Commit+exhaust target personnel
+      const targetId = ctx.targetId as string;
+      if (targetId) {
+        for (const p of s.players) {
+          const tgt = findUnitInAnyZone(p, targetId);
+          if (tgt && tgt.zone === "alert") {
+            p.zones.alert.splice(tgt.index, 1);
+            tgt.stack.exhausted = true;
+            p.zones.reserve.push(tgt.stack);
+            log.push("Painful Recovery: target personnel committed and exhausted.");
+            break;
+          } else if (tgt) {
+            tgt.stack.exhausted = true;
+            log.push("Painful Recovery: target personnel exhausted.");
+            break;
+          }
+        }
+      }
+      break;
+    }
+
+    case "suicide-bomber-cylon": {
+      const chosenCard = choice.cards[choiceIndex];
+      if (!chosenCard) break;
+      // Sacrifice chosen Cylon personnel
+      const found = findUnitInAnyZone(player, chosenCard.instanceId);
+      if (found) {
+        const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+        zone.splice(found.index, 1);
+        for (const card of found.stack.cards) player.discard.push(card);
+        const d = getCardDef(chosenCard.defId);
+        log.push(`Suicide Bomber: ${cardName(d)} sacrificed.`);
+      }
+      // Defeat first target
+      const targetId = ctx.targetId as string;
+      if (targetId) {
+        for (let pi = 0; pi < s.players.length; pi++) {
+          const p = s.players[pi];
+          if (findUnitInAnyZone(p, targetId)) {
+            defeatUnit(p, targetId, log, s, pi);
+            break;
+          }
+        }
+      }
+      // Set up second target choice
+      const secondTargets: CardInstance[] = [];
+      for (const p of s.players) {
+        for (const zone of [p.zones.alert, p.zones.reserve]) {
+          for (const stack of zone) {
+            const tc = stack.cards[0];
+            if (tc?.faceUp && tc.instanceId !== targetId) {
+              const d = getCardDef(tc.defId);
+              if (d?.type === "personnel") secondTargets.push(tc);
+            }
+          }
+        }
+      }
+      if (secondTargets.length > 0) {
+        s.pendingChoice = {
+          type: "suicide-bomber-target2",
+          playerIndex,
+          cards: secondTargets,
+        };
+      }
+      break;
+    }
+
+    case "suicide-bomber-target2": {
+      if (choiceIndex >= choice.cards.length) {
+        // "No second target" option
+        log.push("Suicide Bomber: No second target.");
+      } else {
+        const chosenCard = choice.cards[choiceIndex];
+        if (chosenCard) {
+          for (let pi = 0; pi < s.players.length; pi++) {
+            const p = s.players[pi];
+            if (findUnitInAnyZone(p, chosenCard.instanceId)) {
+              defeatUnit(p, chosenCard.instanceId, log, s, pi);
+              log.push("Suicide Bomber: Second personnel defeated.");
+              break;
+            }
+          }
+        }
+      }
+      break;
+    }
+
+    case "decoys-count": {
+      const count = choiceIndex + 1; // choiceIndex 0 = commit 1, etc.
+      const targetId = ctx.targetId as string;
+      // Commit lowest-power alert units (excluding target)
+      const eligible = player.zones.alert.filter(
+        (st) => !st.exhausted && st.cards[0] && st.cards[0].instanceId !== targetId,
+      );
+      eligible.sort((a, b) => {
+        const aPow = getCardDef(a.cards[0].defId)?.power ?? 0;
+        const bPow = getCardDef(b.cards[0].defId)?.power ?? 0;
+        return aPow - bPow;
+      });
+      let committed = 0;
+      for (const st of eligible) {
+        if (committed >= count) break;
+        commitUnit(player, st.cards[0].instanceId);
+        committed++;
+      }
+      if (committed > 0 && targetId) {
+        applyPowerBuff(s, targetId, committed * 2, log);
+        log.push(`Decoys: ${committed} unit(s) committed, target gets +${committed * 2} power.`);
+      }
+      break;
+    }
+
+    case "reformat-count": {
+      const discardCount = choiceIndex + 1; // choiceIndex 0 = discard 1, etc.
+      // Discard lowest-mystic cards
+      const sorted = player.hand
+        .map((c, i) => ({ card: c, idx: i, mystic: getCardDef(c.defId)?.mysticValue ?? 0 }))
+        .sort((a, b) => a.mystic - b.mystic);
+      const toDiscard = sorted.slice(0, discardCount);
+      const indices = toDiscard.map((t) => t.idx).sort((a, b) => b - a);
+      for (const idx of indices) {
+        const removed = player.hand.splice(idx, 1)[0];
+        player.discard.push(removed);
+      }
+      drawCards(player, discardCount, log, `Player ${playerIndex + 1}`, s, playerIndex);
+      log.push(`Reformat: discarded ${discardCount} cards, drew ${discardCount}.`);
+      break;
+    }
+  }
+}
+
+/** Get valid actions for a pending choice. */
 function getPendingChoiceActions(state: GameState): ValidAction[] {
   const choice = state.pendingChoice;
   if (!choice) return [];
   const actions: ValidAction[] = [];
-  if (choice.type === "celestra") {
-    for (let i = 0; i < choice.cards.length; i++) {
-      const def = getCardDef(choice.cards[i].defId);
+
+  switch (choice.type) {
+    case "celestra": {
+      for (let i = 0; i < choice.cards.length; i++) {
+        const def = getCardDef(choice.cards[i].defId);
+        actions.push({
+          type: "makeChoice",
+          description: `Keep ${cardName(def)} on top`,
+          cardDefId: def.id,
+        });
+      }
+      break;
+    }
+
+    case "space-park-scry": {
+      // Binary: keep on top or put on bottom
+      const def = getCardDef(choice.cards[0].defId);
       actions.push({
         type: "makeChoice",
         description: `Keep ${cardName(def)} on top`,
         cardDefId: def.id,
       });
+      actions.push({
+        type: "makeChoice",
+        description: `Put ${cardName(def)} on bottom`,
+        cardDefId: def.id,
+      });
+      break;
+    }
+
+    case "mining-ship-dig": {
+      // Opponent picks which card goes to bottom (other goes to owner's hand)
+      for (let i = 0; i < choice.cards.length; i++) {
+        const def = getCardDef(choice.cards[i].defId);
+        actions.push({
+          type: "makeChoice",
+          description: `Send ${cardName(def)} to bottom`,
+          cardDefId: def.id,
+        });
+      }
+      break;
+    }
+
+    case "boomer-search":
+    case "godfrey-reveal":
+    case "act-of-contrition":
+    case "zarek-etb":
+    case "astral-queen-second": {
+      // Pick one card from the list
+      for (let i = 0; i < choice.cards.length; i++) {
+        const def = getCardDef(choice.cards[i].defId);
+        const label =
+          choice.type === "boomer-search"
+            ? `Take ${cardName(def)}`
+            : choice.type === "godfrey-reveal"
+              ? `Put ${cardName(def)} on deck`
+              : choice.type === "act-of-contrition"
+                ? `Discard ${cardName(def)}`
+                : choice.type === "zarek-etb"
+                  ? `Defeat ${cardName(def)}`
+                  : `Exhaust ${cardName(def)}`;
+        actions.push({ type: "makeChoice", description: label, cardDefId: def.id });
+      }
+      // boomer-search allows declining (no penalty per rules)
+      if (choice.type === "boomer-search") {
+        actions.push({ type: "makeChoice", description: "Take nothing" });
+      }
+      break;
+    }
+
+    case "suicide-bomber-target2": {
+      // Pick second personnel to defeat
+      for (let i = 0; i < choice.cards.length; i++) {
+        const def = getCardDef(choice.cards[i].defId);
+        actions.push({
+          type: "makeChoice",
+          description: `Defeat ${cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+      // Can choose not to defeat a second target
+      actions.push({ type: "makeChoice", description: "No second target" });
+      break;
+    }
+
+    case "covering-fire-commit":
+    case "distraction-commit":
+    case "military-coup-exhaust":
+    case "painful-recovery-cylon":
+    case "suicide-bomber-cylon": {
+      // Pick own unit to commit/exhaust/sacrifice as cost
+      for (let i = 0; i < choice.cards.length; i++) {
+        const def = getCardDef(choice.cards[i].defId);
+        const verb =
+          choice.type === "military-coup-exhaust"
+            ? "Exhaust"
+            : choice.type === "painful-recovery-cylon"
+              ? "Put on deck"
+              : choice.type === "suicide-bomber-cylon"
+                ? "Sacrifice"
+                : "Commit";
+        actions.push({
+          type: "makeChoice",
+          description: `${verb} ${cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+      break;
+    }
+
+    case "decoys-count": {
+      // Choose how many units to commit (1 to N)
+      const maxCommit = (choice.context?.maxCommit as number) ?? 1;
+      for (let i = 1; i <= maxCommit; i++) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit ${i} unit${i > 1 ? "s" : ""} (+${i * 2} power)`,
+        });
+      }
+      break;
+    }
+
+    case "reformat-count": {
+      // Choose how many cards to discard (1 to hand size)
+      const maxDiscard = (choice.context?.maxDiscard as number) ?? 1;
+      for (let i = 1; i <= maxDiscard; i++) {
+        actions.push({ type: "makeChoice", description: `Discard ${i}, draw ${i}` });
+      }
+      break;
     }
   }
+
   return actions;
 }
 
@@ -2202,6 +3792,11 @@ function applyPowerBuff(
   amount: number,
   log: string[],
 ): void {
+  // Effect immunity: "power" or "all" blocks power changes
+  if (s.effectImmunity?.[targetInstanceId]) {
+    log.push("Effect blocked — target unit is immune to power changes.");
+    return;
+  }
   // If we're in a challenge, apply as a buff to the challenge
   if (s.challenge) {
     const c = s.challenge as ChallengeWithBuffs;
@@ -2236,19 +3831,10 @@ function resolveMissionEffect(
   def: CardDef,
   log: string[],
 ): void {
-  switch (def.abilityId) {
-    case "press-junket": {
-      s.players[playerIndex].influence += 2;
-      log.push(`Press Junket: gain 2 influence. (Now ${s.players[playerIndex].influence})`);
-      break;
-    }
-    case "investigation": {
-      drawCards(s.players[playerIndex], 2, log, `Player ${playerIndex + 1}`);
-      log.push("Investigation: draw 2 cards.");
-      break;
-    }
-    default:
-      log.push(`Mission ${cardName(def)} resolved (no special effect implemented).`);
+  if (def.abilityId) {
+    resolveMissionAbility(def.abilityId, s, playerIndex, undefined, log);
+  } else {
+    log.push(`Mission ${cardName(def)} resolved (no effect).`);
   }
 }
 

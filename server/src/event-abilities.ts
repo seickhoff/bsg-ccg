@@ -52,7 +52,14 @@ export interface EventGameHelpers {
     playerIndex: number,
   ): void;
   commitUnit(player: PlayerState, instanceId: string): void;
-  drawCards(player: PlayerState, count: number, log: string[], label: string): void;
+  drawCards(
+    player: PlayerState,
+    count: number,
+    log: string[],
+    label: string,
+    state?: GameState,
+    playerIndex?: number,
+  ): void;
   applyPowerBuff(state: GameState, instanceId: string, amount: number, log: string[]): void;
   applyInfluenceLoss(
     state: GameState,
@@ -173,9 +180,7 @@ function restoreUnitLocal(player: PlayerState, instanceId: string): boolean {
   return false;
 }
 
-function getAllUnits(
-  state: GameState,
-): {
+function getAllUnits(state: GameState): {
   player: PlayerState;
   playerIndex: number;
   stack: UnitStack;
@@ -409,7 +414,7 @@ register("concentrated-firepower", {
   },
 });
 
-// BSG2-010 Covering Fire: Commit own unit → target other unit +2 power
+// BSG2-010 Covering Fire: "Commit a unit you control. Target other unit gets +2 power."
 register("covering-fire", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
   canPlay(state, playerIndex) {
@@ -421,27 +426,28 @@ register("covering-fire", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    // Auto-commit cheapest alert unit (not the target)
-    const alertUnits = player.zones.alert.filter(
+    // Find eligible units to commit (not the target)
+    const eligible = player.zones.alert.filter(
       (s) => !s.exhausted && s.cards[0] && s.cards[0].instanceId !== targetId,
     );
-    if (alertUnits.length === 0) return;
-    // Pick lowest power
-    let best = alertUnits[0];
-    let bestPower = Infinity;
-    for (const s of alertUnits) {
-      const d = getUnitDef(s);
-      const p = d?.power ?? 0;
-      if (p < bestPower) {
-        bestPower = p;
-        best = s;
-      }
+    if (eligible.length === 0) return;
+    if (eligible.length === 1) {
+      // Only one option — commit it automatically
+      const commitDef = getUnitDef(eligible[0]);
+      commitUnitLocal(player, eligible[0].cards[0].instanceId);
+      log.push(`Covering Fire: ${commitDef ? helpers.cardName(commitDef) : "unit"} committed.`);
+      helpers.applyPowerBuff(state, targetId, 2, log);
+      log.push("Covering Fire: target unit gets +2 power.");
+      return;
     }
-    const commitDef = getUnitDef(best);
-    commitUnitLocal(player, best.cards[0].instanceId);
-    log.push(`Covering Fire: ${commitDef ? helpers.cardName(commitDef) : "unit"} committed.`);
-    helpers.applyPowerBuff(state, targetId, 2, log);
-    log.push("Covering Fire: target unit gets +2 power.");
+    // Multiple options — let player choose
+    const cards = eligible.map((s) => s.cards[0]);
+    state.pendingChoice = {
+      type: "covering-fire-commit",
+      playerIndex,
+      cards,
+      context: { targetId },
+    };
   },
 });
 
@@ -473,7 +479,7 @@ register("lest-we-forget", {
     if (!targetId) return;
     helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Lest We Forget: target unit gets +2 power vs Cylon threat.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex));
+    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
   },
 });
 
@@ -500,7 +506,7 @@ register("special-delivery", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Special Delivery: target personnel gets +1 power and Scramble.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex));
+    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
   },
 });
 
@@ -526,7 +532,7 @@ register("strafing-run", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Strafing Run: target ship gets +1 power and Strafe.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex));
+    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
   },
 });
 
@@ -715,7 +721,7 @@ register("dissension", {
   },
 });
 
-// BSG1-023 Distraction: Commit own personnel → commit+exhaust target unit
+// BSG1-023 Distraction: "Commit a personnel you control. Commit and exhaust target unit."
 register("distraction", {
   playableIn: ["execution", "challenge"],
   canPlay(state, playerIndex) {
@@ -732,39 +738,41 @@ register("distraction", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    // Auto-commit cheapest alert personnel (not the target)
+    // Find eligible personnel to commit (not the target)
     const personnel = player.zones.alert.filter((s) => {
       const d = getUnitDef(s);
       return d && d.type === "personnel" && !s.exhausted && s.cards[0]?.instanceId !== targetId;
     });
     if (personnel.length === 0) return;
-    let cheapest = personnel[0];
-    let cheapestPower = Infinity;
-    for (const s of personnel) {
-      const d = getUnitDef(s);
-      if (d && (d.power ?? 0) < cheapestPower) {
-        cheapestPower = d.power ?? 0;
-        cheapest = s;
+    if (personnel.length === 1) {
+      // Only one option — commit automatically
+      commitUnitLocal(player, personnel[0].cards[0].instanceId);
+      const commitDef = getUnitDef(personnel[0]);
+      log.push(`Distraction: ${commitDef ? helpers.cardName(commitDef) : "personnel"} committed.`);
+      for (const p of state.players) {
+        const found = findUnitInZone(p.zones.alert, targetId);
+        if (found) {
+          p.zones.alert.splice(found.index, 1);
+          found.stack.exhausted = true;
+          p.zones.reserve.push(found.stack);
+          log.push("Distraction: target unit committed and exhausted.");
+          return;
+        }
       }
+      return;
     }
-    commitUnitLocal(player, cheapest.cards[0].instanceId);
-    const commitDef = getUnitDef(cheapest);
-    log.push(`Distraction: ${commitDef ? helpers.cardName(commitDef) : "personnel"} committed.`);
-    // Commit+exhaust the target
-    for (const p of state.players) {
-      const found = findUnitInZone(p.zones.alert, targetId);
-      if (found) {
-        p.zones.alert.splice(found.index, 1);
-        found.stack.exhausted = true;
-        p.zones.reserve.push(found.stack);
-        log.push("Distraction: target unit committed and exhausted.");
-        return;
-      }
-    }
+    // Multiple options — let player choose
+    const cards = personnel.map((s) => s.cards[0]);
+    state.pendingChoice = {
+      type: "distraction-commit",
+      playerIndex,
+      cards,
+      context: { targetId },
+    };
   },
 });
 
-// BSG1-033 Military Coup: Exhaust own personnel → exhaust opponent's personnel
+// BSG1-033 Military Coup: "Exhaust a personnel you control. Exhaust target opponent's personnel."
 register("military-coup", {
   playableIn: ["execution"],
   canPlay(state, playerIndex) {
@@ -792,25 +800,31 @@ register("military-coup", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    // Auto-exhaust cheapest own personnel
+    // Find eligible own personnel to exhaust
     const ownPersonnel = [...player.zones.alert, ...player.zones.reserve].filter((s) => {
       const d = getUnitDef(s);
       return d && d.type === "personnel" && !s.exhausted;
     });
     if (ownPersonnel.length === 0) return;
-    let cheapest = ownPersonnel[0];
-    for (const s of ownPersonnel) {
-      const d = getUnitDef(s);
-      if (d && (d.power ?? 0) < (getUnitDef(cheapest)?.power ?? 0)) cheapest = s;
+    if (ownPersonnel.length === 1) {
+      // Only one option — exhaust automatically
+      ownPersonnel[0].exhausted = true;
+      const ownDef = getUnitDef(ownPersonnel[0]);
+      log.push(`Military Coup: ${ownDef ? helpers.cardName(ownDef) : "personnel"} exhausted.`);
+      for (const p of state.players) {
+        exhaustUnitLocal(p, targetId);
+      }
+      log.push("Military Coup: target opponent personnel exhausted.");
+      return;
     }
-    cheapest.exhausted = true;
-    const ownDef = getUnitDef(cheapest);
-    log.push(`Military Coup: ${ownDef ? helpers.cardName(ownDef) : "personnel"} exhausted.`);
-    // Exhaust target opponent personnel
-    for (const p of state.players) {
-      exhaustUnitLocal(p, targetId);
-    }
-    log.push("Military Coup: target opponent personnel exhausted.");
+    // Multiple options — let player choose
+    const cards = ownPersonnel.map((s) => s.cards[0]);
+    state.pendingChoice = {
+      type: "military-coup-exhaust",
+      playerIndex,
+      cards,
+      context: { targetId },
+    };
   },
 });
 
@@ -895,7 +909,7 @@ register("to-the-victor", {
   },
 });
 
-// BSG1-021 Decoys: Commit N units → target +2N power
+// BSG1-021 Decoys: "Commit any number of units you control. Target unit gets +2 power for each unit committed."
 register("decoys", {
   playableIn: ["execution", "challenge"],
   canPlay(state, playerIndex) {
@@ -907,19 +921,25 @@ register("decoys", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    // Commit all alert units except the target (auto-commit all for max buff)
-    const toCommit = player.zones.alert.filter(
+    // Count how many eligible units can be committed
+    const eligible = player.zones.alert.filter(
       (s) => !s.exhausted && s.cards[0] && s.cards[0].instanceId !== targetId,
     );
-    let count = 0;
-    for (const s of toCommit) {
-      commitUnitLocal(player, s.cards[0].instanceId);
-      count++;
+    if (eligible.length === 0) return;
+    if (eligible.length === 1) {
+      // Only one option — commit it automatically
+      commitUnitLocal(player, eligible[0].cards[0].instanceId);
+      helpers.applyPowerBuff(state, targetId, 2, log);
+      log.push("Decoys: 1 unit committed, target gets +2 power.");
+      return;
     }
-    if (count > 0) {
-      helpers.applyPowerBuff(state, targetId, count * 2, log);
-      log.push(`Decoys: ${count} units committed; target gets +${count * 2} power.`);
-    }
+    log.push("Decoys: Choose how many units to commit.");
+    state.pendingChoice = {
+      type: "decoys-count",
+      playerIndex,
+      cards: [],
+      context: { targetId, maxCommit: eligible.length },
+    };
   },
 });
 
@@ -967,22 +987,23 @@ register("downed-pilot", {
 register("endless-task", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
-    const opp = 1 - playerIndex;
-    const oppPlayer = state.players[opp];
+    // "Target player" — AI always targets opponent
+    const targetIdx = 1 - playerIndex;
+    const targetPlayer = state.players[targetIdx];
     // AI picks: exhaust reserve unit if available, else commit alert
-    const reserveUnit = oppPlayer.zones.reserve.find((s) => !s.exhausted && s.cards[0]);
+    const reserveUnit = targetPlayer.zones.reserve.find((s) => !s.exhausted && s.cards[0]);
     if (reserveUnit) {
       reserveUnit.exhausted = true;
       const d = getUnitDef(reserveUnit);
-      log.push(`Endless Task: ${pLabel(opp)} exhausts ${d ? helpers.cardName(d) : "unit"}.`);
+      log.push(`Endless Task: ${pLabel(targetIdx)} exhausts ${d ? helpers.cardName(d) : "unit"}.`);
     } else {
-      const alertUnit = oppPlayer.zones.alert.find((s) => s.cards[0]);
+      const alertUnit = targetPlayer.zones.alert.find((s) => s.cards[0]);
       if (alertUnit) {
-        commitUnitLocal(oppPlayer, alertUnit.cards[0].instanceId);
+        commitUnitLocal(targetPlayer, alertUnit.cards[0].instanceId);
         const d = getUnitDef(alertUnit);
-        log.push(`Endless Task: ${pLabel(opp)} commits ${d ? helpers.cardName(d) : "unit"}.`);
+        log.push(`Endless Task: ${pLabel(targetIdx)} commits ${d ? helpers.cardName(d) : "unit"}.`);
       } else {
-        log.push(`Endless Task: ${pLabel(opp)} has no units.`);
+        log.push(`Endless Task: ${pLabel(targetIdx)} has no units.`);
       }
     }
   },
@@ -1086,22 +1107,27 @@ register("network-hacking", {
 register("setback", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
-    const opp = 1 - playerIndex;
-    const oppPlayer = state.players[opp];
+    // "Target player" — AI always targets opponent
+    const targetIdx = 1 - playerIndex;
+    const targetPlayer = state.players[targetIdx];
     // AI: exhaust reserve unit if available (less impactful)
-    const reserveUnit = oppPlayer.zones.reserve.find((s) => !s.exhausted && s.cards[0]);
+    const reserveUnit = targetPlayer.zones.reserve.find((s) => !s.exhausted && s.cards[0]);
     if (reserveUnit) {
       reserveUnit.exhausted = true;
       const d = getUnitDef(reserveUnit);
-      log.push(`Setback: ${pLabel(opp)} exhausts reserve ${d ? helpers.cardName(d) : "unit"}.`);
+      log.push(
+        `Setback: ${pLabel(targetIdx)} exhausts reserve ${d ? helpers.cardName(d) : "unit"}.`,
+      );
     } else {
-      const alertUnit = oppPlayer.zones.alert.find((s) => !s.exhausted && s.cards[0]);
+      const alertUnit = targetPlayer.zones.alert.find((s) => !s.exhausted && s.cards[0]);
       if (alertUnit) {
         alertUnit.exhausted = true;
         const d = getUnitDef(alertUnit);
-        log.push(`Setback: ${pLabel(opp)} exhausts alert ${d ? helpers.cardName(d) : "unit"}.`);
+        log.push(
+          `Setback: ${pLabel(targetIdx)} exhausts alert ${d ? helpers.cardName(d) : "unit"}.`,
+        );
       } else {
-        log.push(`Setback: ${pLabel(opp)} has no units to exhaust.`);
+        log.push(`Setback: ${pLabel(targetIdx)} has no units to exhaust.`);
       }
     }
   },
@@ -1190,7 +1216,7 @@ register("angry", {
   },
 });
 
-// BSG1-048 Suicide Bomber: Sacrifice Cylon personnel → defeat 2 target personnel
+// BSG1-048 Suicide Bomber: "Sacrifice a Cylon personnel you control. Defeat two target personnel."
 register("suicide-bomber", {
   playableIn: ["execution"],
   canPlay(state, playerIndex) {
@@ -1213,31 +1239,50 @@ register("suicide-bomber", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    // Sacrifice cheapest Cylon personnel
+    // Find eligible Cylon personnel to sacrifice
     const cylonPersonnel = [...player.zones.alert, ...player.zones.reserve].filter((s) => {
       const d = getUnitDef(s);
       return d && d.type === "personnel" && hasTrait(d, "Cylon");
     });
     if (cylonPersonnel.length === 0) return;
-    sacrificeUnit(player, cylonPersonnel[0].cards[0].instanceId, log);
-    log.push("Suicide Bomber: Cylon personnel sacrificed.");
-    // Defeat target personnel
-    const targetOwner = findUnitOwner(state, targetId);
-    if (targetOwner) {
-      helpers.defeatUnit(targetOwner.player, targetId, log, state, targetOwner.playerIndex);
+    if (cylonPersonnel.length === 1) {
+      // Only one Cylon — sacrifice automatically, then set up second target choice
+      sacrificeUnit(player, cylonPersonnel[0].cards[0].instanceId, log);
+      log.push("Suicide Bomber: Cylon personnel sacrificed.");
+      const targetOwner = findUnitOwner(state, targetId);
+      if (targetOwner) {
+        helpers.defeatUnit(targetOwner.player, targetId, log, state, targetOwner.playerIndex);
+      }
+      // Collect remaining personnel for second target
+      const secondTargets: CardInstance[] = [];
+      for (const p of state.players) {
+        for (const zone of [p.zones.alert, p.zones.reserve]) {
+          for (const stack of zone) {
+            const tc = stack.cards[0];
+            if (tc?.faceUp && tc.instanceId !== targetId) {
+              const d = getUnitDef(stack);
+              if (d?.type === "personnel") secondTargets.push(tc);
+            }
+          }
+        }
+      }
+      if (secondTargets.length > 0) {
+        state.pendingChoice = {
+          type: "suicide-bomber-target2",
+          playerIndex,
+          cards: secondTargets,
+        };
+      }
+      return;
     }
-    // Defeat second target (auto-pick another opponent personnel)
-    const opp = 1 - playerIndex;
-    const oppPersonnel = [
-      ...state.players[opp].zones.alert,
-      ...state.players[opp].zones.reserve,
-    ].filter((s) => {
-      const d = getUnitDef(s);
-      return d && d.type === "personnel" && s.cards[0]?.instanceId !== targetId;
-    });
-    if (oppPersonnel.length > 0) {
-      helpers.defeatUnit(state.players[opp], oppPersonnel[0].cards[0].instanceId, log, state, opp);
-    }
+    // Multiple Cylon personnel — let player choose which to sacrifice
+    const cards = cylonPersonnel.map((s) => s.cards[0]);
+    state.pendingChoice = {
+      type: "suicide-bomber-cylon",
+      playerIndex,
+      cards,
+      context: { targetId },
+    };
   },
 });
 
@@ -1442,41 +1487,52 @@ register("painful-recovery", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    // Auto-pick cheapest Cylon unit to put on deck
+    // Find eligible Cylon units to put on deck
     const cylons = [...player.zones.alert, ...player.zones.reserve].filter((s) => {
       const d = getUnitDef(s);
       return d && hasTrait(d, "Cylon") && (d.type === "personnel" || d.type === "ship");
     });
     if (cylons.length === 0) return;
-    const cylon = cylons[0];
-    const found = findUnitInAnyZone(player, cylon.cards[0].instanceId);
-    if (found) {
-      const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
-      zone.splice(found.index, 1);
-      for (const card of found.stack.cards.reverse()) {
-        player.deck.unshift(card);
+    if (cylons.length === 1) {
+      // Only one option — auto-pick
+      const cylon = cylons[0];
+      const found = findUnitInAnyZone(player, cylon.cards[0].instanceId);
+      if (found) {
+        const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+        zone.splice(found.index, 1);
+        for (const card of found.stack.cards.reverse()) {
+          player.deck.unshift(card);
+        }
+        const d = getUnitDef(cylon);
+        log.push(`Painful Recovery: ${d ? helpers.cardName(d) : "Cylon unit"} put on top of deck.`);
       }
-      const d = getUnitDef(cylon);
-      log.push(`Painful Recovery: ${d ? helpers.cardName(d) : "Cylon unit"} put on top of deck.`);
+      // Commit+exhaust target personnel
+      for (const p of state.players) {
+        const tgt = findUnitInZone(p.zones.alert, targetId);
+        if (tgt) {
+          p.zones.alert.splice(tgt.index, 1);
+          tgt.stack.exhausted = true;
+          p.zones.reserve.push(tgt.stack);
+          log.push("Painful Recovery: target personnel committed and exhausted.");
+          return;
+        }
+        const tgt2 = findUnitInZone(p.zones.reserve, targetId);
+        if (tgt2) {
+          tgt2.stack.exhausted = true;
+          log.push("Painful Recovery: target personnel exhausted.");
+          return;
+        }
+      }
+      return;
     }
-    // Commit+exhaust target personnel
-    for (const p of state.players) {
-      const tgt = findUnitInZone(p.zones.alert, targetId);
-      if (tgt) {
-        p.zones.alert.splice(tgt.index, 1);
-        tgt.stack.exhausted = true;
-        p.zones.reserve.push(tgt.stack);
-        log.push("Painful Recovery: target personnel committed and exhausted.");
-        return;
-      }
-      // If already in reserve, just exhaust
-      const tgt2 = findUnitInZone(p.zones.reserve, targetId);
-      if (tgt2) {
-        tgt2.stack.exhausted = true;
-        log.push("Painful Recovery: target personnel exhausted.");
-        return;
-      }
-    }
+    // Multiple Cylon units — let player choose
+    const cards = cylons.map((s) => s.cards[0]);
+    state.pendingChoice = {
+      type: "painful-recovery-cylon",
+      playerIndex,
+      cards,
+      context: { targetId },
+    };
   },
 });
 
@@ -1625,7 +1681,7 @@ register("this-tribunal", {
 // 8. HAND / DECK MANIPULATION (9 events)
 // ============================================================
 
-// BSG1-009 Act of Contrition: Target reveals hand, discard a card (simplified)
+// BSG1-009 Act of Contrition: "Target opponent reveals hand. Choose and discard a card."
 register("act-of-contrition", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
@@ -1635,24 +1691,19 @@ register("act-of-contrition", {
       log.push(`Act of Contrition: ${pLabel(opp)} has no cards in hand.`);
       return;
     }
-    log.push(`Act of Contrition: ${pLabel(opp)} reveals hand (${oppPlayer.hand.length} cards).`);
-    // Auto-pick: discard card with highest cost (simplified)
-    let bestIdx = 0;
-    let bestCost = 0;
-    for (let i = 0; i < oppPlayer.hand.length; i++) {
-      const def = cardRegistry[oppPlayer.hand[i].defId];
-      if (def?.cost) {
-        const total = Object.values(def.cost).reduce((a: number, b: number) => a + b, 0);
-        if (total > bestCost) {
-          bestCost = total;
-          bestIdx = i;
-        }
-      }
-    }
-    const discarded = oppPlayer.hand.splice(bestIdx, 1)[0];
-    oppPlayer.discard.push(discarded);
-    const discDef = cardRegistry[discarded.defId];
-    log.push(`Act of Contrition: ${discDef ? helpers.cardName(discDef) : "card"} discarded.`);
+    const handNames = oppPlayer.hand
+      .map((c) => {
+        const d = cardRegistry[c.defId];
+        return d ? helpers.cardName(d) : "unknown";
+      })
+      .join(", ");
+    log.push(`Act of Contrition: ${pLabel(opp)} reveals hand: ${handNames}`);
+    state.pendingChoice = {
+      type: "act-of-contrition",
+      playerIndex,
+      cards: [...oppPlayer.hand], // copy of hand cards for choice display
+      context: { opponentIndex: opp },
+    };
   },
 });
 
@@ -1721,38 +1772,34 @@ register("cylon-computer-virus", {
   resolve(state, _playerIndex, _targetId, log) {
     for (let pi = 0; pi < state.players.length; pi++) {
       const p = state.players[pi];
-      const handSize = p.hand.length; // Use current hand size as proxy for starting
+      const baseDef = helpers.bases[p.baseDefId];
+      const startingHandSize = baseDef?.handSize ?? p.hand.length;
       for (const card of p.hand) {
         p.discard.push(card);
       }
       p.hand = [];
-      helpers.drawCards(p, handSize, log, pLabel(pi));
+      helpers.drawCards(p, startingHandSize, log, pLabel(pi), state, pi);
     }
-    log.push("Cylon Computer Virus: all players discarded and redrew.");
+    log.push("Cylon Computer Virus: all players discarded and redrew (starting hand size).");
   },
 });
 
-// BSG1-040 Reformat: Discard X, draw X (simplified: discard weakest)
+// BSG1-040 Reformat: "Discard any number of cards from your hand. Draw that many cards."
 register("reformat", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
     const player = state.players[playerIndex];
-    if (player.hand.length === 0) return;
-    // Discard half (rounded down), minimum 1
-    const discardCount = Math.max(1, Math.floor(player.hand.length / 2));
-    // Sort by mystic value ascending, discard weakest
-    const sorted = player.hand
-      .map((c, i) => ({ card: c, idx: i, mystic: cardRegistry[c.defId]?.mysticValue ?? 0 }))
-      .sort((a, b) => a.mystic - b.mystic);
-    const toDiscard = sorted.slice(0, discardCount);
-    // Remove from end to avoid index shifting
-    const indices = toDiscard.map((t) => t.idx).sort((a, b) => b - a);
-    for (const idx of indices) {
-      const removed = player.hand.splice(idx, 1)[0];
-      player.discard.push(removed);
+    if (player.hand.length === 0) {
+      log.push("Reformat: No cards in hand.");
+      return;
     }
-    helpers.drawCards(player, discardCount, log, pLabel(playerIndex));
-    log.push(`Reformat: discarded ${discardCount} cards, drew ${discardCount}.`);
+    log.push("Reformat: Choose how many cards to discard and redraw.");
+    state.pendingChoice = {
+      type: "reformat-count",
+      playerIndex,
+      cards: [],
+      context: { maxDiscard: player.hand.length },
+    };
   },
 });
 
@@ -1798,7 +1845,7 @@ register("resupply", {
       }
     }
     if (maxSupply > 0) {
-      helpers.drawCards(player, maxSupply, log, pLabel(playerIndex));
+      helpers.drawCards(player, maxSupply, log, pLabel(playerIndex), state, playerIndex);
       log.push(`Resupply: drew ${maxSupply} cards.`);
     } else {
       log.push("Resupply: no supply cards in unexhausted stacks.");
@@ -2068,7 +2115,7 @@ register("boarding-party", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Boarding Party: target ship gains Scramble.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex));
+    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
   },
 });
 
@@ -2117,7 +2164,7 @@ register("everyone-green", {
       owner.player.temporaryTraitRemovals[targetId] = existing;
     }
     log.push("Everyone's Green: target Cylon personnel loses Cylon trait.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex));
+    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
   },
 });
 
@@ -2142,7 +2189,7 @@ register("out-of-sight", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Out of Sight: target personnel gains Scramble.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex));
+    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
   },
 });
 
@@ -2339,33 +2386,83 @@ register("treacherous-toaster", {
         break;
       }
     }
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex));
+    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
   },
 });
 
 // ============================================================
-// 13. DEFERRED (2 events — need effect-immunity system)
+// 13. Effect Immunity
 // ============================================================
 
-// BSG2-007 Anti-Radiation Dosage
+// BSG2-007 Anti-Radiation Dosage — "Target unit can't be the target of effects that change its power."
 register("anti-radiation", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
   getTargets(state) {
     return getAllUnits(state).map((u) => u.instanceId);
   },
-  resolve(_state, _playerIndex, _targetId, log) {
-    log.push("Anti-Radiation Dosage: effect immunity (deferred — not yet implemented).");
+  resolve(state, _playerIndex, targetId, log) {
+    if (targetId) {
+      if (!state.effectImmunity) state.effectImmunity = {};
+      state.effectImmunity[targetId] = "power";
+      log.push(
+        "Anti-Radiation Dosage: target unit is immune to power-changing effects this phase.",
+      );
+    }
   },
 });
 
-// BSG2-018 Fallout Shelter
+// BSG2-018 Fallout Shelter — "Target unit can't be the target of effects."
 register("fallout-shelter", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
   getTargets(state) {
     return getAllUnits(state).map((u) => u.instanceId);
   },
-  resolve(_state, _playerIndex, _targetId, log) {
-    log.push("Fallout Shelter: full effect immunity (deferred — not yet implemented).");
+  resolve(state, _playerIndex, targetId, log) {
+    if (targetId) {
+      if (!state.effectImmunity) state.effectImmunity = {};
+      state.effectImmunity[targetId] = "all";
+      log.push("Fallout Shelter: target unit is immune to all effects this phase.");
+    }
+  },
+});
+
+// BSG2-027 Raiding Farms — "Defeat target asset that has no supply cards."
+register("raiding-farms", {
+  playableIn: ["execution"],
+  canPlay(state, playerIndex) {
+    // Must exist at least one asset with no supply cards (in any player's resource area)
+    for (const p of state.players) {
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        if (p.zones.resourceStacks[i].supplyCards.length === 0) return true;
+      }
+    }
+    return false;
+  },
+  getTargets(state) {
+    const ids: string[] = [];
+    for (const p of state.players) {
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        const stack = p.zones.resourceStacks[i];
+        if (stack.supplyCards.length === 0) {
+          ids.push(stack.topCard.instanceId);
+        }
+      }
+    }
+    return ids;
+  },
+  resolve(state, _playerIndex, targetId, log) {
+    if (!targetId) return;
+    for (const p of state.players) {
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        if (p.zones.resourceStacks[i].topCard.instanceId === targetId) {
+          const removed = p.zones.resourceStacks.splice(i, 1)[0];
+          p.discard.push(removed.topCard);
+          log.push("Raiding Farms: defeated target asset.");
+          return;
+        }
+      }
+    }
+    log.push("Raiding Farms: target asset not found.");
   },
 });
 
@@ -2396,7 +2493,10 @@ export function getEventTargets(
 ): string[] | null {
   const handler = registry.get(abilityId);
   if (!handler?.getTargets) return null;
-  return handler.getTargets(state, playerIndex, context);
+  const targets = handler.getTargets(state, playerIndex, context);
+  if (!targets || !state.effectImmunity) return targets;
+  // Filter out units with "all" effect immunity (Fallout Shelter)
+  return targets.filter((id) => state.effectImmunity?.[id] !== "all");
 }
 
 export function canPlayEvent(abilityId: string, state: GameState, playerIndex: number): boolean {

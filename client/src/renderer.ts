@@ -153,6 +153,7 @@ export function renderGame(
           <span class="info-item phase">${formatPhase(state.phase, state.readyStep)}</span>
           <span class="info-item ${isYourTurn ? "your-turn" : "opp-turn"}">${isYourTurn ? "YOU" : "OPP"}</span>
           <span class="info-item">Fleet: ${state.fleetDefenseLevel}</span>
+          <span class="info-item threat-level">Threat: ${computeThreatLevel(state)}</span>
         </div>
         <div class="info-bar-right">
           <button class="header-btn" id="actions-fab" style="display:none">Actions</button>
@@ -184,8 +185,8 @@ export function renderGame(
       ${state.cylonThreats.length > 0 ? renderCylonThreats(state.cylonThreats) : ""}
 
       <div class="hand-area">
-        <div class="hand-label">HAND (${state.you.hand.length} cards) | Deck: ${state.you.deckCount} | Discard: ${state.you.discardCount}</div>
-        <div class="hand-label opp-info">Opponent — Hand: ${state.opponent.handCount} | Deck: ${state.opponent.deckCount} | Discard: ${state.opponent.discardCount}</div>
+        <div class="hand-label">HAND (${state.you.hand.length} cards) | Deck: ${state.you.deckCount} | <span class="discard-link" id="your-discard-btn">Discard: ${state.you.discardCount}</span></div>
+        <div class="hand-label opp-info">Opponent — Hand: ${state.opponent.handCount} | Deck: ${state.opponent.deckCount} | <span class="discard-link" id="opp-discard-btn">Discard: ${state.opponent.discardCount}</span></div>
         <div class="hand-cards-wrapper">
           <div class="hand-scroll-hint hand-scroll-hint--left" id="hand-scroll-left">&#x2039;</div>
           <div class="hand-cards" id="hand-cards">
@@ -311,6 +312,54 @@ function showLogModal(): void {
   if (body) body.scrollTop = body.scrollHeight;
 }
 
+function showDiscardBrowser(cards: CardInstance[], title: string): void {
+  document.querySelector(".log-modal-overlay")?.remove();
+
+  const cardsHtml =
+    cards.length === 0
+      ? '<div class="log-entry">No cards in discard pile.</div>'
+      : cards
+          .map((c) => {
+            const def = cardDefs[c.defId];
+            const name = def ? getCardName(c.defId) : c.defId;
+            const type = def?.type ?? "";
+            const image = def?.image;
+            return `<div class="discard-card-entry" data-def-id="${c.defId}">
+          ${image ? `<img src="${image}" alt="${name}" class="discard-thumb" />` : ""}
+          <span class="discard-card-name">${escapeHtml(name)}</span>
+          <span class="discard-card-type">${type}</span>
+        </div>`;
+          })
+          .join("");
+
+  const overlay = document.createElement("div");
+  overlay.className = "log-modal-overlay";
+  overlay.innerHTML = `
+    <div class="log-modal">
+      <div class="log-modal-header">
+        <span class="log-modal-title">${escapeHtml(title)}</span>
+        <button class="log-modal-close">&times;</button>
+      </div>
+      <div class="log-modal-body discard-browser">${cardsHtml}</div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  overlay.querySelector(".log-modal-close")?.addEventListener("click", () => {
+    overlay.remove();
+  });
+  // Click on card entry to show preview
+  overlay.querySelectorAll(".discard-card-entry").forEach((el) => {
+    el.addEventListener("click", () => {
+      const defId = (el as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
+}
+
 function dismissPlayerActionModal(): void {
   document.querySelector(".player-action-overlay")?.remove();
 }
@@ -338,7 +387,13 @@ function showPlayerActionModal(
   let headerText = "Your turn — Choose an action";
   if (state.challenge) {
     const isChallenger = state.challenge.challengerPlayerIndex === state.you.playerIndex;
-    if (state.challenge.waitingForDefender && !isChallenger) {
+    if (
+      state.challenge.waitingForDefender &&
+      state.challenge.defenderSelector === "challenger" &&
+      isChallenger
+    ) {
+      headerText = "Your turn — Sniper: Choose opponent's defender";
+    } else if (state.challenge.waitingForDefender && !isChallenger) {
       headerText = "Your turn — Choose a defender or decline";
     } else if (state.challenge.step === 2) {
       headerText = `Your turn — Play effects or pass`;
@@ -347,6 +402,8 @@ function showPlayerActionModal(
     }
   } else if (state.phase === "ready" && state.readyStep === 4) {
     headerText = "Your turn — Deploy a card to resource area";
+  } else if (state.phase === "ready" && state.readyStep === 5) {
+    headerText = "Your turn — Reorder unit stacks";
   } else if (state.phase === "cylon") {
     headerText = "Your turn — Cylon phase";
   } else if (state.phase === "execution") {
@@ -536,6 +593,7 @@ function renderOpponentZones(opp: OpponentView): string {
       <div class="zone-label">Resource</div>
       <div class="zone-cards">
         ${opp.zones.resourceStacks.map((stack) => renderResourceStack(stack, false)).join("")}
+        ${(opp.zones.persistentMissions ?? []).map((mc) => renderPersistentMission(mc)).join("")}
       </div>
     </div>
     <div class="zone reserve-zone">
@@ -575,7 +633,32 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
       <div class="zone-label">Resource</div>
       <div class="zone-cards">
         ${state.you.zones.resourceStacks.map((stack, i) => renderResourceStack(stack, true, i)).join("")}
+        ${(state.you.zones.persistentMissions ?? []).map((mc) => renderPersistentMission(mc)).join("")}
       </div>
+    </div>
+  `;
+}
+
+function computeThreatLevel(state: PlayerGameView): number {
+  let total = 0;
+  const zones = [state.you.zones, state.opponent.zones];
+  for (const z of zones) {
+    for (const stack of [...z.alert, ...z.reserve]) {
+      const topCard = stack.cards[0];
+      if (!topCard?.faceUp) continue;
+      total += getCardCylonThreat(topCard.defId);
+    }
+  }
+  return total;
+}
+
+function renderPersistentMission(card: CardInstance): string {
+  const def = cardDefs[card.defId];
+  const name = def?.subtitle ?? card.defId;
+  const image = def?.image;
+  return `
+    <div class="board-card persistent-mission" data-instance-id="${card.instanceId}" data-def-id="${card.defId}">
+      ${image ? `<img src="${image}" alt="${name}" class="card-image" />` : `<div class="card-text-fallback mission"><div class="card-name">${name}</div><div class="card-type">Persistent</div></div>`}
     </div>
   `;
 }
@@ -790,6 +873,22 @@ function attachEventListeners(
   container.querySelector("#log-btn")?.addEventListener("click", () => {
     showLogModal();
   });
+
+  // Discard pile browsers
+  container.querySelector("#your-discard-btn")?.addEventListener("click", () => {
+    showDiscardBrowser(state.you.discard ?? [], "Your Discard Pile");
+  });
+  container.querySelector("#opp-discard-btn")?.addEventListener("click", () => {
+    showDiscardBrowser(state.opponent.discard ?? [], "Opponent's Discard Pile");
+  });
+
+  // Persistent mission tap-to-preview
+  container.querySelectorAll(".persistent-mission").forEach((el) => {
+    el.addEventListener("click", () => {
+      const defId = (el as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
 }
 
 function handleActionClick(
@@ -816,6 +915,14 @@ function handleActionClick(
     case "doneReorder":
       onAction({ type: "doneReorder" });
       break;
+    case "reorderStack": {
+      const stackId = action.selectableInstanceIds?.[0];
+      const newTopId = action.cardDefId;
+      if (stackId && newTopId) {
+        onAction({ type: "reorderStack", stackInstanceId: stackId, newTopDefId: newTopId });
+      }
+      break;
+    }
     case "pass":
       onAction({ type: "pass" });
       break;
@@ -1076,6 +1183,68 @@ function handleActionClick(
         validActions,
         state,
       );
+      break;
+    }
+
+    case "useTriggeredAbility": {
+      // Agro Ship / Flattop: use triggered ability, optionally select target
+      const targets = action.selectableInstanceIds ?? [];
+      if (targets.length <= 1) {
+        onAction({ type: "useTriggeredAbility", targetInstanceId: targets[0] });
+      } else {
+        enterSelectModeInstance(
+          container,
+          "Select unit to ready",
+          targets,
+          (id) => {
+            onAction!({ type: "useTriggeredAbility", targetInstanceId: id });
+          },
+          validActions,
+          state,
+        );
+      }
+      break;
+    }
+
+    case "declineTrigger":
+      onAction({ type: "declineTrigger" });
+      break;
+
+    case "makeChoice": {
+      // Celestra-style choices: each action button represents a choice
+      // Find the index of this action among all makeChoice actions
+      const allChoices = validActions.filter((a) => a.type === "makeChoice");
+      const choiceIndex = allChoices.indexOf(action);
+      onAction({ type: "makeChoice", choiceIndex: choiceIndex >= 0 ? choiceIndex : 0 });
+      break;
+    }
+
+    case "strafeChoice":
+      // Strafe: challenge as personnel or ship — description encodes the choice
+      onAction({
+        type: "strafeChoice",
+        challengeAs: action.description.includes("personnel") ? "personnel" : "ship",
+      });
+      break;
+
+    case "sacrificeFromStack": {
+      // Sacrifice non-top card from unit stack for +1 power
+      // Action has selectableInstanceIds[0] = top card instanceId, description tells which card
+      const stackId = action.selectableInstanceIds?.[0];
+      if (stackId) {
+        // Find the stack and its non-top cards
+        const stack = [...state.you.zones.alert, ...state.you.zones.reserve].find(
+          (s) => s.cards[0]?.instanceId === stackId,
+        );
+        if (stack && stack.cards.length >= 2) {
+          // Just send with the second card (non-top) — the action already encodes which card
+          onAction({
+            type: "sacrificeFromStack",
+            stackInstanceId: stackId,
+            cardInstanceId: stack.cards[1].instanceId,
+          });
+        }
+      }
       break;
     }
   }
