@@ -202,7 +202,7 @@ body {
 .board-label {
   font-size: 0.7rem;
   text-transform: uppercase;
-  color: #555;
+  color: #bbb;
   padding: 0.15rem 0.5rem;
   letter-spacing: 0.05em;
 }
@@ -226,7 +226,7 @@ body {
 .zone-label {
   font-size: 0.6rem;
   text-transform: uppercase;
-  color: #444;
+  color: #999;
   writing-mode: vertical-lr;
   text-orientation: mixed;
   letter-spacing: 0.05em;
@@ -260,7 +260,7 @@ body {
 }
 
 .empty-zone {
-  color: #333;
+  color: #777;
   font-size: 0.7rem;
   font-style: italic;
   padding: 0.25rem;
@@ -396,12 +396,12 @@ body {
 
 .card-exhausted {
   font-size: 0.5rem;
-  color: #999;
+  color: #bbb;
   font-style: italic;
 }
 
 .card-cost {
-  color: #aaa;
+  color: #ccc;
 }
 
 .card-type-badge {
@@ -410,12 +410,12 @@ body {
   right: 3px;
   font-size: 0.5rem;
   font-weight: 700;
-  color: #555;
+  color: #999;
 }
 
 .card-ability {
   font-size: 0.5rem;
-  color: #999;
+  color: #ccc;
   line-height: 1.2;
   margin-top: 0.1rem;
   overflow: hidden;
@@ -429,7 +429,7 @@ body {
   display: flex;
   gap: 0.3rem;
   font-size: 0.5rem;
-  color: #666;
+  color: #aaa;
   margin-top: 0.1rem;
 }
 
@@ -442,7 +442,7 @@ body {
   bottom: 2px;
   right: 3px;
   font-size: 0.5rem;
-  color: #888;
+  color: #bbb;
 }
 
 /* --- Card Image Border (thin gray outline following clipped corners) --- */
@@ -802,19 +802,6 @@ body {
 
 /* --- Game Log --- */
 
-.log-area {
-  max-height: 100px;
-  overflow-y: auto;
-  padding: 0.35rem 0.5rem;
-  background: #0a0a0a;
-  border: 1px solid #181818;
-  border-radius: 4px;
-  font-size: 0.65rem;
-  font-family: "SF Mono", "Fira Code", monospace;
-  color: #777;
-  flex-shrink: 0;
-}
-
 .log-entry {
   padding: 0.1rem 0;
   border-bottom: 1px solid #111;
@@ -874,7 +861,7 @@ body {
   color: #e0e0e0;
   font-size: 0.95rem;
   line-height: 1.4;
-  text-align: center;
+  text-align: left;
 }
 
 .action-modal-thumbs {
@@ -937,9 +924,9 @@ body {
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 8px;
-  width: 90%;
+  width: calc(100% - 1rem);
   max-width: 600px;
-  max-height: 85vh;
+  height: calc(100% - 1rem);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -976,7 +963,7 @@ body {
 
 .log-modal-body {
   overflow-y: auto;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem;
   font-size: 0.75rem;
   font-family: "SF Mono", "Fira Code", monospace;
   color: #999;
@@ -987,6 +974,11 @@ body {
 .log-modal-body .log-entry {
   padding: 0.15rem 0;
   border-bottom: 1px solid #111;
+}
+
+.log-ts {
+  color: #555;
+  margin-right: 0.5em;
 }
 
 /* --- Discard Browser --- */
@@ -1065,6 +1057,17 @@ body {
   box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
   max-height: 50vh;
   overflow-y: auto;
+  animation: border-pulse 2s ease-in-out infinite;
+}
+
+@keyframes border-pulse {
+  0%,
+  100% {
+    border-color: #7a6a2a;
+  }
+  50% {
+    border-color: #e8c547;
+  }
 }
 
 .action-modal-header-row {
@@ -1124,6 +1127,22 @@ body {
   background: #c62828;
   color: #fff;
   border-color: #c62828;
+}
+
+/* --- Action group labels (execution phase grouping) --- */
+
+.action-group-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  padding: 0.35rem 0.2rem 0.1rem;
+  border-bottom: 1px solid #333;
+  margin-top: 0.3rem;
+}
+
+.action-group-label:first-child {
+  margin-top: 0;
 }
 
 /* --- Disabled action buttons (can't afford) --- */

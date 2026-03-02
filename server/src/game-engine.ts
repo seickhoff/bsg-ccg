@@ -333,6 +333,23 @@ function getUnitPower(stack: UnitStack): number {
 }
 
 // ============================================================
+// Timestamped Log
+// ============================================================
+
+function timestamp(): string {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, "0");
+  const m = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  return `[${h}:${m}:${s}]`;
+}
+
+function stampLog(entries: string[]): string[] {
+  const ts = timestamp();
+  return entries.map((e) => `${ts} ${e}`);
+}
+
+// ============================================================
 // Create Game
 // ============================================================
 
@@ -377,6 +394,7 @@ export function createGame(
   const log: string[] = [];
   drawCards(p1, base1.handSize, log, "Player 1");
   drawCards(p2, base2.handSize, log, "Player 2");
+  log.push("Game created. Players may choose to keep or redraw their hands.");
 
   const state: GameState = {
     players: [p1, p2],
@@ -388,7 +406,7 @@ export function createGame(
     fleetDefenseLevel,
     challenge: null,
     cylonThreats: [],
-    log: [...log, "Game created. Players may choose to keep or redraw their hands."],
+    log: stampLog(log),
     winner: null,
   };
 
@@ -533,6 +551,14 @@ export function getValidActions(
       const costStr = formatCost(def.cost);
       const typeLabel = def.type.charAt(0).toUpperCase() + def.type.slice(1);
       const affordable = canAfford(player, def, bases);
+      // Targeted events with no valid targets are not playable
+      if (
+        def.type === "event" &&
+        def.abilityId &&
+        !canPlayEvent(def.abilityId, state, playerIndex, "execution")
+      ) {
+        continue;
+      }
       actions.push({
         type: "playCard",
         description: `${cardName(def)} — ${typeLabel}${costStr ? ` (${costStr})` : ""}`,
@@ -609,15 +635,19 @@ export function getValidActions(
         const availableStacks =
           player.zones.resourceStacks.filter((s: ResourceStack) => !s.exhausted).length +
           countAllFreighters(player);
-        actions.push({
-          type: "challenge",
-          description:
-            challengeCost > 0
-              ? `Challenge opponent (costs ${challengeCost} resource)`
-              : "Challenge opponent",
-          selectableInstanceIds: challengeUnits,
-          ...(challengeCost > 0 && availableStacks < challengeCost ? { disabled: true } : {}),
-        });
+        const cantAfford = challengeCost > 0 && availableStacks < challengeCost;
+        const costSuffix = challengeCost > 0 ? ` (costs ${challengeCost} resource)` : "";
+        for (const unitId of challengeUnits) {
+          const unitDef = findCardDefByInstanceId(state, unitId);
+          const unitLabel = unitDef ? cardName(unitDef) : "unit";
+          actions.push({
+            type: "challenge",
+            description: `Challenge with ${unitLabel}${costSuffix}`,
+            cardDefId: unitDef?.id,
+            selectableInstanceIds: [unitId],
+            ...(cantAfford ? { disabled: true } : {}),
+          });
+        }
       }
     }
 
@@ -797,7 +827,7 @@ function getChallengeActions(
         def.type === "event" &&
         canAfford(player, def, bases) &&
         (!def.abilityId || isEventPlayableIn(def.abilityId, challengeContext)) &&
-        (!def.abilityId || canPlayEvent(def.abilityId, state, playerIndex))
+        (!def.abilityId || canPlayEvent(def.abilityId, state, playerIndex, challengeContext))
       ) {
         actions.push({
           type: "playEventInChallenge",
@@ -1878,8 +1908,9 @@ export function applyAction(
     }
   }
 
-  s.log.push(...log);
-  return { state: s, log };
+  const stamped = stampLog(log);
+  s.log.push(...stamped);
+  return { state: s, log: stamped };
 }
 
 // ============================================================
@@ -1961,13 +1992,30 @@ function startReadyPhase(s: GameState, log: string[], bases: Record<string, Base
   s.activePlayerIndex = s.firstPlayerIndex;
 }
 
+function playerHasReorderableStacks(p: GameState["players"][number]): boolean {
+  for (const zone of [p.zones.alert, p.zones.reserve]) {
+    for (const stack of zone) {
+      if (stack.cards.length >= 2) return true;
+    }
+  }
+  return false;
+}
+
 function advanceReadyStep4(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
   // Check if all players have had their turn at step 4
   if (s.players.every((p) => p.hasPlayedResource)) {
-    // Move to step 5
+    // Move to step 5 — skip if no player has reorderable stacks
+    if (!s.players.some((p) => playerHasReorderableStacks(p))) {
+      startExecutionPhase(s, log);
+      return;
+    }
     s.readyStep = 5 as ReadyStep;
     s.activePlayerIndex = s.firstPlayerIndex;
     log.push("Ready phase: reorder unit stacks.");
+    // Skip first player if they have no reorderable stacks
+    if (!playerHasReorderableStacks(s.players[s.activePlayerIndex])) {
+      advanceReadyStep5(s, log, bases);
+    }
   } else {
     // Next player
     s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;
@@ -1975,14 +2023,17 @@ function advanceReadyStep4(s: GameState, log: string[], bases: Record<string, Ba
 }
 
 function advanceReadyStep5(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
-  // Move on: simple for 2 players, just advance
-  const nextPlayer = (s.activePlayerIndex + 1) % s.players.length;
-  if (nextPlayer === s.firstPlayerIndex) {
-    // All done, start execution phase
-    startExecutionPhase(s, log);
-  } else {
-    s.activePlayerIndex = nextPlayer;
+  // Advance to next player, skipping those without reorderable stacks
+  let nextPlayer = (s.activePlayerIndex + 1) % s.players.length;
+  while (nextPlayer !== s.firstPlayerIndex) {
+    if (playerHasReorderableStacks(s.players[nextPlayer])) {
+      s.activePlayerIndex = nextPlayer;
+      return;
+    }
+    nextPlayer = (nextPlayer + 1) % s.players.length;
   }
+  // All done, start execution phase
+  startExecutionPhase(s, log);
 }
 
 function startExecutionPhase(s: GameState, log: string[]): void {

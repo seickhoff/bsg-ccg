@@ -11,6 +11,7 @@ import {
   setCardRegistry,
   setActionHandler,
   setContinueHandler,
+  setResetGameHandler,
 } from "./renderer.js";
 import { renderDeckBuilder } from "./deck-builder.js";
 import "./style.css";
@@ -24,6 +25,7 @@ const app = document.getElementById("app")!;
 
 let ws: WebSocket | null = null;
 let currentRegistry: CardRegistry | null = null;
+let currentRoomId: string | null = sessionStorage.getItem("bsg-roomId");
 
 function sendMessage(msg: ClientMessage): void {
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -37,6 +39,7 @@ function sendAction(action: GameAction): void {
 
 setActionHandler(sendAction);
 setContinueHandler(() => sendMessage({ type: "continue" }));
+setResetGameHandler(() => sendMessage({ type: "resetGame" }));
 
 function handleDeckSubmit(submission: DeckSubmission): void {
   sendMessage({
@@ -70,7 +73,7 @@ function connect(): void {
 
   ws.addEventListener("open", () => {
     console.log("Connected to server");
-    sendMessage({ type: "joinGame" });
+    sendMessage({ type: "joinGame", roomId: currentRoomId ?? undefined });
   });
 
   ws.addEventListener("close", () => {
@@ -84,16 +87,35 @@ function connect(): void {
     setTimeout(connect, 2000);
   });
 
+  ws.addEventListener("error", (event) => {
+    console.error("WebSocket error:", event);
+  });
+
   ws.addEventListener("message", (event) => {
-    const msg: ServerMessage = JSON.parse(event.data);
+    let msg: ServerMessage;
+    try {
+      msg = JSON.parse(event.data);
+    } catch {
+      console.error("Invalid message from server:", event.data);
+      return;
+    }
 
     switch (msg.type) {
+      case "joined":
+        currentRoomId = msg.roomId;
+        sessionStorage.setItem("bsg-roomId", msg.roomId);
+        break;
+
       case "cardRegistry":
         currentRegistry = msg.registry;
         setCardRegistry(msg.registry);
         break;
 
       case "deckRequired":
+        // Remove any leftover game modals attached to document.body
+        document
+          .querySelectorAll(".action-modal-overlay, .player-action-overlay, .log-modal-overlay")
+          .forEach((el) => el.remove());
         if (currentRegistry) {
           renderDeckBuilder(app, currentRegistry, handleDeckSubmit);
         }

@@ -23,6 +23,7 @@ let cardDefs: Record<string, CardDef> = {};
 let baseDefs: Record<string, BaseCardDef> = {};
 let onAction: ((action: GameAction) => void) | null = null;
 let onContinue: (() => void) | null = null;
+let onResetGame: (() => void) | null = null;
 let currentLog: string[] = [];
 let currentPlayerIndex = 0;
 let selectMode: {
@@ -44,6 +45,10 @@ export function setActionHandler(handler: (action: GameAction) => void): void {
 
 export function setContinueHandler(handler: () => void): void {
   onContinue = handler;
+}
+
+export function setResetGameHandler(handler: () => void): void {
+  onResetGame = handler;
 }
 
 function getCardDef(defId: string): CardDef | BaseCardDef | null {
@@ -145,6 +150,10 @@ export function renderGame(
   currentLog = log;
   currentPlayerIndex = state.you.playerIndex;
 
+  // Preserve play-area scroll position across re-renders
+  const prevBoards = container.querySelector(".boards");
+  const prevScrollTop = prevBoards ? prevBoards.scrollTop : 0;
+
   container.innerHTML = `
     <div class="game-board">
       <div class="info-bar">
@@ -158,6 +167,7 @@ export function renderGame(
         <div class="info-bar-right">
           <button class="header-btn" id="actions-fab" style="display:none">Actions</button>
           <button class="header-btn" id="log-btn">Log</button>
+          <button class="header-btn" id="new-game-btn">New Game</button>
         </div>
       </div>
 
@@ -203,6 +213,10 @@ export function renderGame(
     </div>
   `;
 
+  // Restore play-area scroll position
+  const newBoards = container.querySelector(".boards");
+  if (newBoards) newBoards.scrollTop = prevScrollTop;
+
   // Attach event listeners
   attachEventListeners(container, validActions, state);
 
@@ -220,8 +234,9 @@ function showActionModal(
   _log: string[],
   playerIndex: number,
 ): void {
-  // Remove any existing modal
+  // Remove any existing modals (both notification and player-action)
   document.querySelector(".action-modal-overlay")?.remove();
+  document.querySelector(".player-action-overlay")?.remove();
 
   // Build thumbnail HTML from card def IDs
   const thumbsHtml = notification.cardDefIds
@@ -236,10 +251,15 @@ function showActionModal(
     .filter(Boolean)
     .join("");
 
-  // Format notification text lines (replace Player labels)
+  // Format notification text lines (replace Player labels, show timestamps)
   const textLines = notification.text
     .split("\n")
-    .map((line: string) => escapeHtml(formatLogForDisplay(line, playerIndex)))
+    .map((line: string) => {
+      const tsMatch = line.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
+      const ts = tsMatch ? `<span class="log-ts">${tsMatch[1]}</span>` : "";
+      const text = tsMatch ? line.slice(tsMatch[0].length) : line;
+      return `${ts}${escapeHtml(formatLogForDisplay(text, playerIndex))}`;
+    })
     .join("<br>");
 
   const overlay = document.createElement("div");
@@ -272,15 +292,22 @@ function showActionModal(
   });
 }
 
+function formatLogEntry(raw: string, playerIndex: number): string {
+  const tsMatch = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
+  const ts = tsMatch ? tsMatch[1] : "";
+  const text = tsMatch ? raw.slice(tsMatch[0].length) : raw;
+  const formatted = escapeHtml(formatLogForDisplay(text, playerIndex));
+  return `<div class="log-entry"><span class="log-ts">${ts}</span>${formatted}</div>`;
+}
+
 function showLogModal(): void {
   // Remove any existing log modal
   document.querySelector(".log-modal-overlay")?.remove();
 
-  const logHtml = currentLog
-    .map(
-      (l) =>
-        `<div class="log-entry">${escapeHtml(formatLogForDisplay(l, currentPlayerIndex))}</div>`,
-    )
+  // Most recent entries first
+  const logHtml = [...currentLog]
+    .reverse()
+    .map((l) => formatLogEntry(l, currentPlayerIndex))
     .join("");
 
   const overlay = document.createElement("div");
@@ -306,10 +333,44 @@ function showLogModal(): void {
   overlay.querySelector(".log-modal-close")?.addEventListener("click", () => {
     overlay.remove();
   });
+}
 
-  // Scroll to bottom
-  const body = overlay.querySelector(".log-modal-body");
-  if (body) body.scrollTop = body.scrollHeight;
+function showConfirmResetModal(): void {
+  document.querySelector(".log-modal-overlay")?.remove();
+
+  const overlay = document.createElement("div");
+  overlay.className = "log-modal-overlay";
+  overlay.innerHTML = `
+    <div class="log-modal">
+      <div class="log-modal-header">
+        <span class="log-modal-title">New Game?</span>
+        <button class="log-modal-close">&times;</button>
+      </div>
+      <div class="log-modal-body" style="text-align:center; padding:1rem;">
+        <p>Abandon the current game and start over?</p>
+        <div style="display:flex; gap:0.75rem; justify-content:center; margin-top:1rem;">
+          <button class="action-btn" id="confirm-reset-yes">Yes, new game</button>
+          <button class="action-btn" id="confirm-reset-no">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  overlay.querySelector(".log-modal-close")?.addEventListener("click", () => {
+    overlay.remove();
+  });
+  overlay.querySelector("#confirm-reset-no")?.addEventListener("click", () => {
+    overlay.remove();
+  });
+  overlay.querySelector("#confirm-reset-yes")?.addEventListener("click", () => {
+    overlay.remove();
+    onResetGame?.();
+  });
 }
 
 function showDiscardBrowser(cards: CardInstance[], title: string): void {
@@ -410,16 +471,77 @@ function showPlayerActionModal(
     headerText = "Your turn — Execution phase";
   }
 
-  const buttonsHtml = validActions
-    .map((a, i) => {
-      const disabledClass = a.disabled ? " action-modal-btn--disabled" : "";
-      const thumbHtml = getActionThumbHtml(a);
-      if (thumbHtml) {
-        return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>${thumbHtml}</div>`;
+  // During execution phase, hide disabled actions and group by card type
+  const isExecution = state.phase === "execution" && !state.challenge;
+  const displayActions = isExecution ? validActions.filter((a) => !a.disabled) : validActions;
+
+  function actionGroupKey(a: ValidAction): string {
+    if (a.type === "pass" || a.type === "challengePass") return "zzz_pass"; // sort last
+    if (a.type === "challenge") return "zz_challenge";
+    if (a.type === "sacrificeFromStack") return "zy_sacrifice";
+    if (!a.cardDefId) return "zx_other";
+    if (baseDefs[a.cardDefId]) return "aa_base";
+    const def = cardDefs[a.cardDefId];
+    if (!def) return "zx_other";
+    return def.type; // "personnel" | "ship" | "event" | "mission"
+  }
+
+  const groupLabels: Record<string, string> = {
+    personnel: "Personnel",
+    ship: "Ships",
+    event: "Events",
+    mission: "Missions",
+    aa_base: "Base Ability",
+    zy_sacrifice: "Sacrifice",
+    zz_challenge: "Challenge",
+    zzz_pass: "",
+    zx_other: "",
+  };
+
+  let buttonsHtml: string;
+  if (isExecution && displayActions.length > 0) {
+    // Group actions by card type, preserving original indices for data-action-index
+    const groups = new Map<string, { action: ValidAction; origIdx: number }[]>();
+    for (let i = 0; i < validActions.length; i++) {
+      const a = validActions[i];
+      if (a.disabled) continue;
+      const key = actionGroupKey(a);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push({ action: a, origIdx: i });
+    }
+    const sortedKeys = [...groups.keys()].sort();
+    const parts: string[] = [];
+    for (const key of sortedKeys) {
+      const label = groupLabels[key] ?? key;
+      if (label) parts.push(`<div class="action-group-label">${escapeHtml(label)}</div>`);
+      for (const { action: a, origIdx } of groups.get(key)!) {
+        const thumbHtml = getActionThumbHtml(a);
+        if (thumbHtml) {
+          parts.push(
+            `<div class="action-row"><button class="action-modal-btn action-modal-btn--with-thumb" data-action-index="${origIdx}">${escapeHtml(a.description)}</button>${thumbHtml}</div>`,
+          );
+        } else {
+          parts.push(
+            `<button class="action-modal-btn" data-action-index="${origIdx}">${escapeHtml(a.description)}</button>`,
+          );
+        }
       }
-      return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>`;
-    })
-    .join("");
+    }
+    buttonsHtml = parts.join("");
+  } else {
+    buttonsHtml = displayActions
+      .map((a, _di) => {
+        // Find original index in validActions for data-action-index
+        const i = validActions.indexOf(a);
+        const disabledClass = a.disabled ? " action-modal-btn--disabled" : "";
+        const thumbHtml = getActionThumbHtml(a);
+        if (thumbHtml) {
+          return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>${thumbHtml}</div>`;
+        }
+        return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>`;
+      })
+      .join("");
+  }
 
   const overlay = document.createElement("div");
   overlay.className = "player-action-overlay";
@@ -874,6 +996,15 @@ function attachEventListeners(
     showLogModal();
   });
 
+  // New Game button
+  container.querySelector("#new-game-btn")?.addEventListener("click", () => {
+    if (state.phase === "gameOver") {
+      onResetGame?.();
+    } else {
+      showConfirmResetModal();
+    }
+  });
+
   // Discard pile browsers
   container.querySelector("#your-discard-btn")?.addEventListener("click", () => {
     showDiscardBrowser(state.you.discard ?? [], "Your Discard Pile");
@@ -1015,20 +1146,29 @@ function handleActionClick(
 
     case "challenge": {
       const units = action.selectableInstanceIds ?? [];
-      enterSelectModeInstance(
-        container,
-        "Select a unit to challenge with",
-        units,
-        (id) => {
-          onAction!({
-            type: "challenge",
-            challengerInstanceId: id,
-            opponentIndex: 1 - state.you.playerIndex,
-          });
-        },
-        validActions,
-        state,
-      );
+      if (units.length === 1) {
+        // Per-unit challenge action: send directly
+        onAction!({
+          type: "challenge",
+          challengerInstanceId: units[0],
+          opponentIndex: 1 - state.you.playerIndex,
+        });
+      } else {
+        enterSelectModeInstance(
+          container,
+          "Select a unit to challenge with",
+          units,
+          (id) => {
+            onAction!({
+              type: "challenge",
+              challengerInstanceId: id,
+              opponentIndex: 1 - state.you.playerIndex,
+            });
+          },
+          validActions,
+          state,
+        );
+      }
       break;
     }
 

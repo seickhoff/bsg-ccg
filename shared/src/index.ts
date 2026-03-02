@@ -288,10 +288,11 @@ export interface ActionNotification {
 }
 
 export type ClientMessage =
-  | { type: "joinGame" }
+  | { type: "joinGame"; roomId?: string }
   | { type: "submitDeck"; baseId: string; deckCardIds: string[] }
   | { type: "action"; action: GameAction }
-  | { type: "continue" };
+  | { type: "continue" }
+  | { type: "resetGame" };
 
 export type ServerMessage =
   | { type: "cardRegistry"; registry: CardRegistry }
@@ -305,7 +306,8 @@ export type ServerMessage =
       aiActing?: boolean;
       notification?: ActionNotification;
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "joined"; roomId: string };
 
 // --- Card Registry Helper ---
 

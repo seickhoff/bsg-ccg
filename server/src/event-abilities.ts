@@ -2499,10 +2499,20 @@ export function getEventTargets(
   return targets.filter((id) => state.effectImmunity?.[id] !== "all");
 }
 
-export function canPlayEvent(abilityId: string, state: GameState, playerIndex: number): boolean {
+export function canPlayEvent(
+  abilityId: string,
+  state: GameState,
+  playerIndex: number,
+  context: "execution" | "challenge" | "cylon-challenge" = "execution",
+): boolean {
   const handler = registry.get(abilityId);
   if (!handler) return true; // unknown events are always playable
-  if (handler.canPlay) return handler.canPlay(state, playerIndex);
+  if (handler.canPlay && !handler.canPlay(state, playerIndex)) return false;
+  // Targeted events with no valid targets are unplayable
+  if (handler.getTargets) {
+    const targets = getEventTargets(abilityId, state, playerIndex, context);
+    if (targets && targets.length === 0) return false;
+  }
   return true;
 }
 

@@ -704,7 +704,7 @@ function pickBestCardToPlay(
         score += cat === "one-shot" ? 5 : 8;
       }
       // Events scored by abilityId
-      if (def.type === "event") score += scoreExecutionEvent(def);
+      if (def.type === "event") score += scoreExecutionEvent(def, state, playerIndex);
 
       if (score > bestScore) {
         bestScore = score;
@@ -903,9 +903,27 @@ function resolveAction(
 // --- Event scoring by abilityId ---
 
 /** Score an event for playing during the execution phase. Higher = better. */
-function scoreExecutionEvent(def: CardDef): number {
+function opponentHasUnits(state: GameState, playerIndex: number): boolean {
+  const opp = state.players[1 - playerIndex];
+  return (
+    opp.zones.alert.some((s) => s.cards.length > 0) ||
+    opp.zones.reserve.some((s) => s.cards.length > 0)
+  );
+}
+
+function scoreExecutionEvent(def: CardDef, state: GameState, playerIndex: number): number {
   const id = def.abilityId;
   if (!id) return 1;
+
+  // Don't waste events that target opponent units when they have none
+  const needsOpponentUnits: string[] = [
+    "endless-task",
+    "downed-pilot",
+    "grounded",
+    "setback",
+    "still-no-contact",
+  ];
+  if (needsOpponentUnits.includes(id) && !opponentHasUnits(state, playerIndex)) return 0;
 
   // Removal / defeat events — very strong
   if (

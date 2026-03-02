@@ -58,8 +58,12 @@ interface GameRoom {
   continueResolve: (() => void) | null;
 }
 
+const ROOM_CLEANUP_MS = 5 * 60 * 1000; // keep room alive 5 minutes after disconnect
+
 const rooms: GameRoom[] = [];
+const roomsById = new Map<string, GameRoom>();
 const playerRoomMap = new Map<WebSocket, GameRoom>();
+const roomCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function createRoom(ws: WebSocket): GameRoom {
   const room: GameRoom = {
@@ -73,8 +77,38 @@ function createRoom(ws: WebSocket): GameRoom {
     continueResolve: null,
   };
   rooms.push(room);
+  roomsById.set(room.id, room);
   playerRoomMap.set(ws, room);
   return room;
+}
+
+function destroyRoom(room: GameRoom): void {
+  const idx = rooms.indexOf(room);
+  if (idx !== -1) rooms.splice(idx, 1);
+  roomsById.delete(room.id);
+  if (room.humanWs) {
+    playerRoomMap.delete(room.humanWs);
+  }
+  const timer = roomCleanupTimers.get(room.id);
+  if (timer) {
+    clearTimeout(timer);
+    roomCleanupTimers.delete(room.id);
+  }
+}
+
+function rejoinRoom(room: GameRoom, ws: WebSocket): void {
+  // Cancel any pending cleanup
+  const timer = roomCleanupTimers.get(room.id);
+  if (timer) {
+    clearTimeout(timer);
+    roomCleanupTimers.delete(room.id);
+  }
+  // Swap the WebSocket
+  if (room.humanWs) {
+    playerRoomMap.delete(room.humanWs);
+  }
+  room.humanWs = ws;
+  playerRoomMap.set(ws, room);
 }
 
 function sendToPlayer(ws: WebSocket, msg: ServerMessage): void {
@@ -115,7 +149,12 @@ function startGame(room: GameRoom): void {
   broadcastGameState(room);
 
   // AI may need to act first (setup phase — mulligan)
-  processAITurns(room);
+  processAITurns(room).catch((err) => {
+    console.error(`AI processing error in ${room.id}:`, err);
+    room.aiProcessing = false;
+    room.pendingNotification = null;
+    broadcastGameState(room);
+  });
 }
 
 const CONTINUE_TIMEOUT_MS = 30_000;
@@ -263,6 +302,10 @@ async function processAITurns(room: GameRoom): Promise<void> {
 wss.on("connection", (ws) => {
   console.log("Client connected");
 
+  ws.on("error", (err) => {
+    console.error("WebSocket error:", err.message);
+  });
+
   ws.on("message", (raw) => {
     let msg: ClientMessage;
     try {
@@ -274,21 +317,43 @@ wss.on("connection", (ws) => {
 
     switch (msg.type) {
       case "joinGame": {
-        // Already in a room?
+        // Already in a room via this WebSocket?
         if (playerRoomMap.has(ws)) {
           const room = playerRoomMap.get(ws)!;
+          sendToPlayer(ws, { type: "joined", roomId: room.id });
+          sendToPlayer(ws, { type: "cardRegistry", registry });
           if (room.gameState) {
             broadcastGameState(room);
           } else {
-            sendToPlayer(ws, { type: "cardRegistry", registry });
             sendToPlayer(ws, { type: "deckRequired" });
           }
           return;
         }
 
+        // Try to rejoin an existing room by roomId (reconnection)
+        if (msg.roomId) {
+          const existing = roomsById.get(msg.roomId);
+          if (existing) {
+            rejoinRoom(existing, ws);
+            console.log(`Player reconnected to ${existing.id}`);
+            sendToPlayer(ws, { type: "joined", roomId: existing.id });
+            // Always send registry so client can resolve card images/data
+            sendToPlayer(ws, { type: "cardRegistry", registry });
+            if (existing.gameState) {
+              broadcastGameState(existing);
+            } else {
+              sendToPlayer(ws, { type: "deckRequired" });
+            }
+            return;
+          }
+          // Room not found — fall through to create new
+          console.log(`Room ${msg.roomId} not found, creating new room`);
+        }
+
         const room = createRoom(ws);
         console.log(`Player joined ${room.id}`);
 
+        sendToPlayer(ws, { type: "joined", roomId: room.id });
         // Send card registry so client can build deck
         sendToPlayer(ws, { type: "cardRegistry", registry });
         sendToPlayer(ws, { type: "deckRequired" });
@@ -337,6 +402,23 @@ wss.on("connection", (ws) => {
         break;
       }
 
+      case "resetGame": {
+        const room = playerRoomMap.get(ws);
+        if (!room) {
+          sendToPlayer(ws, { type: "error", message: "Not in a room" });
+          return;
+        }
+        room.gameState = null;
+        room.humanDeck = null;
+        room.aiDeck = null;
+        room.aiProcessing = false;
+        room.pendingNotification = null;
+        room.continueResolve = null;
+        console.log(`Game reset in ${room.id}`);
+        sendToPlayer(ws, { type: "deckRequired" });
+        break;
+      }
+
       case "action": {
         const room = playerRoomMap.get(ws);
         if (!room?.gameState) {
@@ -354,7 +436,12 @@ wss.on("connection", (ws) => {
           broadcastGameState(room);
 
           // Process AI turns after human acts
-          processAITurns(room);
+          processAITurns(room).catch((err) => {
+            console.error(`AI processing error in ${room.id}:`, err);
+            room.aiProcessing = false;
+            room.pendingNotification = null;
+            broadcastGameState(room);
+          });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : "Unknown error";
           console.error(`Action error: ${errMsg}`);
@@ -372,12 +459,26 @@ wss.on("connection", (ws) => {
       room.humanWs = null;
       console.log(`Player disconnected from ${room.id}`);
 
-      // Clean up empty rooms
-      const idx = rooms.indexOf(room);
-      if (idx !== -1) rooms.splice(idx, 1);
+      // Keep the room alive for reconnection; destroy after timeout
+      const timer = setTimeout(() => {
+        roomCleanupTimers.delete(room.id);
+        destroyRoom(room);
+        console.log(`Room ${room.id} cleaned up after timeout`);
+      }, ROOM_CLEANUP_MS);
+      roomCleanupTimers.set(room.id, timer);
     }
     console.log("Client disconnected");
   });
+});
+
+// --- Global error handlers (prevent server crash from killing all games) ---
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
 });
 
 console.log(`BSG CCG server listening on ws://localhost:${PORT}`);
