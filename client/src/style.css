@@ -55,6 +55,81 @@ body {
   }
 }
 
+/* --- Splash Screen --- */
+
+.splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 1.25rem;
+  padding: 2rem;
+}
+.splash-card {
+  width: 280px;
+  filter: drop-shadow(0 0 30px rgba(240, 192, 64, 0.25)) drop-shadow(0 4px 20px rgba(0, 0, 0, 0.6));
+  clip-path: polygon(18% 3%, 80% 3%, 97% 15%, 97% 85%, 80% 99%, 20% 99%, 3% 87%, 3% 14%);
+}
+.splash-title {
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: #f0c040;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 20px rgba(240, 192, 64, 0.3);
+  margin: 0;
+}
+.splash-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 260px;
+}
+.splash-input {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  background: #141414;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 1rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+.splash-input:focus {
+  outline: none;
+  border-color: #f0c040;
+  box-shadow: 0 0 8px rgba(240, 192, 64, 0.2);
+}
+.splash-input::placeholder {
+  color: #555;
+}
+.splash-btn {
+  width: 100%;
+  padding: 0.7rem 1.5rem;
+  background: #f0c040;
+  color: #111;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.splash-btn:hover {
+  background: #ffd54f;
+  box-shadow: 0 0 12px rgba(240, 192, 64, 0.3);
+}
+.splash-btn:active {
+  background: #e0b030;
+}
+
 /* --- Game Board Layout --- */
 
 .game-board {
@@ -302,6 +377,20 @@ body {
   color: #fff;
   background: rgba(240, 192, 64, 0.85);
   line-height: 1;
+}
+
+.unit-power-badge.power-buffed {
+  background: rgba(64, 220, 64, 0.9);
+  box-shadow: 0 0 6px rgba(64, 220, 64, 0.7);
+}
+
+.card-power.power-buffed {
+  color: #4ddc4d;
+}
+
+.power-buff-indicator {
+  font-size: 0.65em;
+  color: #4ddc4d;
 }
 
 .unit-stack-badge {
@@ -558,6 +647,35 @@ body {
 
 .resource-stack-badge--security {
   background: rgba(244, 67, 54, 0.8);
+}
+
+.resource-inline-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  border-radius: 3px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.resource-inline-badge--persuasion {
+  background: rgba(156, 39, 176, 0.9);
+}
+
+.resource-inline-badge--logistics {
+  background: rgba(33, 150, 243, 0.9);
+}
+
+.resource-inline-badge--security {
+  background: rgba(244, 67, 54, 0.9);
+}
+
+.resource-inline-badge--supply {
+  background: rgba(117, 117, 117, 0.9);
+  font-size: 0.65rem;
 }
 
 .resource-stack-wrap.selectable {
@@ -862,6 +980,43 @@ body {
   font-size: 0.95rem;
   line-height: 1.4;
   text-align: left;
+}
+
+/* Structured notification summary */
+.notif-turn-header {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffd54f;
+  text-align: center;
+  margin-bottom: 0.4rem;
+}
+
+.notif-section {
+  margin-bottom: 0.35rem;
+}
+
+.notif-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9e9e9e;
+  margin-bottom: 0.15rem;
+}
+
+.notif-items {
+  padding-left: 0.25rem;
+}
+
+.notif-item {
+  font-size: 0.85rem;
+  color: #e0e0e0;
+  line-height: 1.35;
+}
+
+.notif-item::before {
+  content: "\2022 ";
+  color: #757575;
 }
 
 .action-modal-thumbs {

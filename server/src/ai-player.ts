@@ -7,6 +7,7 @@ import type {
   BaseCardDef,
 } from "@bsg/shared";
 import { getMissionCategory } from "./mission-abilities.js";
+import { getEventTargets } from "./event-abilities.js";
 
 // ============================================================
 // BSG CCG — AI Decision Engine
@@ -353,7 +354,14 @@ function decideChallengeEffects(
     }
 
     if (bestEventIdx >= 0 && bestEventScore > 0) {
-      return { type: "playEventInChallenge", cardIndex: bestEventIdx };
+      const bestCard = player.hand[bestEventIdx];
+      const bestDef = bestCard ? registry.cards[bestCard.defId] : null;
+      let targetId: string | undefined;
+      if (bestDef?.abilityId) {
+        const ctx = state.challenge?.isCylonChallenge ? "cylon-challenge" : "challenge";
+        targetId = pickEventTarget(bestDef, state, playerIndex, registry, ctx);
+      }
+      return { type: "playEventInChallenge", cardIndex: bestEventIdx, targetInstanceId: targetId };
     }
   }
 
@@ -683,6 +691,7 @@ function pickBestCardToPlay(
   const player = state.players[playerIndex];
   let bestScore = -Infinity;
   let bestIndex = -1;
+  let bestTargetId: string | undefined;
 
   for (const action of playActions) {
     if (action.disabled) continue;
@@ -704,17 +713,31 @@ function pickBestCardToPlay(
         score += cat === "one-shot" ? 5 : 8;
       }
       // Events scored by abilityId
-      if (def.type === "event") score += scoreExecutionEvent(def, state, playerIndex);
+      if (def.type === "event") {
+        score += scoreExecutionEvent(def, state, playerIndex);
+        // If event needs a target but none available, skip it
+        if (def.abilityId) {
+          const targets = getEventTargets(def.abilityId, state, playerIndex, "execution");
+          if (targets && targets.length === 0) score = -Infinity;
+        }
+      }
 
       if (score > bestScore) {
         bestScore = score;
         bestIndex = idx;
+        bestTargetId = undefined; // reset for non-events
       }
     }
   }
 
   if (bestIndex >= 0) {
-    return { type: "playCard", cardIndex: bestIndex };
+    const card = player.hand[bestIndex];
+    const def = card ? registry.cards[card.defId] : null;
+    // For events with targets, pick the best target
+    if (def?.type === "event" && def.abilityId) {
+      bestTargetId = pickEventTarget(def, state, playerIndex, registry, "execution");
+    }
+    return { type: "playCard", cardIndex: bestIndex, targetInstanceId: bestTargetId };
   }
   return null;
 }
@@ -898,6 +921,87 @@ function resolveAction(
     default:
       return { type: "pass" };
   }
+}
+
+// --- Event target selection for AI ---
+
+/** Pick the best target for a targeted event. */
+function pickEventTarget(
+  def: CardDef,
+  state: GameState,
+  playerIndex: number,
+  registry: CardRegistry,
+  context: "execution" | "challenge" | "cylon-challenge",
+): string | undefined {
+  if (!def.abilityId) return undefined;
+  const targets = getEventTargets(def.abilityId, state, playerIndex, context);
+  if (!targets || targets.length === 0) return undefined;
+  if (targets.length === 1) return targets[0];
+
+  const player = state.players[playerIndex];
+  const abilityText = def.abilityText?.toLowerCase() ?? "";
+  const isBuff = abilityText.includes("+") && abilityText.includes("power");
+  const isDebuff =
+    abilityText.includes("defeat") ||
+    abilityText.includes("commit") ||
+    abilityText.includes("exhaust");
+
+  // During a challenge, prefer our own challenger/defender for buffs, opponent's for debuffs
+  if (state.challenge) {
+    const ownUnitId =
+      state.challenge.challengerPlayerIndex === playerIndex
+        ? state.challenge.challengerInstanceId
+        : state.challenge.defenderInstanceId;
+    const oppUnitId =
+      state.challenge.challengerPlayerIndex === playerIndex
+        ? state.challenge.defenderInstanceId
+        : state.challenge.challengerInstanceId;
+
+    if (isBuff && ownUnitId && targets.includes(ownUnitId)) return ownUnitId;
+    if (isDebuff && oppUnitId && targets.includes(oppUnitId)) return oppUnitId;
+  }
+
+  // Outside challenge: for buffs, pick our strongest alert unit
+  if (isBuff) {
+    let bestId: string | undefined;
+    let bestPow = -1;
+    for (const id of targets) {
+      for (const stack of player.zones.alert) {
+        if (stack.cards[0]?.instanceId === id) {
+          const d = registry.cards[stack.cards[0].defId];
+          const pow = d?.power ?? 0;
+          if (pow > bestPow) {
+            bestPow = pow;
+            bestId = id;
+          }
+        }
+      }
+    }
+    if (bestId) return bestId;
+  }
+
+  // For debuffs, pick opponent's strongest alert unit
+  if (isDebuff) {
+    const opp = state.players[1 - playerIndex];
+    let bestId: string | undefined;
+    let bestPow = -1;
+    for (const id of targets) {
+      for (const stack of opp.zones.alert) {
+        if (stack.cards[0]?.instanceId === id) {
+          const d = registry.cards[stack.cards[0].defId];
+          const pow = d?.power ?? 0;
+          if (pow > bestPow) {
+            bestPow = pow;
+            bestId = id;
+          }
+        }
+      }
+    }
+    if (bestId) return bestId;
+  }
+
+  // Fallback: first target
+  return targets[0];
 }
 
 // --- Event scoring by abilityId ---

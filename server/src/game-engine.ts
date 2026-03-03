@@ -52,6 +52,7 @@ import {
   resolveEventAbility,
   canPlayEvent,
   isEventPlayableIn,
+  getEventTargets,
   setEventGameHelpers,
   setEventAbilityCardRegistry,
 } from "./event-abilities.js";
@@ -329,7 +330,7 @@ function findUnitInZone(
 function getUnitPower(stack: UnitStack): number {
   const topCard = stack.cards[0];
   if (!topCard) return 0;
-  return getCardDef(topCard.defId).power ?? 0;
+  return (getCardDef(topCard.defId).power ?? 0) + (stack.powerBuff ?? 0);
 }
 
 // ============================================================
@@ -503,14 +504,9 @@ export function getValidActions(
       const stackIndices = player.zones.resourceStacks.map((_: ResourceStack, i: number) => i);
       for (let i = 0; i < player.hand.length; i++) {
         const def = getCardDef(player.hand[i].defId);
-        const resourceLabel = def.resource
-          ? def.resource.charAt(0).toUpperCase() + def.resource.slice(1)
-          : null;
         actions.push({
           type: "playToResource",
-          description: resourceLabel
-            ? `${cardName(def)} — ${resourceLabel}`
-            : `${cardName(def)} — supply only`,
+          description: cardName(def),
           cardDefId: def.id,
           selectableCardIndices: [i],
           selectableStackIndices: stackIndices,
@@ -548,8 +544,6 @@ export function getValidActions(
     // Play a card from hand (affordable = active, unaffordable = disabled)
     for (let i = 0; i < player.hand.length; i++) {
       const def = getCardDef(player.hand[i].defId);
-      const costStr = formatCost(def.cost);
-      const typeLabel = def.type.charAt(0).toUpperCase() + def.type.slice(1);
       const affordable = canAfford(player, def, bases);
       // Targeted events with no valid targets are not playable
       if (
@@ -559,13 +553,21 @@ export function getValidActions(
       ) {
         continue;
       }
-      actions.push({
+      const eventAction: ValidAction = {
         type: "playCard",
-        description: `${cardName(def)} — ${typeLabel}${costStr ? ` (${costStr})` : ""}`,
+        description: cardName(def),
         cardDefId: def.id,
         selectableCardIndices: [i],
         ...(affordable ? {} : { disabled: true }),
-      });
+      };
+      // Attach valid targets for targeted events
+      if (def.type === "event" && def.abilityId) {
+        const targets = getEventTargets(def.abilityId, state, playerIndex, "execution");
+        if (targets) {
+          eventAction.selectableInstanceIds = targets;
+        }
+      }
+      actions.push(eventAction);
     }
 
     // Play ability (base exhaust abilities via registry)
@@ -829,12 +831,20 @@ function getChallengeActions(
         (!def.abilityId || isEventPlayableIn(def.abilityId, challengeContext)) &&
         (!def.abilityId || canPlayEvent(def.abilityId, state, playerIndex, challengeContext))
       ) {
-        actions.push({
+        const challengeEventAction: ValidAction = {
           type: "playEventInChallenge",
           description: `${cardName(def)} — Event${formatCost(def.cost) ? ` (${formatCost(def.cost)})` : ""}`,
           cardDefId: def.id,
           selectableCardIndices: [i],
-        });
+        };
+        // Attach valid targets for targeted events
+        if (def.abilityId) {
+          const targets = getEventTargets(def.abilityId, state, playerIndex, challengeContext);
+          if (targets) {
+            challengeEventAction.selectableInstanceIds = targets;
+          }
+        }
+        actions.push(challengeEventAction);
       }
     }
 
@@ -1320,7 +1330,7 @@ export function applyAction(
       } else if (def.type === "event") {
         // Resolve event effect
         log.push(`${pLabel} plays event ${cardName(def)}.`);
-        resolveEventEffect(s, playerIndex, def, log, undefined);
+        resolveEventEffect(s, playerIndex, def, log, action.targetInstanceId);
         if (!s.skipEventDiscard) {
           player.discard.push(card);
         }
@@ -1947,7 +1957,7 @@ function startReadyPhase(s: GameState, log: string[], bases: Record<string, Base
     player.zones.reserve = remaining;
     player.zones.alert.push(...toReady);
     if (toReady.length > 0) {
-      const names = toReady.map((st) => getCardDef(st.cards[0].defId).title).join(", ");
+      const names = toReady.map((st) => cardName(getCardDef(st.cards[0].defId))).join(", ");
       log.push(`Player ${s.players.indexOf(player) + 1} readies: ${names}.`);
     }
   }
@@ -2451,6 +2461,14 @@ function startCylonPhase(s: GameState, log: string[], bases: Record<string, Base
   s.noChallenges = undefined;
   s.politiciansCantDefend = undefined;
   s.effectImmunity = undefined;
+  // Clear persistent power buffs from execution phase
+  for (const p of s.players) {
+    for (const zone of [p.zones.alert, p.zones.reserve]) {
+      for (const stack of zone) {
+        if (stack.powerBuff) stack.powerBuff = undefined;
+      }
+    }
+  }
 
   const threatLevel = computeCylonThreatLevel(s);
   const effectiveDefense =
@@ -3090,6 +3108,14 @@ function findUnitInAnyZone(
   return null;
 }
 
+function findUnitStackByInstanceId(s: GameState, instanceId: string): UnitStack | null {
+  for (const p of s.players) {
+    const found = findUnitInAnyZone(p, instanceId);
+    if (found) return found.stack;
+  }
+  return null;
+}
+
 function commitUnit(player: PlayerState, instanceId: string): void {
   const found = findUnitInAnyZone(player, instanceId);
   if (found && found.zone === "alert") {
@@ -3182,6 +3208,15 @@ function payResourceCost(
     // Track excess (negative remaining = excess)
     if (remaining < 0) {
       excess[resType as ResourceType] = Math.abs(remaining);
+    }
+  }
+  // Log the cost that was paid
+  if (log) {
+    const parts = (Object.entries(cost) as [ResourceType, number][])
+      .filter(([, amt]) => amt > 0)
+      .map(([res, amt]) => `${amt} ${res}`);
+    if (parts.length > 0) {
+      log.push(`(Paid ${parts.join(", ")})`);
     }
   }
   return excess;
@@ -3486,7 +3521,6 @@ function resolvePendingChoice(
       const targetId = ctx.targetId as string;
       if (targetId) {
         applyPowerBuff(s, targetId, 2, log);
-        log.push("Covering Fire: target unit gets +2 power.");
       }
       break;
     }
@@ -3859,7 +3893,15 @@ function applyPowerBuff(
       log.push(`Defender gets +${amount} power.`);
     }
   }
-  // Outside of challenge, power buffs last until end of phase (simplified: immediate effect)
+  // Outside of challenge, apply persistent buff to the unit stack (lasts until end of execution)
+  if (!s.challenge) {
+    const stack = findUnitStackByInstanceId(s, targetInstanceId);
+    if (stack) {
+      stack.powerBuff = (stack.powerBuff ?? 0) + amount;
+      const topDef = getCardDef(stack.cards[0].defId);
+      log.push(`${cardName(topDef)} gets +${amount} power.`);
+    }
+  }
 }
 
 function resolveEventEffect(

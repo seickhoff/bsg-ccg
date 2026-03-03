@@ -235,6 +235,13 @@ function getUnitDef(stack: UnitStack): CardDef | null {
   return cardRegistry[stack.cards[0].defId] ?? null;
 }
 
+function getTargetUnitDef(state: GameState, instanceId: string): CardDef | null {
+  for (const u of getAllUnits(state)) {
+    if (u.instanceId === instanceId) return getUnitDef(u.stack);
+  }
+  return null;
+}
+
 function hasTrait(def: CardDef, trait: string): boolean {
   return def.traits?.includes(trait as import("@bsg/shared").Trait) ?? false;
 }
@@ -426,6 +433,11 @@ register("covering-fire", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
+    // Log the target
+    const targetDef = getTargetUnitDef(state, targetId);
+    if (targetDef) {
+      log.push(`Covering Fire targets ${helpers.cardName(targetDef)}.`);
+    }
     // Find eligible units to commit (not the target)
     const eligible = player.zones.alert.filter(
       (s) => !s.exhausted && s.cards[0] && s.cards[0].instanceId !== targetId,
@@ -437,7 +449,6 @@ register("covering-fire", {
       commitUnitLocal(player, eligible[0].cards[0].instanceId);
       log.push(`Covering Fire: ${commitDef ? helpers.cardName(commitDef) : "unit"} committed.`);
       helpers.applyPowerBuff(state, targetId, 2, log);
-      log.push("Covering Fire: target unit gets +2 power.");
       return;
     }
     // Multiple options — let player choose

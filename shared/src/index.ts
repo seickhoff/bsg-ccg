@@ -92,6 +92,7 @@ export interface UnitStack {
   cards: CardInstance[]; // top card is cards[0], rest are overlaid
   exhausted: boolean;
   linkedMissions?: CardInstance[]; // Link missions attached to this unit
+  powerBuff?: number; // temporary power modifier from events (cleared end of execution)
 }
 
 export interface PlayerZones {
@@ -251,7 +252,7 @@ export type GameAction =
   | { type: "playToResource"; cardIndex: number; asSupply: boolean; targetStackIndex?: number }
   | { type: "passResource" }
   | { type: "doneReorder" }
-  | { type: "playCard"; cardIndex: number }
+  | { type: "playCard"; cardIndex: number; targetInstanceId?: string }
   | { type: "playAbility"; sourceInstanceId: string; targetInstanceId?: string }
   | { type: "resolveMission"; missionInstanceId: string; unitInstanceIds: string[] }
   | { type: "challenge"; challengerInstanceId: string; opponentIndex: number }

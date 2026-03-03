@@ -12,13 +12,14 @@ import {
   setActionHandler,
   setContinueHandler,
   setResetGameHandler,
+  setPlayerName,
 } from "./renderer.js";
 import { renderDeckBuilder } from "./deck-builder.js";
 import "./style.css";
 
 // ============================================================
 // BSG CCG — Client Entry Point
-// View state: connecting → deckBuilder → playing
+// View state: splash → connecting → deckBuilder → playing
 // ============================================================
 
 const app = document.getElementById("app")!;
@@ -26,6 +27,15 @@ const app = document.getElementById("app")!;
 let ws: WebSocket | null = null;
 let currentRegistry: CardRegistry | null = null;
 let currentRoomId: string | null = sessionStorage.getItem("bsg-roomId");
+let intentionalDisconnect = false;
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function sendMessage(msg: ClientMessage): void {
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -45,7 +55,14 @@ function newGame(): void {
   // Clear old room and start fresh
   sessionStorage.removeItem("bsg-roomId");
   currentRoomId = null;
-  sendMessage({ type: "joinGame", mode: "vs-ai" });
+  // Close WebSocket intentionally — don't auto-reconnect
+  if (ws) {
+    intentionalDisconnect = true;
+    ws.close();
+    ws = null;
+  }
+  // Return to splash
+  renderSplash();
 }
 
 setActionHandler(sendAction);
@@ -65,6 +82,57 @@ function handleDeckSubmit(submission: DeckSubmission): void {
       <p>Starting game...</p>
     </div>
   `;
+}
+
+// --- Splash Screen ---
+
+function renderSplash(): void {
+  const savedName = localStorage.getItem("bsg-player-name") || "";
+
+  app.innerHTML = `
+    <div class="splash">
+      <img src="images/cards/bsgbetback-portrait.jpg" alt="BSG" class="splash-card" />
+      <h1 class="splash-title">BSG CCG</h1>
+      <div class="splash-form">
+        <input
+          type="text"
+          id="splash-name"
+          class="splash-input"
+          placeholder="Enter your callsign"
+          value="${escapeHtml(savedName)}"
+          maxlength="20"
+          autocomplete="off"
+        />
+        <button id="splash-join" class="splash-btn">Launch</button>
+      </div>
+    </div>
+  `;
+
+  const nameInput = document.getElementById("splash-name") as HTMLInputElement;
+  const joinBtn = document.getElementById("splash-join") as HTMLButtonElement;
+
+  function doJoin(): void {
+    const name = nameInput.value.trim() || "Commander";
+    localStorage.setItem("bsg-player-name", name);
+    setPlayerName(name);
+
+    app.innerHTML = `
+      <div class="waiting">
+        <h1>BSG CCG</h1>
+        <div class="spinner"></div>
+        <p>Connecting to server...</p>
+      </div>
+    `;
+    connect();
+  }
+
+  joinBtn.addEventListener("click", doJoin);
+  nameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doJoin();
+  });
+
+  nameInput.focus();
+  if (nameInput.value) nameInput.select();
 }
 
 // --- WebSocket Connection ---
@@ -87,6 +155,10 @@ function connect(): void {
 
   ws.addEventListener("close", () => {
     console.log("Disconnected");
+    if (intentionalDisconnect) {
+      intentionalDisconnect = false;
+      return;
+    }
     app.innerHTML = `
       <div class="waiting">
         <h1>BSG CCG</h1>
@@ -145,11 +217,4 @@ function connect(): void {
 }
 
 // --- Initial render ---
-app.innerHTML = `
-  <div class="waiting">
-    <h1>BSG CCG</h1>
-    <p>Connecting to server...</p>
-  </div>
-`;
-
-connect();
+renderSplash();

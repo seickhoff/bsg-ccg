@@ -209,8 +209,6 @@ function startGame(room: GameRoom): void {
   });
 }
 
-const CONTINUE_TIMEOUT_MS = 30_000;
-
 /** Resolve card definition IDs involved in an AI action (before applying it). */
 function resolveActionCardIds(state: GameState, playerIndex: number, action: GameAction): string[] {
   const player = state.players[playerIndex];
@@ -272,13 +270,7 @@ function canPlayerAct(state: GameState, playerIndex: number): boolean {
 /** Wait for any connected human (player or spectator) to send "continue". */
 function waitForContinue(room: GameRoom): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      room.continueResolve = null;
-      resolve();
-    }, CONTINUE_TIMEOUT_MS);
-
     room.continueResolve = () => {
-      clearTimeout(timer);
       room.continueResolve = null;
       resolve();
     };

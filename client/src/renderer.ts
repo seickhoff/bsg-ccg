@@ -24,6 +24,7 @@ let baseDefs: Record<string, BaseCardDef> = {};
 let onAction: ((action: GameAction) => void) | null = null;
 let onContinue: (() => void) | null = null;
 let onResetGame: (() => void) | null = null;
+let playerName = "YOU";
 let currentLog: string[] = [];
 let currentPlayerIndex = 0;
 let selectMode: {
@@ -49,6 +50,10 @@ export function setContinueHandler(handler: () => void): void {
 
 export function setResetGameHandler(handler: () => void): void {
   onResetGame = handler;
+}
+
+export function setPlayerName(name: string): void {
+  playerName = name || "YOU";
 }
 
 function getCardDef(defId: string): CardDef | BaseCardDef | null {
@@ -115,6 +120,26 @@ function resourceIcon(type: string): string {
   }
 }
 
+function costBadgeHtml(cost: CardDef["cost"]): string {
+  if (!cost) return "";
+  return Object.entries(cost)
+    .map(([res, amt]) => {
+      const letter = resourceIcon(res);
+      return `<span class="resource-inline-badge resource-inline-badge--${res}">${amt}${letter}</span>`;
+    })
+    .join(" ");
+}
+
+function resourceBadgeHtml(defId: string): string {
+  const card = cardDefs[defId];
+  if (!card) return "";
+  const res = card.resource;
+  if (!res)
+    return `<span class="resource-inline-badge resource-inline-badge--supply">supply</span>`;
+  const letter = resourceIcon(res);
+  return `<span class="resource-inline-badge resource-inline-badge--${res}">${letter}</span>`;
+}
+
 // ============================================================
 // Main Render
 // ============================================================
@@ -133,8 +158,95 @@ function formatLogForDisplay(entry: string, yourPlayerIndex: number): string {
   const youLabel = `Player ${yourPlayerIndex + 1}`;
   const oppLabel = `Player ${1 - yourPlayerIndex + 1}`;
   return entry
-    .replace(new RegExp(youLabel, "g"), "You")
+    .replace(new RegExp(youLabel, "g"), playerName)
     .replace(new RegExp(oppLabel, "g"), "Opponent");
+}
+
+const NOISE_LINES = new Set([
+  "Turn ends.",
+  "Cylon phase ends.",
+  "Execution phase ends.",
+  "Execution phase begins.",
+  "Ready phase: reorder unit stacks.",
+  "All players passed. Execution phase ends.",
+  "Execution phase ends (False Peace).",
+  "Extra execution phase begins (False Peace).",
+]);
+
+function formatNotificationHtml(text: string, playerIndex: number): string {
+  const lines = text.split("\n").map((line) => {
+    // Strip timestamp prefix [HH:MM:SS]
+    const stripped = line.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
+    return formatLogForDisplay(stripped, playerIndex);
+  });
+
+  type Section = { label: string; items: string[] };
+  const sections: (string | Section)[] = []; // string = turn header, Section = grouped items
+  let current: Section | null = null;
+
+  function ensureSection(label: string): Section {
+    if (current && current.label === label) return current;
+    current = { label, items: [] };
+    sections.push(current);
+    return current;
+  }
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    // Turn header
+    const turnMatch = line.match(/^--- Turn (\d+) ---$/);
+    if (turnMatch) {
+      sections.push(`Turn ${turnMatch[1]}`);
+      current = null;
+      continue;
+    }
+
+    // Filter noise
+    if (NOISE_LINES.has(line)) continue;
+    // Also filter "Both players ready. Starting Turn X." since we already show turn header
+    if (/^Both players ready\b/.test(line)) continue;
+
+    // Categorize and clean up
+    if (/readies:/.test(line)) {
+      ensureSection("Ready").items.push(line);
+    } else if (
+      /Cylon phase:|Cylon attack|No Cylon attack|Cylon Betrayal|threat level|fleet defense|sacrifices a supply|has no asset|threat.*removed|fleet must jump/i.test(
+        line,
+      )
+    ) {
+      // Clean up redundant "Cylon phase: " prefix and reformat
+      let cleaned = line.replace(/^Cylon phase:\s*/, "");
+      cleaned = cleaned.replace(
+        /threat level is (\d+), fleet defense is (\d+)\./,
+        "Threat $1 | Fleet defense $2",
+      );
+      cleaned = cleaned.replace(/^No Cylon attack this turn\.$/, "No Cylon attack");
+      ensureSection("Cylon Phase").items.push(cleaned);
+    } else if (/All players draw/.test(line)) {
+      ensureSection("Ready").items.push(line);
+    } else {
+      ensureSection("Execution").items.push(line);
+    }
+  }
+
+  // Render HTML
+  const parts: string[] = [];
+  for (const s of sections) {
+    if (typeof s === "string") {
+      parts.push(`<div class="notif-turn-header">${escapeHtml(s)}</div>`);
+    } else {
+      if (s.items.length === 0) continue;
+      parts.push(`<div class="notif-section">`);
+      parts.push(`<div class="notif-section-label">${escapeHtml(s.label)}</div>`);
+      parts.push(`<div class="notif-items">`);
+      for (const item of s.items) {
+        parts.push(`<div class="notif-item">${escapeHtml(item)}</div>`);
+      }
+      parts.push(`</div></div>`);
+    }
+  }
+  return parts.join("");
 }
 
 export function renderGame(
@@ -172,7 +284,7 @@ export function renderGame(
       </div>
 
       <div class="influence-bar">
-        <div class="influence you">You: ${state.you.influence} influence</div>
+        <div class="influence you">${escapeHtml(playerName)}: ${state.you.influence} influence</div>
         <div class="influence opp">Opponent: ${state.opponent.influence} influence</div>
       </div>
 
@@ -187,7 +299,7 @@ export function renderGame(
         <div class="divider"></div>
 
         <div class="your-board">
-          <div class="board-label">YOU (Player ${state.you.playerIndex + 1})</div>
+          <div class="board-label">${escapeHtml(playerName.toUpperCase())} (Player ${state.you.playerIndex + 1})</div>
           ${renderYourZones(state, validActions)}
         </div>
       </div>
@@ -220,6 +332,10 @@ export function renderGame(
   // Attach event listeners
   attachEventListeners(container, validActions, state);
 
+  // Dismiss stale overlays before showing new ones
+  document.querySelector(".action-modal-overlay")?.remove();
+  document.querySelector(".player-action-overlay")?.remove();
+
   // Show action notification modal for AI actions
   if (notification) {
     showActionModal(notification, log, state.you.playerIndex);
@@ -251,23 +367,15 @@ function showActionModal(
     .filter(Boolean)
     .join("");
 
-  // Format notification text lines (replace Player labels, show timestamps)
-  const textLines = notification.text
-    .split("\n")
-    .map((line: string) => {
-      const tsMatch = line.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
-      const ts = tsMatch ? `<span class="log-ts">${tsMatch[1]}</span>` : "";
-      const text = tsMatch ? line.slice(tsMatch[0].length) : line;
-      return `${ts}${escapeHtml(formatLogForDisplay(text, playerIndex))}`;
-    })
-    .join("<br>");
+  // Format notification as structured summary
+  const summaryHtml = formatNotificationHtml(notification.text, playerIndex);
 
   const overlay = document.createElement("div");
   overlay.className = "action-modal-overlay";
   overlay.innerHTML = `
     <div class="action-modal">
       <div class="action-modal-top">
-        <div class="action-modal-text">${textLines}</div>
+        <div class="action-modal-text">${summaryHtml}</div>
         ${thumbsHtml ? `<div class="action-modal-thumbs">${thumbsHtml}</div>` : ""}
         <button class="action-modal-continue">Continue</button>
       </div>
@@ -445,7 +553,7 @@ function showPlayerActionModal(
   dismissPlayerActionModal();
 
   // Contextual header based on game state
-  let headerText = "Your turn — Choose an action";
+  let headerText = `${playerName} — Choose an action`;
   if (state.challenge) {
     const isChallenger = state.challenge.challengerPlayerIndex === state.you.playerIndex;
     if (
@@ -453,22 +561,22 @@ function showPlayerActionModal(
       state.challenge.defenderSelector === "challenger" &&
       isChallenger
     ) {
-      headerText = "Your turn — Sniper: Choose opponent's defender";
+      headerText = `${playerName} — Sniper: Choose opponent's defender`;
     } else if (state.challenge.waitingForDefender && !isChallenger) {
-      headerText = "Your turn — Choose a defender or decline";
+      headerText = `${playerName} — Choose a defender or decline`;
     } else if (state.challenge.step === 2) {
-      headerText = `Your turn — Play effects or pass`;
+      headerText = `${playerName} — Play effects or pass`;
     } else {
       headerText = "Challenge in progress";
     }
   } else if (state.phase === "ready" && state.readyStep === 4) {
-    headerText = "Your turn — Deploy a card to resource area";
+    headerText = `${playerName} — Deploy a card to resource area`;
   } else if (state.phase === "ready" && state.readyStep === 5) {
-    headerText = "Your turn — Reorder unit stacks";
+    headerText = `${playerName} — Reorder unit stacks`;
   } else if (state.phase === "cylon") {
-    headerText = "Your turn — Cylon phase";
+    headerText = `${playerName} — Cylon phase`;
   } else if (state.phase === "execution") {
-    headerText = "Your turn — Execution phase";
+    headerText = `${playerName} — Execution phase`;
   }
 
   // During execution phase, hide disabled actions and group by card type
@@ -516,13 +624,16 @@ function showPlayerActionModal(
       if (label) parts.push(`<div class="action-group-label">${escapeHtml(label)}</div>`);
       for (const { action: a, origIdx } of groups.get(key)!) {
         const thumbHtml = getActionThumbHtml(a);
+        const def = a.cardDefId ? cardDefs[a.cardDefId] : null;
+        const badge = def ? costBadgeHtml(def.cost) : "";
+        const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
         if (thumbHtml) {
           parts.push(
-            `<div class="action-row"><button class="action-modal-btn action-modal-btn--with-thumb" data-action-index="${origIdx}">${escapeHtml(a.description)}</button>${thumbHtml}</div>`,
+            `<div class="action-row"><button class="action-modal-btn action-modal-btn--with-thumb" data-action-index="${origIdx}">${labelHtml}</button>${thumbHtml}</div>`,
           );
         } else {
           parts.push(
-            `<button class="action-modal-btn" data-action-index="${origIdx}">${escapeHtml(a.description)}</button>`,
+            `<button class="action-modal-btn" data-action-index="${origIdx}">${labelHtml}</button>`,
           );
         }
       }
@@ -535,10 +646,14 @@ function showPlayerActionModal(
         const i = validActions.indexOf(a);
         const disabledClass = a.disabled ? " action-modal-btn--disabled" : "";
         const thumbHtml = getActionThumbHtml(a);
+        // Add resource badge for deploy-to-resource actions
+        const badge =
+          a.type === "playToResource" && a.cardDefId ? resourceBadgeHtml(a.cardDefId) : "";
+        const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
         if (thumbHtml) {
-          return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>${thumbHtml}</div>`;
+          return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${labelHtml}</button>${thumbHtml}</div>`;
         }
-        return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${escapeHtml(a.description)}</button>`;
+        return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${labelHtml}</button>`;
       })
       .join("");
   }
@@ -604,14 +719,23 @@ function showPlayerActionModal(
  *  Reuses the same overlay pattern as showPlayerActionModal. */
 function showPromptModal(
   prompt: string,
-  buttons: { label: string; onClick: () => void; cancel?: boolean; cardDefId?: string }[],
+  buttons: {
+    label: string;
+    onClick: () => void;
+    cancel?: boolean;
+    cardDefId?: string;
+    badge?: { resName: string; total: number; letter: string };
+  }[],
 ): void {
   dismissPlayerActionModal();
 
   const buttonsHtml = buttons
     .map((b, i) => {
       const btnClass = `action-modal-btn${b.cancel ? " cancel-modal-btn" : ""}${b.cardDefId ? " action-modal-btn--with-thumb" : ""}`;
-      const btnHtml = `<button class="${btnClass}" data-btn-index="${i}">${escapeHtml(b.label)}</button>`;
+      const badgeHtml = b.badge
+        ? ` <span class="resource-inline-badge resource-inline-badge--${b.badge.resName}">${b.badge.total}${b.badge.letter}</span>`
+        : "";
+      const btnHtml = `<button class="${btnClass}" data-btn-index="${i}">${escapeHtml(b.label)}${badgeHtml}</button>`;
       if (b.cardDefId) {
         const card = cardDefs[b.cardDefId];
         const base = baseDefs[b.cardDefId];
@@ -868,7 +992,14 @@ function renderUnitStack(stack: UnitStack, isYours: boolean): string {
   if (!topCard) return "";
   const def = getCardDef(topCard.defId);
   const name = def ? getCardName(topCard.defId) : topCard.defId;
-  const power = def?.power ?? 0;
+  const basePower = def?.power ?? 0;
+  const buff = stack.powerBuff ?? 0;
+  const totalPower = basePower + buff;
+  const buffClass = buff > 0 ? " power-buffed" : "";
+  const powerDisplay =
+    buff > 0
+      ? `${totalPower} <span class="power-buff-indicator">(+${buff})</span>`
+      : `${totalPower}`;
   const typeClass = getCardTypeClass(topCard.defId);
   const exhaustedClass = stack.exhausted ? "exhausted" : "";
   const stackSize = stack.cards.length;
@@ -878,7 +1009,7 @@ function renderUnitStack(stack: UnitStack, isYours: boolean): string {
     return `
       <div class="unit-card-img ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
         <img src="${image}" alt="${escapeHtml(name)}" class="unit-card-thumb" loading="lazy" />
-        <div class="unit-power-badge">${power}</div>
+        <div class="unit-power-badge${buffClass}">${totalPower}</div>
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
       </div>
     `;
@@ -889,7 +1020,7 @@ function renderUnitStack(stack: UnitStack, isYours: boolean): string {
     <div class="card unit-card ${typeClass} ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
       <div class="card-name">${escapeHtml(name)}</div>
       <div class="card-stats">
-        <span class="card-power">${power}</span>
+        <span class="card-power${buffClass}">${powerDisplay}</span>
         ${cylonThreat > 0 ? `<span class="card-threat">${cylonThreat}</span>` : ""}
       </div>
       ${stackSize > 1 ? `<div class="card-stack-count">x${stackSize}</div>` : ""}
@@ -1065,20 +1196,25 @@ function handleActionClick(
       break;
 
     case "playCard": {
-      // If there's exactly one selectable card, play it directly
-      if (action.selectableCardIndices?.length === 1) {
-        onAction({ type: "playCard", cardIndex: action.selectableCardIndices[0] });
-      } else {
-        enterSelectMode(
+      const cardIdx = action.selectableCardIndices?.[0] ?? 0;
+      const targets = action.selectableInstanceIds;
+      // If server provided targets for this event, prompt for target selection
+      if (targets && targets.length > 0) {
+        const card = state.you.hand[cardIdx];
+        const def = card ? cardDefs[card.defId] : null;
+        const cardLabel = def ? getCardName(card.defId) : "event";
+        enterSelectModeInstance(
           container,
-          "Select a card to play",
-          action.selectableCardIndices ?? [],
-          (idx) => {
-            onAction!({ type: "playCard", cardIndex: idx as number });
+          `Select target for ${cardLabel}`,
+          targets,
+          (targetId) => {
+            onAction!({ type: "playCard", cardIndex: cardIdx, targetInstanceId: targetId });
           },
           validActions,
           state,
         );
+      } else {
+        onAction({ type: "playCard", cardIndex: cardIdx });
       }
       break;
     }
@@ -1100,7 +1236,7 @@ function handleActionClick(
         } else if (hasResource) {
           onAction!({ type: "playToResource", cardIndex: idx, asSupply: false });
         } else if (stackIndices.length > 0) {
-          promptSupplyChoice(idx, stackIndices, state, validActions);
+          promptSupplyChoice(idx, stackIndices, state, validActions, container);
         }
         break;
       }
@@ -1125,7 +1261,7 @@ function handleActionClick(
             } else if (hasResource) {
               onAction!({ type: "playToResource", cardIndex: idx, asSupply: false });
             } else if (stackIndices.length > 0) {
-              promptSupplyChoice(idx, stackIndices, state, validActions);
+              promptSupplyChoice(idx, stackIndices, state, validActions, container);
             }
           });
         }
@@ -1257,37 +1393,63 @@ function handleActionClick(
 
     case "playEventInChallenge": {
       const indices = action.selectableCardIndices ?? [];
+      const targets = action.selectableInstanceIds;
       if (indices.length === 1) {
-        // Check if event needs a target
-        const card = state.you.hand[indices[0]];
-        if (card) {
-          const def = cardDefs[card.defId];
-          if (def?.abilityText.includes("Target") || def?.abilityText.includes("target")) {
-            const targetUnits = getAllAlertUnitIds(state);
-            enterSelectModeInstance(
-              container,
-              "Select target",
-              targetUnits,
-              (targetId) => {
-                onAction!({
-                  type: "playEventInChallenge",
-                  cardIndex: indices[0],
-                  targetInstanceId: targetId,
-                });
-              },
-              validActions,
-              state,
-            );
-          } else {
-            onAction({ type: "playEventInChallenge", cardIndex: indices[0] });
-          }
+        const cardIdx = indices[0];
+        // If server provided targets, prompt for target selection
+        if (targets && targets.length > 0) {
+          const card = state.you.hand[cardIdx];
+          const cardLabel = card ? getCardName(card.defId) : "event";
+          enterSelectModeInstance(
+            container,
+            `Select target for ${cardLabel}`,
+            targets,
+            (targetId) => {
+              onAction!({
+                type: "playEventInChallenge",
+                cardIndex: cardIdx,
+                targetInstanceId: targetId,
+              });
+            },
+            validActions,
+            state,
+          );
+        } else {
+          onAction({ type: "playEventInChallenge", cardIndex: cardIdx });
         }
       } else {
+        // Multiple events selectable — pick card first, then check for targets
         enterSelectMode(
           container,
           "Select event to play",
           indices,
           (idx) => {
+            // Find the matching action to get its server-provided targets
+            const matchingAction = validActions.find(
+              (a) =>
+                a.type === "playEventInChallenge" &&
+                a.selectableCardIndices?.includes(idx as number),
+            );
+            const eventTargets = matchingAction?.selectableInstanceIds;
+            if (eventTargets && eventTargets.length > 0) {
+              const card = state.you.hand[idx];
+              const cardLabel = card ? getCardName(card.defId) : "event";
+              enterSelectModeInstance(
+                container,
+                `Select target for ${cardLabel}`,
+                eventTargets,
+                (targetId) => {
+                  onAction!({
+                    type: "playEventInChallenge",
+                    cardIndex: idx as number,
+                    targetInstanceId: targetId,
+                  });
+                },
+                validActions,
+                state,
+              );
+              return;
+            }
             onAction!({ type: "playEventInChallenge", cardIndex: idx as number });
           },
           validActions,
@@ -1514,10 +1676,13 @@ function showResourceDeployChoice(
   const stackButtons = stackIndices.map((si) => {
     const stack = state.you.zones.resourceStacks[si];
     const stackName = getCardName(stack.topCard.defId);
-    const supplyCount = stack.supplyCards.length;
+    const resName = getResourceName(stack.topCard.defId);
+    const totalResource = 1 + stack.supplyCards.length;
+    const resLetter = resName ? resName.charAt(0).toUpperCase() : "?";
     return {
-      label: `Supply to ${stackName} (${supplyCount} supply)`,
+      label: `Supply to ${stackName}`,
       cardDefId: stack.topCard.defId,
+      badge: { resName, total: totalResource, letter: resLetter },
       onClick: () => {
         onAction!({ type: "playToResource", cardIndex, asSupply: true, targetStackIndex: si });
       },
@@ -1548,6 +1713,7 @@ function promptSupplyChoice(
   stackIndices: number[],
   state: PlayerGameView,
   validActions: ValidAction[],
+  container: HTMLElement,
 ): void {
   const card = state.you.hand[cardIndex];
   const name = card ? getCardName(card.defId) : "card";
@@ -1555,10 +1721,13 @@ function promptSupplyChoice(
   const stackButtons = stackIndices.map((si) => {
     const stack = state.you.zones.resourceStacks[si];
     const stackName = getCardName(stack.topCard.defId);
-    const supplyCount = stack.supplyCards.length;
+    const resName = getResourceName(stack.topCard.defId);
+    const totalResource = 1 + stack.supplyCards.length;
+    const resLetter = resName ? resName.charAt(0).toUpperCase() : "?";
     return {
-      label: `Supply to ${stackName} (${supplyCount} supply)`,
+      label: `Supply to ${stackName}`,
       cardDefId: stack.topCard.defId,
+      badge: { resName, total: totalResource, letter: resLetter },
       onClick: () => {
         onAction!({ type: "playToResource", cardIndex, asSupply: true, targetStackIndex: si });
       },
@@ -1571,7 +1740,7 @@ function promptSupplyChoice(
       label: "Cancel",
       cancel: true,
       onClick: () => {
-        restoreActionsBar(document.getElementById("game-container")!, validActions, state);
+        restoreActionsBar(container, validActions, state);
       },
     },
   ]);
