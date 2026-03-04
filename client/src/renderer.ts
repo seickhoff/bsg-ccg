@@ -1334,19 +1334,50 @@ function handleActionClick(
 
     case "resolveMission": {
       const missions = action.selectableInstanceIds ?? [];
-      if (missions.length === 1) {
-        onAction({ type: "resolveMission", missionInstanceId: missions[0], unitInstanceIds: [] });
-      } else {
+      const missionId = missions[0];
+      const mTargets = (action as any).missionTargetIds as string[] | undefined;
+      const lTargets = (action as any).linkTargetIds as string[] | undefined;
+
+      // Helper to send the final action with all selected targets
+      const sendResolve = (resolveTarget?: string, linkTarget?: string) => {
+        onAction!({
+          type: "resolveMission",
+          missionInstanceId: missionId,
+          unitInstanceIds: [],
+          targetInstanceId: resolveTarget,
+          linkTargetInstanceId: linkTarget,
+        } as any);
+      };
+
+      // Helper to handle link target selection (or skip if not needed)
+      const handleLinkStep = (resolveTarget?: string) => {
+        if (lTargets && lTargets.length > 0) {
+          enterSelectModeInstance(
+            container,
+            "Select unit to attach mission to",
+            lTargets,
+            (linkId) => sendResolve(resolveTarget, linkId),
+            validActions,
+            state,
+          );
+        } else {
+          sendResolve(resolveTarget);
+        }
+      };
+
+      if (mTargets && mTargets.length > 0) {
+        // Step 1: select resolve target, then optionally link target
         enterSelectModeInstance(
           container,
-          "Select a mission to resolve",
-          missions,
-          (id) => {
-            onAction!({ type: "resolveMission", missionInstanceId: id, unitInstanceIds: [] });
-          },
+          `Select target for ${action.description.split(":")[0]}`,
+          mTargets,
+          (targetId) => handleLinkStep(targetId),
           validActions,
           state,
         );
+      } else {
+        // No resolve target needed — possibly just link target
+        handleLinkStep();
       }
       break;
     }

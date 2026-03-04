@@ -228,7 +228,7 @@ function hasOtherAlertPersonnel(player: PlayerState, excludeInstanceId: string):
 }
 
 /** Move a unit from reserve to alert */
-function readyUnit(player: PlayerState, instanceId: string): boolean {
+export function readyUnit(player: PlayerState, instanceId: string): boolean {
   const found = findUnitInAnyZone(player, instanceId);
   if (found && found.zone === "reserve") {
     player.zones.reserve.splice(found.index, 1);
@@ -1568,18 +1568,30 @@ register("tyrol-etb", {
   trigger: "onEnterPlay",
   resolve(state, playerIndex, _sid, _tid, log) {
     const player = state.players[playerIndex];
-    // Ready first ship in reserve
+    // Collect all face-up ships in reserve
+    const ships: import("@bsg/shared").CardInstance[] = [];
     for (const stack of player.zones.reserve) {
       const tc = stack.cards[0];
       if (tc?.faceUp) {
         const def = getCardDef(tc.defId);
-        if (def?.type === "ship") {
-          readyUnit(player, tc.instanceId);
-          log.push(`Galen Tyrol: Readied ${cardName(def)}.`);
-          return;
-        }
+        if (def?.type === "ship") ships.push(tc);
       }
     }
+    if (ships.length === 0) return;
+    if (ships.length === 1) {
+      // Auto-ready the only ship
+      readyUnit(player, ships[0].instanceId);
+      const def = getCardDef(ships[0].defId)!;
+      log.push(`Galen Tyrol: Readied ${cardName(def)}.`);
+      return;
+    }
+    // Multiple ships — let player choose
+    log.push("Galen Tyrol: Choose a ship to ready.");
+    state.pendingChoice = {
+      type: "tyrol-etb-choice",
+      playerIndex,
+      cards: ships,
+    };
   },
 });
 
@@ -2414,7 +2426,10 @@ export function fireOnDefeat(
   handler.resolve?.(state, playerIndex, instanceId, undefined, log);
 }
 
-/** Fire onChallengeEnd triggers. */
+/** Fire onChallengeEnd triggers.
+ *  Mandatory triggers (sacrifice) fire immediately.
+ *  Optional triggers (Gaeta/Helo ready) set pendingChoice for player decision.
+ *  Tigh XO commit+exhaust is handled in resolveChallenge cleanup. */
 export function fireOnChallengeEnd(
   state: GameState,
   challenge: ChallengeState,
@@ -2428,60 +2443,44 @@ export function fireOnChallengeEnd(
     if (cDef?.abilityId) {
       const handler = registry.get(cDef.abilityId);
       if (handler?.trigger === "onChallengeEnd") {
-        // Gaeta Senior Officer: ready self after challenging (once per turn)
-        if (cDef.abilityId === "gaeta-ready") {
-          const used = attackerPlayer.oncePerTurnUsed?.[cDef.abilityId];
-          if (!used && challengerFound.zone === "reserve") {
-            // Challenger was committed — ready it
-            readyUnit(attackerPlayer, challenge.challengerInstanceId);
-            if (!attackerPlayer.oncePerTurnUsed) attackerPlayer.oncePerTurnUsed = {};
-            attackerPlayer.oncePerTurnUsed[cDef.abilityId] = true;
-            log.push("Mr. Gaeta readies after challenging.");
-          }
-        }
-        // Helo Toaster-Lover: ready self if alert Boomer (once per turn)
-        if (cDef.abilityId === "helo-toaster") {
-          const used = attackerPlayer.oncePerTurnUsed?.[cDef.abilityId];
-          if (
-            !used &&
-            hasAlertUnitWithTitle(attackerPlayer, "Boomer") &&
-            challengerFound.zone === "reserve"
-          ) {
-            readyUnit(attackerPlayer, challenge.challengerInstanceId);
-            if (!attackerPlayer.oncePerTurnUsed) attackerPlayer.oncePerTurnUsed = {};
-            attackerPlayer.oncePerTurnUsed[cDef.abilityId] = true;
-            log.push("Helo readies after challenging (Boomer in play).");
-          }
-        }
-        // Centurion Tracker: sacrifice self after challenging
+        // Mandatory: Centurion Tracker — sacrifice self after challenging
         if (cDef.abilityId === "centurion-tracker") {
           defeatUnitLocal(attackerPlayer, challenge.challengerInstanceId, log);
           log.push("Centurion Tracker is sacrificed after challenging.");
         }
-        // Skirmishing Raider: sacrifice self when challenge ends
+        // Mandatory: Skirmishing Raider — sacrifice self when challenge ends
         if (cDef.abilityId === "skirmishing-raider-sacrifice") {
           defeatUnitLocal(attackerPlayer, challenge.challengerInstanceId, log);
           log.push("Skirmishing Raider is sacrificed after challenging.");
         }
-      }
-    }
-  }
-
-  // Saul Tigh XO: commit+exhaust at end of challenge (was readied when challenged)
-  const defenderPlayer = state.players[challenge.defenderPlayerIndex];
-  for (const zone of [defenderPlayer.zones.alert, defenderPlayer.zones.reserve]) {
-    for (const stack of zone) {
-      const tc = stack.cards[0];
-      if (tc?.faceUp) {
-        const def = getCardDef(tc.defId);
-        if (def?.abilityId === "tigh-xo") {
-          // If Tigh was readied during this challenge, commit+exhaust him
-          // We track this via a simple heuristic: if he's in alert and not exhausted
-          if (findUnitInAnyZone(defenderPlayer, tc.instanceId)?.zone === "alert") {
-            commitUnit(defenderPlayer, tc.instanceId);
-            const found2 = findUnitInAnyZone(defenderPlayer, tc.instanceId);
-            if (found2) found2.stack.exhausted = true;
-            log.push("Saul Tigh commits and exhausts after being challenged.");
+        // Optional: Gaeta Senior Officer — "you may ready it" (once per turn)
+        if (cDef.abilityId === "gaeta-ready" && challengerFound.zone === "reserve") {
+          const used = attackerPlayer.oncePerTurnUsed?.[cDef.abilityId];
+          if (!used) {
+            state.pendingChoice = {
+              type: "gaeta-ready-choice",
+              playerIndex: challenge.challengerPlayerIndex,
+              cards: [],
+              context: { unitId: challenge.challengerInstanceId },
+            };
+            return; // wait for player choice
+          }
+        }
+        // Optional: Helo Toaster-Lover — "you can ready" if alert Boomer (once per turn)
+        if (
+          cDef.abilityId === "helo-toaster" &&
+          challengerFound.zone === "reserve" &&
+          hasAlertUnitWithTitle(attackerPlayer, "Boomer")
+        ) {
+          const used = attackerPlayer.oncePerTurnUsed?.[cDef.abilityId];
+          if (!used) {
+            state.pendingChoice = {
+              type: "helo-toaster-choice",
+              playerIndex: challenge.challengerPlayerIndex,
+              cards: [],
+              context: { unitId: challenge.challengerInstanceId },
+            };
+            return; // wait for player choice
           }
         }
       }
@@ -2510,7 +2509,7 @@ export function fireOnMysticReveal(state: GameState, playerIndex: number, value:
   return adjusted;
 }
 
-/** Fire onShipEnterPlay — for Galen Tyrol The Chief. */
+/** Fire onShipEnterPlay — for Galen Tyrol The Chief (optional). */
 export function fireOnShipEnterPlay(
   state: GameState,
   playerIndex: number,
@@ -2523,11 +2522,15 @@ export function fireOnShipEnterPlay(
     if (tc?.faceUp && !stack.exhausted) {
       const def = getCardDef(tc.defId);
       if (def?.abilityId === "tyrol-chief") {
-        // Auto-commit Tyrol to ready the ship
-        commitUnit(player, tc.instanceId);
-        readyUnit(player, shipInstanceId);
-        log.push(`Galen Tyrol commits to ready entering ship.`);
-        return; // Only one trigger
+        // Offer player the choice to commit Tyrol to ready the ship
+        log.push("Galen Tyrol: You may commit to ready the entering ship.");
+        state.pendingChoice = {
+          type: "tyrol-chief-choice",
+          playerIndex,
+          cards: [],
+          context: { tyrolInstanceId: tc.instanceId, shipInstanceId },
+        };
+        return;
       }
     }
   }
@@ -2671,6 +2674,48 @@ export function getEffectiveKeywords(
   }
 
   return keywords;
+}
+
+// --- Exported helpers for game-engine re-entrant challenge flow ---
+
+/** Find an alert, face-up, non-exhausted Starbuck Risk Taker for the given player. */
+export function findAlertStarbuckReroll(
+  player: PlayerState,
+): import("@bsg/shared").CardInstance | null {
+  for (const stack of player.zones.alert) {
+    const tc = stack.cards[0];
+    if (tc?.faceUp && !stack.exhausted) {
+      const def = getCardDef(tc.defId);
+      if (def?.abilityId === "starbuck-reroll") return tc;
+    }
+  }
+  return null;
+}
+
+/** Find an alert, face-up, non-exhausted Number Six Seductress for the given player. */
+export function findAlertSixSeductress(
+  player: PlayerState,
+): import("@bsg/shared").CardInstance | null {
+  for (const stack of player.zones.alert) {
+    const tc = stack.cards[0];
+    if (tc?.faceUp && !stack.exhausted) {
+      const def = getCardDef(tc.defId);
+      if (def?.abilityId === "six-seductress") return tc;
+    }
+  }
+  return null;
+}
+
+/** Find a reserve, face-up, non-exhausted Saul Tigh XO for the given player. */
+export function findReserveTighXO(player: PlayerState): import("@bsg/shared").CardInstance | null {
+  for (const stack of player.zones.reserve) {
+    const tc = stack.cards[0];
+    if (tc?.faceUp && !stack.exhausted) {
+      const def = getCardDef(tc.defId);
+      if (def?.abilityId === "tigh-xo") return tc;
+    }
+  }
+  return null;
 }
 
 // --- Internal helpers ---

@@ -62,6 +62,8 @@ interface GameRoom {
   aiProcessing: boolean;
   pendingNotification: ActionNotification | null;
   continueResolve: (() => void) | null;
+  /** Incremented on each game start/reset so stale processAITurns loops can detect they're outdated. */
+  gameGeneration: number;
 }
 
 const ROOM_CLEANUP_MS = 5 * 60 * 1000;
@@ -100,6 +102,7 @@ function createRoom(mode: GameMode): GameRoom {
     aiProcessing: false,
     pendingNotification: null,
     continueResolve: null,
+    gameGeneration: 0,
   };
   rooms.push(room);
   roomsById.set(room.id, room);
@@ -108,6 +111,10 @@ function createRoom(mode: GameMode): GameRoom {
 }
 
 function destroyRoom(room: GameRoom): void {
+  // Bump generation and resolve any pending AI await so the loop exits cleanly
+  room.gameGeneration++;
+  if (room.continueResolve) room.continueResolve();
+
   const idx = rooms.indexOf(room);
   if (idx !== -1) rooms.splice(idx, 1);
   roomsById.delete(room.id);
@@ -195,17 +202,22 @@ function startGame(room: GameRoom): void {
   const base0 = registry.bases[deck0.baseId];
   const base1 = registry.bases[deck1.baseId];
 
+  room.gameGeneration++;
   room.gameState = createGame(base0, [...deck0.deckCardIds], base1, [...deck1.deckCardIds]);
 
   console.log(`Game started in ${room.id} (${room.mode})`);
   broadcastGameState(room);
 
   // Process any AI turns (setup phase mulligan, etc.)
+  const gen = room.gameGeneration;
   processAITurns(room).catch((err) => {
     console.error(`AI processing error in ${room.id}:`, err);
-    room.aiProcessing = false;
-    room.pendingNotification = null;
-    broadcastGameState(room);
+    // Only recover if this is still the active game — stale loops should just exit
+    if (room.gameGeneration === gen) {
+      room.aiProcessing = false;
+      room.pendingNotification = null;
+      broadcastGameState(room);
+    }
   });
 }
 
@@ -260,6 +272,7 @@ function defIdFromInstanceId(state: GameState, instanceId: string): string[] {
 /** Check if the given player index can act right now. */
 function canPlayerAct(state: GameState, playerIndex: number): boolean {
   if (state.phase === "setup") return true; // simultaneous mulligan
+  if (state.pendingChoice?.playerIndex === playerIndex) return true;
   if (state.activePlayerIndex === playerIndex) return true;
   if (state.challenge?.waitingForDefender && state.challenge.defenderPlayerIndex === playerIndex)
     return true;
@@ -288,16 +301,20 @@ function hasHumanViewer(room: GameRoom): boolean {
 
 /** Run AI turns until a human player needs to act or game is over.
  *  Broadcasts state with a notification modal after each action,
- *  waiting for a human to click "Continue" before proceeding. */
+ *  waiting for a human to click "Continue" before proceeding.
+ *
+ *  Captures gameGeneration at start and exits cleanly if the room
+ *  is reset or destroyed while this loop is awaiting. */
 async function processAITurns(room: GameRoom): Promise<void> {
   if (!room.gameState) return;
 
+  const gen = room.gameGeneration;
   room.aiProcessing = true;
 
   let iterations = 0;
   const MAX_ITERATIONS = 200; // higher for ai-vs-ai which runs full games
 
-  while (room.gameState.phase !== "gameOver" && iterations < MAX_ITERATIONS) {
+  while (room.gameState && room.gameState.phase !== "gameOver" && iterations < MAX_ITERATIONS) {
     // Find an AI player that can act
     let aiIdx = -1;
     let aiActions: ValidAction[] = [];
@@ -341,10 +358,16 @@ async function processAITurns(room: GameRoom): Promise<void> {
       broadcastGameState(room);
       room.pendingNotification = null;
       await waitForContinue(room);
+
+      // After await: check if room was reset/destroyed while we were waiting
+      if (room.gameGeneration !== gen) return;
     } else {
       broadcastGameState(room);
     }
   }
+
+  // Only clean up if we're still the active generation
+  if (room.gameGeneration !== gen) return;
 
   if (iterations >= MAX_ITERATIONS) {
     console.warn(`AI hit max iterations in ${room.id}`);
@@ -564,12 +587,15 @@ wss.on("connection", (ws) => {
           sendToPlayer(ws, { type: "error", message: "Not in a room" });
           return;
         }
+        // Bump generation first so any in-flight processAITurns detects staleness
+        room.gameGeneration++;
+        // Resolve pending continueResolve so the old AI loop unblocks and can exit
+        if (room.continueResolve) room.continueResolve();
         room.gameState = null;
         room.players[0].deck = null;
         room.players[1].deck = null;
         room.aiProcessing = false;
         room.pendingNotification = null;
-        room.continueResolve = null;
         console.log(`Game reset in ${room.id}`);
 
         if (room.mode === "ai-vs-ai") {
@@ -606,11 +632,14 @@ wss.on("connection", (ws) => {
           broadcastGameState(room);
 
           // Process AI turns after human acts
+          const gen = room.gameGeneration;
           processAITurns(room).catch((err) => {
             console.error(`AI processing error in ${room.id}:`, err);
-            room.aiProcessing = false;
-            room.pendingNotification = null;
-            broadcastGameState(room);
+            if (room.gameGeneration === gen) {
+              room.aiProcessing = false;
+              room.pendingNotification = null;
+              broadcastGameState(room);
+            }
           });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : "Unknown error";

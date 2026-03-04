@@ -538,6 +538,165 @@ function decidePendingChoice(
       return { type: "makeChoice", choiceIndex: mid };
     }
 
+    // --- Mission: Pulling Rank — pick opponent's highest-power personnel ---
+    case "pulling-rank-1":
+    case "pulling-rank-2": {
+      const oppIdx = 1 - playerIndex;
+      let bestIdx = 0;
+      let bestScore = -1;
+      for (let i = 0; i < choiceActions.length; i++) {
+        if (!choiceActions[i].cardDefId) continue;
+        const card = state.pendingChoice?.cards[i];
+        const isOpp = card && isOpponentUnit(state, oppIdx, card.instanceId);
+        const def = registry.cards[choiceActions[i].cardDefId!];
+        const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+      return { type: "makeChoice", choiceIndex: bestIdx };
+    }
+
+    // --- Mission: Assassination — pick lowest-power own as source, highest-power opponent as target ---
+    case "assassination-source": {
+      // Pick lowest-power own personnel
+      let bestIdx = 0;
+      let bestPow = Infinity;
+      for (let i = 0; i < choiceActions.length; i++) {
+        const defId = choiceActions[i].cardDefId;
+        if (defId) {
+          const def = registry.cards[defId];
+          const pow = def?.power ?? 0;
+          if (pow < bestPow) {
+            bestPow = pow;
+            bestIdx = i;
+          }
+        }
+      }
+      return { type: "makeChoice", choiceIndex: bestIdx };
+    }
+    case "assassination-target": {
+      // Pick highest-power opponent personnel
+      const oppIdx = 1 - playerIndex;
+      let bestIdx = 0;
+      let bestScore = -1;
+      for (let i = 0; i < choiceActions.length; i++) {
+        const card = state.pendingChoice?.cards[i];
+        const isOpp = card && isOpponentUnit(state, oppIdx, card.instanceId);
+        const defId = choiceActions[i].cardDefId;
+        const def = defId ? registry.cards[defId] : null;
+        const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+      return { type: "makeChoice", choiceIndex: bestIdx };
+    }
+
+    // --- Mission: Arrow of Apollo — pick highest mystic value ---
+    case "arrow-of-apollo-search": {
+      let bestIdx = 0;
+      let bestMystic = -1;
+      for (let i = 0; i < choiceActions.length; i++) {
+        const defId = choiceActions[i].cardDefId;
+        if (defId) {
+          const def = registry.cards[defId];
+          const mystic = def?.mysticValue ?? 0;
+          if (mystic > bestMystic) {
+            bestMystic = mystic;
+            bestIdx = i;
+          }
+        }
+      }
+      return { type: "makeChoice", choiceIndex: bestIdx };
+    }
+
+    // --- Mission: Life Has A Melody — pick highest mystic Cylon card ---
+    case "life-has-a-melody-search": {
+      let bestIdx = 0;
+      let bestMystic = -1;
+      for (let i = 0; i < choiceActions.length; i++) {
+        const defId = choiceActions[i].cardDefId;
+        if (defId) {
+          const def = registry.cards[defId];
+          const mystic = def?.mysticValue ?? 0;
+          if (mystic > bestMystic) {
+            bestMystic = mystic;
+            bestIdx = i;
+          }
+        }
+      }
+      return { type: "makeChoice", choiceIndex: bestIdx };
+    }
+
+    // --- Mission: Hunt For Tylium — pick lowest mystic value from hand ---
+    case "hunt-for-tylium-hand": {
+      let bestIdx = 0;
+      let bestMystic = Infinity;
+      for (let i = 0; i < choiceActions.length; i++) {
+        const defId = choiceActions[i].cardDefId;
+        if (defId) {
+          const def = registry.cards[defId];
+          const mystic = def?.mysticValue ?? 0;
+          if (mystic < bestMystic) {
+            bestMystic = mystic;
+            bestIdx = i;
+          }
+        }
+      }
+      return { type: "makeChoice", choiceIndex: bestIdx };
+    }
+
+    // --- Mission: Meet The New Boss — AI picks first valid option ---
+    case "meet-new-boss-hand":
+    case "meet-new-boss-field": {
+      return { type: "makeChoice", choiceIndex: 0 };
+    }
+
+    // --- Mission: Article 23 — sacrifice cheapest personnel, or lose 2 if none ---
+    case "article-23": {
+      // If last option is "Lose 2 influence" and there are personnel to sacrifice,
+      // sacrifice cheapest. Otherwise lose 2.
+      if (choiceActions.length <= 1) {
+        // Only "Lose 2 influence" option
+        return { type: "makeChoice", choiceIndex: 0 };
+      }
+      let cheapestIdx = 0;
+      let cheapestPow = Infinity;
+      for (let i = 0; i < choiceActions.length - 1; i++) {
+        const defId = choiceActions[i].cardDefId;
+        if (defId) {
+          const def = registry.cards[defId];
+          const pow = def?.power ?? 0;
+          if (pow < cheapestPow) {
+            cheapestPow = pow;
+            cheapestIdx = i;
+          }
+        }
+      }
+      return { type: "makeChoice", choiceIndex: cheapestIdx };
+    }
+
+    // --- Mission: Prophetic Visions — put lower mystic on top (worse for opponent) ---
+    case "prophetic-visions-arrange": {
+      let worstIdx = 0;
+      let worstMystic = Infinity;
+      for (let i = 0; i < choiceActions.length; i++) {
+        const defId = choiceActions[i].cardDefId;
+        if (defId) {
+          const def = registry.cards[defId];
+          const mystic = def?.mysticValue ?? 0;
+          if (mystic < worstMystic) {
+            worstMystic = mystic;
+            worstIdx = i;
+          }
+        }
+      }
+      return { type: "makeChoice", choiceIndex: worstIdx };
+    }
+
     default: {
       // Fallback: pick first option
       return { type: "makeChoice", choiceIndex: 0 };

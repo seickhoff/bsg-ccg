@@ -137,7 +137,7 @@ export interface ChallengeState {
   isCylonChallenge: boolean; // true if this is a Cylon phase challenge
   cylonThreatIndex?: number; // index into cylonThreats array
   cylonPlayerIndex?: number; // player acting as "Cylon player"
-  pendingTrigger?: { abilityId: string; playerIndex: number }; // Agro Ship/Flattop pre-defender trigger
+  pendingTrigger?: { abilityId: string; playerIndex: number; sourceInstanceId?: string }; // Agro Ship/Flattop/Tigh XO pre-defender trigger
   triggerReadiedInstanceId?: string; // unit readied by trigger, commit at challenge end
   losesExhaustedNotDefeated?: boolean; // Dr. Cottle Surgeon: loser exhausted instead of defeated
   doubleMysticReveal?: number; // playerIndex who reveals double mystic (Elosha Priestess / Channel Lords)
@@ -149,6 +149,13 @@ export interface ChallengeState {
   defeatAtChallengeEnd?: string; // Unwelcome Visitor: instanceId to defeat after challenge
   defenderImmune?: boolean; // Discourage Pursuit: defender not defeated
   defeatChallengerOnWin?: boolean; // Discourage Pursuit: challenger defeated if wins
+  // Re-entrant resolveChallenge checkpoints
+  resolutionComplete?: boolean; // winner/loser already determined
+  sixSeductressChecked?: boolean; // Six Seductress prompt already offered
+  atkMysticRerollChecked?: boolean; // Starbuck reroll already offered for attacker
+  defMysticRerollChecked?: boolean; // Starbuck reroll already offered for defender
+  tighXoReadied?: string; // instanceId of Tigh readied by challenge trigger
+  challengeEndTriggersChecked?: boolean; // optional end-of-challenge triggers already resolved
 }
 
 export interface CylonThreatCard {
@@ -254,7 +261,13 @@ export type GameAction =
   | { type: "doneReorder" }
   | { type: "playCard"; cardIndex: number; targetInstanceId?: string }
   | { type: "playAbility"; sourceInstanceId: string; targetInstanceId?: string }
-  | { type: "resolveMission"; missionInstanceId: string; unitInstanceIds: string[] }
+  | {
+      type: "resolveMission";
+      missionInstanceId: string;
+      unitInstanceIds: string[];
+      targetInstanceId?: string;
+      linkTargetInstanceId?: string;
+    }
   | { type: "challenge"; challengerInstanceId: string; opponentIndex: number }
   | { type: "defend"; defenderInstanceId: string | null }
   | { type: "challengePass" }
@@ -282,6 +295,8 @@ export interface ValidAction {
   selectableStackIndices?: number[]; // resource stack indices
   selectableThreatIndices?: number[]; // cylon threat indices
   targetInstanceId?: string; // pre-selected target for ability actions
+  missionTargetIds?: string[]; // valid resolve-time targets for missions
+  linkTargetIds?: string[]; // valid link attachment targets for missions
   abilityIndex?: number; // for dual-ability cards (e.g. Baltar VP: 0 or 1)
 }
 

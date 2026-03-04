@@ -113,6 +113,7 @@ export interface MissionAbilityHandler {
     loserStack: UnitStack,
     powerDiff: number,
     log: string[],
+    isDefender: boolean,
   ): void;
   onDraw?(state: GameState, playerIndex: number, drawCount: number, log: string[]): void;
 
@@ -337,14 +338,30 @@ function shuffle(arr: CardInstance[]): void {
 // BSG1-056 Accused — Target personnel gains Cylon trait until end of turn
 register("accused", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    // AI picks opponent's best non-Cylon personnel
-    const opIdx = 1 - playerIndex;
-    const target = pickBestOpponentUnit(
-      state,
-      playerIndex,
-      (d) => d.type === "personnel" && !d.traits?.includes("Cylon" as Trait),
-    );
+  getResolveTargets(state, _playerIndex) {
+    const targets: string[] = [];
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (def?.type === "personnel" && !def.traits?.includes("Cylon" as Trait)) {
+            targets.push(top.instanceId);
+          }
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const target =
+      targetId ??
+      pickBestOpponentUnit(
+        state,
+        playerIndex,
+        (d) => d.type === "personnel" && !d.traits?.includes("Cylon" as Trait),
+      );
     if (target) {
       const owner = findUnitOwner(state, target);
       if (owner) {
@@ -391,56 +408,48 @@ register("alert-five", {
 // BSG1-058 Arrow Of Apollo — Search deck for any card, put in hand
 register("arrow-of-apollo", {
   category: "one-shot",
+  canResolve(state, playerIndex) {
+    return state.players[playerIndex].deck.length > 0;
+  },
   onResolve(state, playerIndex, _targetId, log) {
     const player = state.players[playerIndex];
     if (player.deck.length === 0) {
       log.push("Arrow Of Apollo: deck empty.");
       return;
     }
-    // AI picks highest mystic value card
-    let bestIdx = 0;
-    let bestMystic = 0;
-    for (let i = 0; i < player.deck.length; i++) {
-      const def = getCardDef(player.deck[i].defId);
-      if ((def?.mysticValue ?? 0) > bestMystic) {
-        bestMystic = def?.mysticValue ?? 0;
-        bestIdx = i;
-      }
-    }
-    const [card] = player.deck.splice(bestIdx, 1);
-    player.hand.push(card);
-    shuffle(player.deck);
-    log.push(`Arrow Of Apollo: searched deck, put a card into hand.`);
+    // Set pendingChoice to let player pick a card from deck
+    state.pendingChoice = {
+      type: "arrow-of-apollo-search",
+      playerIndex,
+      cards: [...player.deck],
+    };
   },
 });
 
 // BSG1-059 Article 23 — Each player: sacrifice personnel OR lose 2 influence
 register("article-23", {
   category: "one-shot",
-  onResolve(state, _playerIndex, _targetId, log) {
-    for (let pi = 0; pi < state.players.length; pi++) {
-      const p = state.players[pi];
-      const pLabel = `Player ${pi + 1}`;
-      // Find cheapest alert personnel to sacrifice
-      let cheapestId: string | undefined;
-      let cheapestPower = Infinity;
-      for (const stack of p.zones.alert) {
+  onResolve(state, playerIndex, _targetId, log) {
+    log.push("Article 23: each player must sacrifice a personnel or lose 2 influence.");
+    // Start with the resolving player
+    const personnel: CardInstance[] = [];
+    const player = state.players[playerIndex];
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
         const top = stack.cards[0];
         if (!top?.faceUp) continue;
         const def = getCardDef(top.defId);
-        if (def?.type === "personnel" && (def.power ?? 0) < cheapestPower) {
-          cheapestPower = def.power ?? 0;
-          cheapestId = top.instanceId;
-        }
-      }
-      if (cheapestId) {
-        helpers.defeatUnit(p, cheapestId, log, state, pi);
-        log.push(`Article 23: ${pLabel} sacrifices a personnel.`);
-      } else {
-        helpers.applyInfluenceLoss(state, pi, 2, log, helpers.bases);
-        log.push(`Article 23: ${pLabel} loses 2 influence.`);
+        if (def?.type === "personnel") personnel.push(top);
       }
     }
+    state.pendingChoice = {
+      type: "article-23",
+      playerIndex,
+      cards: personnel,
+      context: {
+        remainingPlayers: state.players.map((_, i) => i).filter((i) => i !== playerIndex),
+      },
+    };
   },
 });
 
@@ -587,13 +596,34 @@ register("full-scale-assault", {
 // BSG1-072 Green: You're A Normal Human — Bounce Cylon unit to hand, owner gains 2
 register("green-normal-human", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    // Target any Cylon unit (prefer opponent's)
-    const target = pickBestOpponentUnit(
-      state,
-      playerIndex,
-      (d) => d.traits?.includes("Cylon" as Trait) === true,
-    );
+  getResolveTargets(state, _playerIndex) {
+    const targets: string[] = [];
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (
+            def &&
+            (def.type === "personnel" || def.type === "ship") &&
+            def.traits?.includes("Cylon" as Trait)
+          ) {
+            targets.push(top.instanceId);
+          }
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const target =
+      targetId ??
+      pickBestOpponentUnit(
+        state,
+        playerIndex,
+        (d) => d.traits?.includes("Cylon" as Trait) === true,
+      );
     if (target) {
       const owner = findUnitOwner(state, target);
       if (owner) {
@@ -634,38 +664,44 @@ register("hand-of-god", {
 // BSG1-074 Hunt For Tylium — Put a supply card from hand to resource area
 register("hunt-for-tylium", {
   category: "one-shot",
+  canResolve(state, playerIndex) {
+    return state.players[playerIndex].hand.length > 0;
+  },
   onResolve(state, playerIndex, _targetId, log) {
     const player = state.players[playerIndex];
     if (player.hand.length === 0) {
       log.push("Hunt For Tylium: no cards in hand.");
       return;
     }
-    // AI picks lowest mystic value card from hand
-    let worstIdx = 0;
-    let worstMystic = Infinity;
-    for (let i = 0; i < player.hand.length; i++) {
-      const def = getCardDef(player.hand[i].defId);
-      if ((def?.mysticValue ?? 0) < worstMystic) {
-        worstMystic = def?.mysticValue ?? 0;
-        worstIdx = i;
-      }
-    }
-    const [card] = player.hand.splice(worstIdx, 1);
-    card.faceUp = false; // supply cards are face-down
-    // Add as supply to base (first resource stack)
-    if (player.zones.resourceStacks.length > 0) {
-      player.zones.resourceStacks[0].supplyCards.push(card);
-    }
-    log.push("Hunt For Tylium: played a supply card from hand.");
+    // Set pendingChoice to let player pick a card from hand
+    state.pendingChoice = {
+      type: "hunt-for-tylium-hand",
+      playerIndex,
+      cards: [...player.hand],
+    };
   },
 });
 
 // BSG1-077 Investigation — Put target personnel on top of owner's deck; that player loses 2 influence
 register("investigation", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    // AI targets opponent's best personnel
-    const target = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
+  getResolveTargets(state, _playerIndex) {
+    const targets: string[] = [];
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (def?.type === "personnel") targets.push(top.instanceId);
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const target =
+      targetId ?? pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
     if (target) {
       const owner = findUnitOwner(state, target);
       if (owner) {
@@ -691,8 +727,23 @@ register("investigation", {
 // BSG1-078 Kobol's Last Gleaming — Shuffle target personnel into owner's deck
 register("kobols-last-gleaming", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    const target = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
+  getResolveTargets(state, _playerIndex) {
+    const targets: string[] = [];
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (def?.type === "personnel") targets.push(top.instanceId);
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const target =
+      targetId ?? pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
     if (target) {
       const owner = findUnitOwner(state, target);
       if (owner) {
@@ -717,75 +768,103 @@ register("life-has-a-melody", {
   category: "one-shot",
   onResolve(state, playerIndex, _targetId, log) {
     const player = state.players[playerIndex];
-    // Find best Cylon card in deck
-    let bestIdx = -1;
-    let bestMystic = -1;
-    for (let i = 0; i < player.deck.length; i++) {
-      const def = getCardDef(player.deck[i].defId);
-      if (def?.traits?.includes("Cylon" as Trait) && (def.mysticValue ?? 0) > bestMystic) {
-        bestMystic = def.mysticValue ?? 0;
-        bestIdx = i;
-      }
-    }
-    if (bestIdx >= 0) {
-      const [card] = player.deck.splice(bestIdx, 1);
-      player.hand.push(card);
-      shuffle(player.deck);
-      log.push("Life Has A Melody: found a Cylon card, put into hand.");
-    } else {
+    // Filter deck for Cylon cards
+    const cylonCards = player.deck.filter((c) => {
+      const def = getCardDef(c.defId);
+      return def?.traits?.includes("Cylon" as Trait);
+    });
+    if (cylonCards.length === 0) {
       shuffle(player.deck);
       log.push("Life Has A Melody: no Cylon card found in deck.");
+      return;
     }
+    // Set pendingChoice to let player pick a Cylon card from deck
+    state.pendingChoice = {
+      type: "life-has-a-melody-search",
+      playerIndex,
+      cards: cylonCards,
+    };
   },
 });
 
 // BSG1-080 Meet The New Boss — Exchange personnel in hand with same-power personnel you control (errata)
 register("meet-the-new-boss", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
+  canResolve(state, playerIndex) {
     const player = state.players[playerIndex];
-    // Find a personnel in hand and a personnel in play with same power
-    for (let hi = 0; hi < player.hand.length; hi++) {
-      const handDef = getCardDef(player.hand[hi].defId);
-      if (handDef?.type !== "personnel") continue;
-      for (const zone of [player.zones.alert, player.zones.reserve]) {
-        for (const stack of zone) {
-          const top = stack.cards[0];
-          if (!top?.faceUp) continue;
-          const playDef = getCardDef(top.defId);
-          if (playDef?.type !== "personnel") continue;
-          if ((playDef.power ?? 0) === (handDef.power ?? 0)) {
-            // Exchange: hand card replaces the unit stack (errata says exchange with stack)
-            const handCard = player.hand.splice(hi, 1)[0];
-            const playCards = stack.cards.splice(0, stack.cards.length);
-            stack.cards.push(handCard);
-            for (const c of playCards) player.hand.push(c);
-            log.push(
-              `Meet The New Boss: exchanged ${helpers.cardName(handDef)} with ${helpers.cardName(playDef)}.`,
-            );
-            return;
-          }
-        }
+    const handPowers = new Set<number>();
+    for (const card of player.hand) {
+      const def = getCardDef(card.defId);
+      if (def?.type === "personnel") handPowers.add(def.power ?? 0);
+    }
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel" && handPowers.has(def.power ?? 0)) return true;
       }
     }
-    log.push("Meet The New Boss: no valid exchange found.");
+    return false;
+  },
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    // Find which personnel in hand have matching-power personnel in play
+    const fieldPowers = new Set<number>();
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel") fieldPowers.add(def.power ?? 0);
+      }
+    }
+    const validHand = player.hand.filter((c) => {
+      const def = getCardDef(c.defId);
+      return def?.type === "personnel" && fieldPowers.has(def.power ?? 0);
+    });
+    if (validHand.length === 0) {
+      log.push("Meet The New Boss: no valid exchange found.");
+      return;
+    }
+    state.pendingChoice = {
+      type: "meet-new-boss-hand",
+      playerIndex,
+      cards: validHand,
+    };
   },
 });
 
 // BSG1-083 Obliterate The Base — Defeat target asset with no supply cards
 register("obliterate-the-base", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    const opIdx = 1 - playerIndex;
-    const opponent = state.players[opIdx];
-    // Find an asset (non-base resource stack) with no supply cards
-    for (let i = 1; i < opponent.zones.resourceStacks.length; i++) {
-      const stack = opponent.zones.resourceStacks[i];
-      if (stack.supplyCards.length === 0) {
-        opponent.zones.resourceStacks.splice(i, 1);
-        opponent.discard.push(stack.topCard);
-        log.push("Obliterate The Base: defeated target asset.");
-        return;
+  getResolveTargets(state, playerIndex) {
+    const targets: string[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === playerIndex) continue;
+      const p = state.players[pi];
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        const stack = p.zones.resourceStacks[i];
+        if (stack.supplyCards.length === 0) {
+          targets.push(stack.topCard.instanceId);
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    // Find target asset by instanceId, or AI fallback
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === playerIndex) continue;
+      const p = state.players[pi];
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        const stack = p.zones.resourceStacks[i];
+        if (targetId ? stack.topCard.instanceId === targetId : stack.supplyCards.length === 0) {
+          p.zones.resourceStacks.splice(i, 1);
+          p.discard.push(stack.topCard);
+          log.push("Obliterate The Base: defeated target asset.");
+          return;
+        }
       }
     }
     log.push("Obliterate The Base: no valid asset target.");
@@ -821,17 +900,38 @@ register("overtime", {
 // BSG1-086 Picking Sides — Choose singular personnel; opponents sacrifice same-title personnel
 register("picking-sides", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
+  getResolveTargets(state, playerIndex) {
+    const targets: string[] = [];
     const player = state.players[playerIndex];
-    // Find a singular personnel we control (has title)
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel" && def.title) targets.push(top.instanceId);
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const player = state.players[playerIndex];
     let chosenTitle: string | undefined;
-    for (const stack of player.zones.alert) {
-      const top = stack.cards[0];
-      if (!top?.faceUp) continue;
-      const def = getCardDef(top.defId);
-      if (def?.type === "personnel" && def.title) {
-        chosenTitle = def.title;
-        break;
+    if (targetId) {
+      const found = findUnitOwner(state, targetId);
+      if (found) {
+        const def = getCardDef(found.stack.cards[0].defId);
+        chosenTitle = def?.title;
+      }
+    } else {
+      // AI fallback: pick first singular
+      for (const stack of player.zones.alert) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel" && def.title) {
+          chosenTitle = def.title;
+          break;
+        }
       }
     }
     if (!chosenTitle) {
@@ -870,42 +970,72 @@ register("press-junket", {
 // BSG1-088 Pulling Rank — Commit two target personnel
 register("pulling-rank", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    // AI commits opponent's two best alert personnel
-    const opIdx = 1 - playerIndex;
-    const opponent = state.players[opIdx];
-    const targets: string[] = [];
-    const personnel = opponent.zones.alert
-      .filter((s) => {
-        const top = s.cards[0];
-        if (!top?.faceUp) return false;
+  canResolve(state, _playerIndex) {
+    // Need at least 1 alert personnel to target
+    for (const p of state.players) {
+      for (const stack of p.zones.alert) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
         const def = getCardDef(top.defId);
-        return def?.type === "personnel";
-      })
-      .sort((a, b) => {
-        const da = getCardDef(a.cards[0].defId);
-        const db = getCardDef(b.cards[0].defId);
-        return (db?.power ?? 0) - (da?.power ?? 0);
-      });
-    for (let i = 0; i < Math.min(2, personnel.length); i++) {
-      targets.push(personnel[i].cards[0].instanceId);
+        if (def?.type === "personnel") return true;
+      }
     }
-    for (const id of targets) {
-      commitUnitLocal(opponent, id);
+    return false;
+  },
+  onResolve(state, playerIndex, _targetId, log) {
+    // Collect all alert personnel from all players
+    const personnel: CardInstance[] = [];
+    for (const p of state.players) {
+      for (const stack of p.zones.alert) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel") personnel.push(top);
+      }
     }
-    log.push(`Pulling Rank: committed ${targets.length} personnel.`);
+    if (personnel.length === 0) {
+      log.push("Pulling Rank: no personnel to commit.");
+      return;
+    }
+    state.pendingChoice = {
+      type: "pulling-rank-1",
+      playerIndex,
+      cards: personnel,
+    };
   },
 });
 
 // BSG1-089 Red: You're An Evil Cylon — Bounce Cylon unit to hand; owner loses 2 influence
 register("red-evil-cylon", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    const target = pickBestOpponentUnit(
-      state,
-      playerIndex,
-      (d) => d.traits?.includes("Cylon" as Trait) === true,
-    );
+  getResolveTargets(state, _playerIndex) {
+    const targets: string[] = [];
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (
+            def &&
+            (def.type === "personnel" || def.type === "ship") &&
+            def.traits?.includes("Cylon" as Trait)
+          ) {
+            targets.push(top.instanceId);
+          }
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const target =
+      targetId ??
+      pickBestOpponentUnit(
+        state,
+        playerIndex,
+        (d) => d.traits?.includes("Cylon" as Trait) === true,
+      );
     if (target) {
       const owner = findUnitOwner(state, target);
       if (owner) {
@@ -940,8 +1070,21 @@ register("refueling-operation", {
 // BSG1-091 Relieved Of Duty — Return target alert personnel to owner's hand
 register("relieved-of-duty", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    const target = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
+  getResolveTargets(state, _playerIndex) {
+    const targets: string[] = [];
+    for (const p of state.players) {
+      for (const stack of p.zones.alert) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.type === "personnel") targets.push(top.instanceId);
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const target =
+      targetId ?? pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
     if (target) {
       const owner = findUnitOwner(state, target);
       if (owner && owner.zone === "alert") {
@@ -1028,43 +1171,52 @@ register("working-together", {
 // BSG2-046 Assassination — Commit+exhaust own personnel → defeat target personnel
 register("assassination", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
+  canResolve(state, playerIndex) {
     const player = state.players[playerIndex];
-    // Find cheapest own alert personnel to commit+exhaust
-    let sourceId: string | undefined;
-    let sourcePower = Infinity;
+    // Need own alert non-exhausted personnel
+    let hasSource = false;
     for (const stack of player.zones.alert) {
       const top = stack.cards[0];
       if (!top?.faceUp || stack.exhausted) continue;
       const def = getCardDef(top.defId);
-      if (def?.type === "personnel" && (def.power ?? 0) < sourcePower) {
-        sourcePower = def.power ?? 0;
-        sourceId = top.instanceId;
+      if (def?.type === "personnel") {
+        hasSource = true;
+        break;
       }
     }
-    if (!sourceId) {
+    if (!hasSource) return false;
+    // Need any personnel to target
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const top = stack.cards[0];
+          if (!top?.faceUp) continue;
+          const def = getCardDef(top.defId);
+          if (def?.type === "personnel") return true;
+        }
+      }
+    }
+    return false;
+  },
+  onResolve(state, playerIndex, _targetId, log) {
+    const player = state.players[playerIndex];
+    // Collect own alert non-exhausted personnel as source options
+    const sources: CardInstance[] = [];
+    for (const stack of player.zones.alert) {
+      const top = stack.cards[0];
+      if (!top?.faceUp || stack.exhausted) continue;
+      const def = getCardDef(top.defId);
+      if (def?.type === "personnel") sources.push(top);
+    }
+    if (sources.length === 0) {
       log.push("Assassination: no personnel to commit.");
       return;
     }
-    // Target opponent's best personnel
-    const targetId = pickBestOpponentUnit(state, playerIndex, (d) => d.type === "personnel");
-    if (!targetId) {
-      log.push("Assassination: no target personnel.");
-      return;
-    }
-    // Commit and exhaust source
-    const sourceFound = findUnitInZone(player.zones.alert, sourceId);
-    if (sourceFound) {
-      sourceFound.stack.exhausted = true;
-      commitUnitLocal(player, sourceId);
-    }
-    // Defeat target
-    const targetOwner = findUnitOwner(state, targetId);
-    if (targetOwner) {
-      const def = getCardDef(targetOwner.stack.cards[0].defId);
-      helpers.defeatUnit(targetOwner.player, targetId, log, state, targetOwner.playerIndex);
-      log.push(`Assassination: defeated ${helpers.cardName(def)}.`);
-    }
+    state.pendingChoice = {
+      type: "assassination-source",
+      playerIndex,
+      cards: sources,
+    };
   },
 });
 
@@ -1081,20 +1233,40 @@ register("false-peace", {
 // BSG2-077 The Hunters — Defeat target mission with Link keyword
 register("the-hunters", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    const opIdx = 1 - playerIndex;
-    const opponent = state.players[opIdx];
-    // Find a linked mission on any of opponent's units
-    for (const zone of [opponent.zones.alert, opponent.zones.reserve]) {
-      for (const stack of zone) {
-        if (stack.linkedMissions && stack.linkedMissions.length > 0) {
-          const mission = stack.linkedMissions.shift()!;
-          opponent.discard.push(mission);
-          const def = getCardDef(mission.defId);
-          log.push(
-            `The Hunters: defeated linked mission ${def ? helpers.cardName(def) : "unknown"}.`,
-          );
-          return;
+  getResolveTargets(state, playerIndex) {
+    const targets: string[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === playerIndex) continue;
+      const p = state.players[pi];
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          for (const mc of stack.linkedMissions ?? []) {
+            targets.push(mc.instanceId);
+          }
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    // Find and remove the targeted linked mission
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === playerIndex) continue;
+      const p = state.players[pi];
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zone) {
+          const linked = stack.linkedMissions ?? [];
+          for (let i = 0; i < linked.length; i++) {
+            if (targetId ? linked[i].instanceId === targetId : true) {
+              const [mission] = linked.splice(i, 1);
+              p.discard.push(mission);
+              const def = getCardDef(mission.defId);
+              log.push(
+                `The Hunters: defeated linked mission ${def ? helpers.cardName(def) : "unknown"}.`,
+              );
+              return;
+            }
+          }
         }
       }
     }
@@ -1105,16 +1277,32 @@ register("the-hunters", {
 // BSG2-078 Thinking Outside The Box — Defeat target asset with no supply cards
 register("thinking-outside-box", {
   category: "one-shot",
-  onResolve(state, playerIndex, _targetId, log) {
-    const opIdx = 1 - playerIndex;
-    const opponent = state.players[opIdx];
-    for (let i = 1; i < opponent.zones.resourceStacks.length; i++) {
-      const stack = opponent.zones.resourceStacks[i];
-      if (stack.supplyCards.length === 0) {
-        opponent.zones.resourceStacks.splice(i, 1);
-        opponent.discard.push(stack.topCard);
-        log.push("Thinking Outside The Box: defeated target asset.");
-        return;
+  getResolveTargets(state, playerIndex) {
+    const targets: string[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === playerIndex) continue;
+      const p = state.players[pi];
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        const stack = p.zones.resourceStacks[i];
+        if (stack.supplyCards.length === 0) {
+          targets.push(stack.topCard.instanceId);
+        }
+      }
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === playerIndex) continue;
+      const p = state.players[pi];
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        const stack = p.zones.resourceStacks[i];
+        if (targetId ? stack.topCard.instanceId === targetId : stack.supplyCards.length === 0) {
+          p.zones.resourceStacks.splice(i, 1);
+          p.discard.push(stack.topCard);
+          log.push("Thinking Outside The Box: defeated target asset.");
+          return;
+        }
       }
     }
     log.push("Thinking Outside The Box: no valid asset target.");
@@ -1496,17 +1684,37 @@ register("cylon-betrayal", {
 // BSG1-063 Combat Air Patrol — On resolve: commit target Pilot, gain 1 influence
 register("combat-air-patrol", {
   category: "persistent",
-  onResolve(state, playerIndex, _targetId, log) {
+  getResolveTargets(state, playerIndex) {
+    const targets: string[] = [];
     const player = state.players[playerIndex];
-    // Find a Pilot to commit
     for (const stack of player.zones.alert) {
       const top = stack.cards[0];
       if (!top?.faceUp) continue;
       const def = getCardDef(top.defId);
-      if (def?.traits?.includes("Pilot" as Trait)) {
-        commitUnitLocal(player, top.instanceId);
+      if (def?.traits?.includes("Pilot" as Trait)) targets.push(top.instanceId);
+    }
+    return targets;
+  },
+  onResolve(state, playerIndex, targetId, log) {
+    const player = state.players[playerIndex];
+    if (targetId) {
+      commitUnitLocal(player, targetId);
+      const owner = findUnitInAnyZone(player, targetId);
+      if (owner) {
+        const def = getCardDef(owner.stack.cards[0].defId);
         log.push(`Combat Air Patrol: committed ${helpers.cardName(def)}.`);
-        break;
+      }
+    } else {
+      // AI fallback: commit first Pilot
+      for (const stack of player.zones.alert) {
+        const top = stack.cards[0];
+        if (!top?.faceUp) continue;
+        const def = getCardDef(top.defId);
+        if (def?.traits?.includes("Pilot" as Trait)) {
+          commitUnitLocal(player, top.instanceId);
+          log.push(`Combat Air Patrol: committed ${helpers.cardName(def)}.`);
+          break;
+        }
       }
     }
     player.influence += 1;
@@ -1699,18 +1907,24 @@ register("prophetic-visions", {
     },
     resolve(state, playerIndex, sourceId, _targetId, log) {
       commitUnitLocal(state.players[playerIndex], sourceId);
-      // AI: look at top 2 of opponent's deck, put higher mystic on top
       const opIdx = 1 - playerIndex;
       const opponent = state.players[opIdx];
-      if (opponent.deck.length >= 2) {
-        const card0Def = getCardDef(opponent.deck[0].defId);
-        const card1Def = getCardDef(opponent.deck[1].defId);
-        // Put lower mystic on top (worse for opponent)
-        if ((card0Def?.mysticValue ?? 0) > (card1Def?.mysticValue ?? 0)) {
-          [opponent.deck[0], opponent.deck[1]] = [opponent.deck[1], opponent.deck[0]];
+      if (opponent.deck.length < 2) {
+        if (opponent.deck.length === 1) {
+          log.push("Prophetic Visions: only 1 card in opponent's deck, nothing to rearrange.");
+        } else {
+          log.push("Prophetic Visions: opponent's deck is empty.");
         }
+        return;
       }
-      log.push("Prophetic Visions: looked at top 2 cards, rearranged.");
+      // Remove top 2 cards and show as pendingChoice
+      const top2 = [opponent.deck.shift()!, opponent.deck.shift()!];
+      state.pendingChoice = {
+        type: "prophetic-visions-arrange",
+        playerIndex,
+        cards: top2,
+        context: { opponentIndex: opIdx },
+      };
     },
   },
 });
@@ -2034,7 +2248,8 @@ register("trust-the-lords", {
 register("last-word", {
   category: "link",
   linkTarget: "unit",
-  onChallengeWin(state, playerIndex, _winnerStack, _loserStack, powerDiff, log) {
+  onChallengeWin(state, playerIndex, _winnerStack, _loserStack, powerDiff, log, isDefender) {
+    if (!isDefender) return; // Only triggers when defending (defeats a challenger)
     state.players[playerIndex].influence += Math.max(0, powerDiff);
     log.push(
       `Last Word: gain ${Math.max(0, powerDiff)} influence from power difference. (Now ${state.players[playerIndex].influence})`,
@@ -2389,13 +2604,22 @@ export function fireMissionOnChallengeWin(
   loserStack: UnitStack,
   powerDiff: number,
   log: string[],
+  isDefender: boolean,
 ): void {
   for (const mc of winnerStack.linkedMissions ?? []) {
     const def = getCardDef(mc.defId);
     if (!def?.abilityId) continue;
     const handler = registry.get(def.abilityId);
     if (handler?.onChallengeWin) {
-      handler.onChallengeWin(state, playerIndex, winnerStack, loserStack, powerDiff, log);
+      handler.onChallengeWin(
+        state,
+        playerIndex,
+        winnerStack,
+        loserStack,
+        powerDiff,
+        log,
+        isDefender,
+      );
     }
   }
 }
