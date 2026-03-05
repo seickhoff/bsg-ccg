@@ -275,14 +275,10 @@ function drawCards(
 
 // --- Reveal mystic value (flip top of deck) ---
 
-function revealMysticValue(
-  player: PlayerState,
-  log: string[],
-  playerLabel: string,
-): { value: number; card: CardInstance } {
+function revealTopCard(player: PlayerState, log: string[], playerLabel: string): CardInstance {
   if (player.deck.length === 0) {
     if (player.discard.length === 0) {
-      return { value: 0, card: makeCardInstance("condition-one") };
+      return makeCardInstance("condition-one");
     }
     player.deck = [...player.discard];
     player.discard = [];
@@ -290,9 +286,18 @@ function revealMysticValue(
     log.push(`${playerLabel} reshuffled discard pile into deck.`);
   }
   const card = player.deck.shift()!;
+  player.discard.push(card);
+  return card;
+}
+
+function revealMysticValue(
+  player: PlayerState,
+  log: string[],
+  playerLabel: string,
+): { value: number; card: CardInstance } {
+  const card = revealTopCard(player, log, playerLabel);
   const def = getCardDef(card.defId);
   log.push(`${playerLabel} reveals ${cardName(def)} (mystic value ${def.mysticValue ?? 0}).`);
-  player.discard.push(card);
   return { value: def.mysticValue ?? 0, card };
 }
 
@@ -730,12 +735,12 @@ export function getValidActions(
     if (units.length > 0) {
       actions.push({
         type: "challengeCylon",
-        description: "Challenge a Cylon threat",
+        description: "Send a unit to fight",
         selectableInstanceIds: units,
         selectableThreatIndices: state.cylonThreats.map((_, i) => i),
       });
     }
-    actions.push({ type: "passCylon", description: "Pass (lose 1 influence)" });
+    actions.push({ type: "passCylon", description: "Stand down (\u22121 influence)" });
     return actions;
   }
 
@@ -993,9 +998,14 @@ function canAfford(player: PlayerState, def: CardDef, bases: Record<string, Base
         available += stackResourceCount(stack);
       }
     }
-    // Count alert freighters that generate this resource type
+    // Count alert freighters that generate this resource type,
+    // but only if at least one resource stack can still be spent
+    // (freighters trigger "each time you spend a resource stack")
     if (available < effectiveAmount) {
-      available += countFreighterBonus(player, resType as ResourceType);
+      const anyStackCanBeSpent = player.zones.resourceStacks.some((s) => !s.exhausted);
+      if (anyStackCanBeSpent) {
+        available += countFreighterBonus(player, resType as ResourceType);
+      }
     }
     if (available < effectiveAmount) return false;
   }
@@ -2614,11 +2624,11 @@ function startCylonPhase(s: GameState, log: string[], bases: Record<string, Base
   const doralBonus = computeCylonThreatBonus(s) + computeMissionCylonThreatBonus(s);
   s.cylonThreats = [];
   for (let i = 0; i < s.players.length; i++) {
-    const result = revealMysticValue(s.players[i], log, `Player ${i + 1}`);
-    const def = getCardDef(result.card.defId);
+    const card = revealTopCard(s.players[i], log, `Player ${i + 1}`);
+    const def = getCardDef(card.defId);
     const threatPower = (def.cylonThreat ?? 0) + doralBonus;
     s.cylonThreats.push({
-      card: result.card,
+      card,
       power: threatPower,
       ownerIndex: i,
     });

@@ -574,7 +574,10 @@ function showPlayerActionModal(
   } else if (state.phase === "ready" && state.readyStep === 5) {
     headerText = `${playerName} — Reorder unit stacks`;
   } else if (state.phase === "cylon") {
-    headerText = `${playerName} — Cylon phase`;
+    const hasChallengers = validActions.some((a) => a.type === "challengeCylon");
+    headerText = hasChallengers
+      ? "CYLON ATTACK — Send a unit to fight or stand down"
+      : "CYLON ATTACK — No units available";
   } else if (state.phase === "execution") {
     headerText = `${playerName} — Execution phase`;
   }
@@ -658,15 +661,35 @@ function showPlayerActionModal(
       .join("");
   }
 
+  // Cylon phase status summary
+  let cylonSummaryHtml = "";
+  if (state.phase === "cylon" && state.cylonThreats.length > 0) {
+    const threatLevel = computeThreatLevel(state);
+    const threatList = state.cylonThreats
+      .map(
+        (t) =>
+          `<span class="cylon-summary-threat">${escapeHtml(getCardName(t.card.defId))} (${t.power})</span>`,
+      )
+      .join(", ");
+    cylonSummaryHtml = `
+      <div class="cylon-status-summary">
+        <div class="cylon-summary-line">Threat ${threatLevel} vs Fleet Defense ${state.fleetDefenseLevel} — <strong>Cylons broke through!</strong></div>
+        <div class="cylon-summary-line">${state.cylonThreats.length} threat${state.cylonThreats.length > 1 ? "s" : ""} active: ${threatList}</div>
+        <div class="cylon-summary-hint">Defeat threats with your units, or stand down and lose 1 influence.</div>
+      </div>
+    `;
+  }
+
   const overlay = document.createElement("div");
   overlay.className = "player-action-overlay";
   overlay.innerHTML = `
     <div class="action-modal">
       <div class="action-modal-top">
         <div class="action-modal-header-row">
-          <div class="action-modal-text">${escapeHtml(headerText)}</div>
+          <div class="action-modal-text">${headerText}</div>
           <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
         </div>
+        ${cylonSummaryHtml}
         <div class="player-action-buttons">${buttonsHtml}</div>
       </div>
     </div>
@@ -1034,8 +1057,10 @@ function renderHandCard(card: CardInstance, index: number, validActions: ValidAc
 
   const name = getCardName(card.defId);
 
-  // Check if this card index is in any valid action
-  const playable = validActions.some((a) => a.selectableCardIndices?.includes(index));
+  // Check if this card index is in any non-disabled valid action
+  const playable = validActions.some(
+    (a) => !a.disabled && a.selectableCardIndices?.includes(index),
+  );
 
   return `
     <div class="hand-card ${playable ? "playable" : ""}" data-card-index="${index}">
@@ -1050,14 +1075,22 @@ function renderCylonThreats(threats: CylonThreatCard[]): string {
       <div class="threats-label">CYLON THREATS</div>
       <div class="threats-cards">
         ${threats
-          .map(
-            (t, i) => `
-          <div class="card threat-card" data-threat-index="${i}">
-            <div class="card-name">${getCardName(t.card.defId)}</div>
-            <div class="card-power threat-power">${t.power}</div>
+          .map((t, i) => {
+            const def = cardDefs[t.card.defId];
+            const name = getCardName(t.card.defId);
+            const redText = def?.cylonThreatText ?? "";
+            const image = def?.image;
+            return `
+          <div class="threat-card" data-threat-index="${i}" data-def-id="${t.card.defId}">
+            ${image ? `<img src="${image}" alt="${escapeHtml(name)}" class="threat-card-img" loading="lazy" />` : ""}
+            <div class="threat-card-info">
+              <div class="card-name">${escapeHtml(name)}</div>
+              ${redText ? `<div class="threat-red-text">${escapeHtml(redText)}</div>` : ""}
+              <div class="threat-power">${t.power}</div>
+            </div>
           </div>
-        `,
-          )
+        `;
+          })
           .join("")}
       </div>
     </div>
@@ -1102,6 +1135,14 @@ function attachEventListeners(
   container.querySelectorAll(".unit-card-img[data-def-id]").forEach((el) => {
     el.addEventListener("click", () => {
       if (el.classList.contains("selectable")) return;
+      const defId = (el as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
+
+  // Cylon threat card tap-to-preview
+  container.querySelectorAll(".threat-card[data-def-id]").forEach((el) => {
+    el.addEventListener("click", () => {
       const defId = (el as HTMLElement).dataset.defId;
       if (defId) showCardPreview(defId);
     });
