@@ -684,11 +684,10 @@ function showPlayerActionModal(
   overlay.className = "player-action-overlay";
   overlay.innerHTML = `
     <div class="action-modal">
+      <div class="action-modal-drag-handle" style="cursor:grab;user-select:none;padding:8px 1rem;background:#222;border-bottom:1px solid #444;border-radius:8px 8px 0 0;color:#e0e0e0;font-size:0.9rem;">
+        ${headerText}
+      </div>
       <div class="action-modal-top">
-        <div class="action-modal-header-row">
-          <div class="action-modal-text">${headerText}</div>
-          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
-        </div>
         ${cylonSummaryHtml}
         <div class="player-action-buttons">${buttonsHtml}</div>
       </div>
@@ -698,22 +697,59 @@ function showPlayerActionModal(
   document.body.appendChild(overlay);
 
   const modal = overlay.querySelector(".action-modal") as HTMLElement;
-  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
-  const headerFab = document.getElementById("actions-fab");
 
-  // Collapse: hide panel, show header button
-  toggle.addEventListener("click", () => {
-    modal.style.display = "none";
-    if (headerFab) headerFab.style.display = "";
-  });
+  // Drag handle: drag to reposition, click/tap to minimize/expand
+  const dragHandle = overlay.querySelector(".action-modal-drag-handle") as HTMLElement;
+  const modalBody = overlay.querySelector(".action-modal-top") as HTMLElement;
+  let dragged = false;
 
-  // Expand from header button
-  if (headerFab) {
-    headerFab.addEventListener("click", () => {
-      modal.style.display = "";
-      headerFab.style.display = "none";
-    });
+  function applyDragPosition(newTop: number) {
+    const handleH = dragHandle.offsetHeight;
+    // Clamp: don't go above viewport or drag header below viewport
+    const maxTop = window.innerHeight - handleH;
+    const clampedTop = Math.max(0, Math.min(newTop, maxTop));
+    modal.style.top = clampedTop + "px";
+    // Shrink max-height so bottom doesn't go off-screen
+    modal.style.maxHeight = window.innerHeight - clampedTop + "px";
   }
+
+  function startDrag(startY: number) {
+    dragged = false;
+    const startTop = modal.getBoundingClientRect().top;
+    const onMouseMove = (ev: MouseEvent) => {
+      if (Math.abs(ev.clientY - startY) > 4) dragged = true;
+      if (dragged) applyDragPosition(startTop + (ev.clientY - startY));
+    };
+    const onTouchMove = (ev: TouchEvent) => {
+      if (Math.abs(ev.touches[0].clientY - startY) > 4) dragged = true;
+      if (dragged) applyDragPosition(startTop + (ev.touches[0].clientY - startY));
+    };
+    const onEnd = () => {
+      dragHandle.style.cursor = "grab";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onEnd);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onEnd);
+      if (!dragged) {
+        // Click/tap — toggle modal body
+        const hidden = modalBody.style.display === "none";
+        modalBody.style.display = hidden ? "" : "none";
+      }
+    };
+    dragHandle.style.cursor = "grabbing";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onEnd);
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", onEnd);
+  }
+  dragHandle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    startDrag(e.clientY);
+  });
+  dragHandle.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    startDrag(e.touches[0].clientY);
+  });
 
   // Wire action buttons
   overlay.querySelectorAll(".action-modal-btn").forEach((btn) => {

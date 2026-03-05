@@ -1266,21 +1266,30 @@ body {
 /* --- Player Action Modal --- */
 
 .player-action-overlay {
+  /* marker div only — no layout, no pointer-events */
   position: fixed;
-  inset: 0;
-  z-index: 150;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   pointer-events: none;
 }
 
 .player-action-overlay .action-modal {
+  position: fixed;
+  top: 25vh;
+  left: 50%;
+  transform: translateX(-50%);
   pointer-events: auto;
   box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
   max-height: 50vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   animation: border-pulse 2s ease-in-out infinite;
+  z-index: 150;
+}
+
+.player-action-overlay .action-modal-top {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 @keyframes border-pulse {
@@ -1298,6 +1307,8 @@ body {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  cursor: grab;
+  user-select: none;
 }
 
 .action-modal-toggle {
