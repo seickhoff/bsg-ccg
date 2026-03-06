@@ -44,6 +44,23 @@ console.log(
 const PORT = Number(process.env.PORT) || 3001;
 const wss = new WebSocketServer({ port: PORT });
 
+// --- WebSocket heartbeat (keeps connections alive through proxies) ---
+
+const HEARTBEAT_MS = 30_000;
+
+const heartbeatInterval = setInterval(() => {
+  for (const ws of wss.clients) {
+    if ((ws as any).isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    (ws as any).isAlive = false;
+    ws.ping();
+  }
+}, HEARTBEAT_MS);
+
+wss.on("close", () => clearInterval(heartbeatInterval));
+
 // --- Game Room ---
 
 interface PlayerSlot {
@@ -387,8 +404,8 @@ async function processAITurns(room: GameRoom): Promise<void> {
       // Show modal and wait for human to click Continue
       room.pendingNotification = { text: notificationText, cardDefIds };
       broadcastGameState(room);
-      room.pendingNotification = null;
       await waitForContinue(room);
+      room.pendingNotification = null;
 
       // After await: check if room was reset/destroyed while we were waiting
       if (room.gameGeneration !== gen) return;
@@ -415,6 +432,10 @@ async function processAITurns(room: GameRoom): Promise<void> {
 
 wss.on("connection", (ws) => {
   console.log("Client connected");
+  (ws as any).isAlive = true;
+  ws.on("pong", () => {
+    (ws as any).isAlive = true;
+  });
 
   ws.on("error", (err) => {
     console.error("WebSocket error:", err.message);
@@ -713,6 +734,11 @@ wss.on("connection", (ws) => {
       const anyConnected = room.players.some((s) => s.ws !== null) || room.spectators.length > 0;
 
       if (!anyConnected) {
+        // Unstick AI loop if waiting for Continue with no one watching
+        if (room.continueResolve) {
+          room.continueResolve();
+        }
+
         // Keep the room alive for reconnection; destroy after timeout
         const timer = setTimeout(() => {
           roomCleanupTimers.delete(room.id);
