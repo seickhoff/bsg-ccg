@@ -217,4 +217,19 @@ function connect(): void {
 }
 
 // --- Initial render ---
-renderSplash();
+
+// If we have a stored room, skip splash and auto-rejoin
+if (currentRoomId) {
+  const savedName = localStorage.getItem("bsg-player-name") || "Commander";
+  setPlayerName(savedName);
+  app.innerHTML = `
+    <div class="waiting">
+      <h1>BSG CCG</h1>
+      <div class="spinner"></div>
+      <p>Reconnecting...</p>
+    </div>
+  `;
+  connect();
+} else {
+  renderSplash();
+}

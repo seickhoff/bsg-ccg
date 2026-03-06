@@ -51,6 +51,7 @@ const HEARTBEAT_MS = 30_000;
 const heartbeatInterval = setInterval(() => {
   for (const ws of wss.clients) {
     if ((ws as any).isAlive === false) {
+      console.log("Terminating unresponsive WebSocket (missed pong)");
       ws.terminate();
       continue;
     }
@@ -712,7 +713,9 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code: number, reason: Buffer) => {
+    const reasonStr = reason.toString() || "none";
+    console.log(`WebSocket closed (code: ${code}, reason: ${reasonStr})`);
     const room = wsRoomMap.get(ws);
     if (room) {
       const pIdx = wsPlayerIndex.get(ws);
