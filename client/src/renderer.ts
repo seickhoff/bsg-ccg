@@ -405,7 +405,7 @@ function showActionModal(
 
   // Wire Continue button
   overlay.querySelector(".action-modal-continue")?.addEventListener("click", () => {
-    overlay.remove();
+    removeOverlay(overlay);
     if (onContinue) onContinue();
   });
 }
@@ -420,7 +420,7 @@ function formatLogEntry(raw: string, playerIndex: number): string {
 
 function showLogModal(): void {
   // Remove any existing log modal
-  document.querySelector(".log-modal-overlay")?.remove();
+  removeOverlay(document.querySelector(".log-modal-overlay"));
 
   // Most recent entries first
   const logHtml = [...currentLog]
@@ -444,17 +444,17 @@ function showLogModal(): void {
 
   // Close on backdrop click
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) removeOverlay(overlay);
   });
 
   // Close button
   overlay.querySelector(".log-modal-close")?.addEventListener("click", () => {
-    overlay.remove();
+    removeOverlay(overlay);
   });
 }
 
 function showConfirmResetModal(): void {
-  document.querySelector(".log-modal-overlay")?.remove();
+  removeOverlay(document.querySelector(".log-modal-overlay"));
 
   const overlay = document.createElement("div");
   overlay.className = "log-modal-overlay";
@@ -477,22 +477,22 @@ function showConfirmResetModal(): void {
   document.body.appendChild(overlay);
 
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) removeOverlay(overlay);
   });
   overlay.querySelector(".log-modal-close")?.addEventListener("click", () => {
-    overlay.remove();
+    removeOverlay(overlay);
   });
   overlay.querySelector("#confirm-reset-no")?.addEventListener("click", () => {
-    overlay.remove();
+    removeOverlay(overlay);
   });
   overlay.querySelector("#confirm-reset-yes")?.addEventListener("click", () => {
-    overlay.remove();
+    removeOverlay(overlay);
     onResetGame?.();
   });
 }
 
 function showDiscardBrowser(cards: CardInstance[], title: string): void {
-  document.querySelector(".log-modal-overlay")?.remove();
+  removeOverlay(document.querySelector(".log-modal-overlay"));
 
   const cardsHtml =
     cards.length === 0
@@ -525,10 +525,10 @@ function showDiscardBrowser(cards: CardInstance[], title: string): void {
 
   document.body.appendChild(overlay);
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) removeOverlay(overlay);
   });
   overlay.querySelector(".log-modal-close")?.addEventListener("click", () => {
-    overlay.remove();
+    removeOverlay(overlay);
   });
   // Click on card entry to show preview
   overlay.querySelectorAll(".discard-card-entry").forEach((el) => {
@@ -539,8 +539,26 @@ function showDiscardBrowser(cards: CardInstance[], title: string): void {
   });
 }
 
+function saveBoardScroll(): void {
+  const boards = document.querySelector(".boards");
+  if (boards) savedBoardScrollTop = boards.scrollTop;
+}
+
+function restoreBoardScroll(): void {
+  const boards = document.querySelector(".boards");
+  if (boards) boards.scrollTop = savedBoardScrollTop;
+}
+
+/** Remove a DOM element while preserving .boards scroll position (mobile fix). */
+function removeOverlay(el: Element | null): void {
+  if (!el) return;
+  saveBoardScroll();
+  el.remove();
+  restoreBoardScroll();
+}
+
 function dismissPlayerActionModal(): void {
-  document.querySelector(".player-action-overlay")?.remove();
+  removeOverlay(document.querySelector(".player-action-overlay"));
 }
 
 /** Build a small thumbnail <img> for an action's card, or empty string if none. */

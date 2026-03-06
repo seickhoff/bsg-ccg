@@ -10,6 +10,14 @@ let registry: CardRegistry | null = null;
 let onClose: (() => void) | null = null;
 let overlayEl: HTMLElement | null = null;
 
+/** Remove an element while preserving .boards scroll position (mobile fix). */
+function removePreservingScroll(el: Element): void {
+  const boards = document.querySelector(".boards");
+  const scrollTop = boards ? boards.scrollTop : 0;
+  el.remove();
+  if (boards) boards.scrollTop = scrollTop;
+}
+
 // Navigation state
 let navList: string[] = [];
 let navIndex = 0;
@@ -48,7 +56,7 @@ export function closeCardPreview(): void {
     keyHandler = null;
   }
   if (overlayEl) {
-    overlayEl.remove();
+    removePreservingScroll(overlayEl);
     overlayEl = null;
   }
   navList = [];
@@ -135,7 +143,7 @@ function mount(html: string, hasNav: boolean): void {
     keyHandler = null;
   }
   if (overlayEl) {
-    overlayEl.remove();
+    removePreservingScroll(overlayEl);
     overlayEl = null;
   }
 

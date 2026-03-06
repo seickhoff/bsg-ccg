@@ -1962,7 +1962,7 @@ export function applyAction(
     case "passCylon": {
       applyInfluenceLoss(s, playerIndex, 1, log, bases);
       player.consecutivePasses++;
-      log.push(`${pLabel} passes in Cylon phase. (Now ${player.influence})`);
+      log.push(`${pLabel} passes in Cylon phase.`);
       checkVictory(s, log);
       if (s.phase !== "gameOver") {
         // Check if all passed consecutively or no threats remain
@@ -2577,16 +2577,15 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
         if (s.preventInfluenceGain) {
           log.push("Standoff: influence gain prevented.");
         } else {
+          const before = attackerPlayer.influence;
           attackerPlayer.influence += undefendedPower;
           log.push(
-            `Manipulate! Player ${challenge.challengerPlayerIndex + 1} gains ${undefendedPower} influence. (Now ${attackerPlayer.influence})`,
+            `Manipulate! Player ${challenge.challengerPlayerIndex + 1} gains ${undefendedPower} influence. (${before} → ${attackerPlayer.influence})`,
           );
         }
       } else {
         applyInfluenceLoss(s, challenge.defenderPlayerIndex, undefendedPower, log, bases);
-        log.push(
-          `Undefended! Player ${challenge.defenderPlayerIndex + 1} loses influence. (Now ${defenderPlayer.influence})`,
-        );
+        log.push(`Undefended!`);
       }
       commitUnit(attackerPlayer, challenge.challengerInstanceId);
       challenge.resolutionComplete = true;
@@ -2991,9 +2990,10 @@ function resolveCylonChallenge(
     if (s.preventInfluenceGain) {
       log.push("Standoff: influence gain prevented.");
     } else {
+      const before = attackerPlayer.influence;
       attackerPlayer.influence += gain;
       log.push(
-        `Player ${challenge.challengerPlayerIndex + 1} gains ${gain} influence. (Now ${attackerPlayer.influence})`,
+        `Player ${challenge.challengerPlayerIndex + 1} gains ${gain} influence. (${before} → ${attackerPlayer.influence})`,
       );
     }
     commitUnit(attackerPlayer, challenge.challengerInstanceId);
@@ -3509,7 +3509,11 @@ function applyInfluenceLoss(
     adjusted = interceptUnitInfluenceLoss(s, playerIndex, adjusted, log);
   }
   if (adjusted > 0) {
+    const before = s.players[playerIndex].influence;
     s.players[playerIndex].influence -= adjusted;
+    log.push(
+      `Player ${playerIndex + 1} loses ${adjusted} influence. (${before} → ${s.players[playerIndex].influence})`,
+    );
   }
 }
 
@@ -3572,10 +3576,10 @@ function applyPowerBuff(
     const c = s.challenge as ChallengeWithBuffs;
     if (c.challengerInstanceId === targetInstanceId) {
       c.challengerPowerBuff = (c.challengerPowerBuff ?? 0) + amount;
-      log.push(`Challenger gets +${amount} power.`);
+      log.push(`Challenger gets ${amount >= 0 ? "+" : ""}${amount} power.`);
     } else if (c.defenderInstanceId === targetInstanceId) {
       c.defenderPowerBuff = (c.defenderPowerBuff ?? 0) + amount;
-      log.push(`Defender gets +${amount} power.`);
+      log.push(`Defender gets ${amount >= 0 ? "+" : ""}${amount} power.`);
     }
   }
   // Outside of challenge, apply persistent buff to the unit stack (lasts until end of execution)
@@ -3584,7 +3588,7 @@ function applyPowerBuff(
     if (stack) {
       stack.powerBuff = (stack.powerBuff ?? 0) + amount;
       const topDef = getCardDef(stack.cards[0].defId);
-      log.push(`${cardName(topDef)} gets +${amount} power.`);
+      log.push(`${cardName(topDef)} gets ${amount >= 0 ? "+" : ""}${amount} power.`);
     }
   }
 }

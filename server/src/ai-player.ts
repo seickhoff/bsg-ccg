@@ -851,7 +851,8 @@ function pickEventTarget(
   const isDebuff =
     abilityText.includes("defeat") ||
     abilityText.includes("commit") ||
-    abilityText.includes("exhaust");
+    abilityText.includes("exhaust") ||
+    (abilityText.includes("-") && abilityText.includes("power"));
 
   // During a challenge, prefer our own challenger/defender for buffs, opponent's for debuffs
   if (state.challenge) {
