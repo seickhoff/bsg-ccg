@@ -22,6 +22,7 @@ import type {
   ValidAction,
   Trait,
 } from "@bsg/shared";
+import { registerPendingChoice } from "./pending-choice-registry.js";
 
 // Re-use PowerContext from unit-abilities
 export interface PowerContext {
@@ -2673,3 +2674,596 @@ export function hasIndependentTribunal(unitStack: UnitStack): boolean {
     (m) => getCardDef(m.defId)?.abilityId === "independent-tribunal",
   );
 }
+
+// ============================================================
+// Pending Choice Handlers
+// ============================================================
+
+registerPendingChoice("pulling-rank-1", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    for (const p of state.players) {
+      const found = findUnitInZone(p.zones.alert, chosenCard.instanceId);
+      if (found) {
+        p.zones.alert.splice(found.index, 1);
+        p.zones.reserve.push(found.stack);
+        const def = getCardDef(chosenCard.defId);
+        log.push(`Pulling Rank: committed ${helpers.cardName(def)}.`);
+        break;
+      }
+    }
+    const remaining: CardInstance[] = [];
+    for (const p of state.players) {
+      for (const st of p.zones.alert) {
+        const top = st.cards[0];
+        if (!top?.faceUp) continue;
+        const d = getCardDef(top.defId);
+        if (d?.type === "personnel") remaining.push(top);
+      }
+    }
+    if (remaining.length > 0) {
+      state.pendingChoice = {
+        type: "pulling-rank-2",
+        playerIndex,
+        cards: remaining,
+      };
+    }
+  },
+  aiDecide(choice, choiceActions, state, playerIndex) {
+    const oppIdx = 1 - playerIndex;
+    let bestIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      if (!choiceActions[i].cardDefId) continue;
+      const card = choice.cards[i];
+      const isOpp = card && !!findUnitInAnyZone(state.players[oppIdx], card.instanceId);
+      const def = getCardDef(choiceActions[i].cardDefId!);
+      const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("pulling-rank-2", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    actions.push({ type: "makeChoice", description: "No second target" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    if (choiceIndex >= choice.cards.length) {
+      log.push("Pulling Rank: no second target.");
+    } else {
+      const chosenCard = choice.cards[choiceIndex];
+      if (chosenCard) {
+        for (const p of state.players) {
+          const found = findUnitInZone(p.zones.alert, chosenCard.instanceId);
+          if (found) {
+            p.zones.alert.splice(found.index, 1);
+            p.zones.reserve.push(found.stack);
+            const def = getCardDef(chosenCard.defId);
+            log.push(`Pulling Rank: committed ${helpers.cardName(def)}.`);
+            break;
+          }
+        }
+      }
+    }
+  },
+  aiDecide(choice, choiceActions, state, playerIndex) {
+    const oppIdx = 1 - playerIndex;
+    let bestIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      if (!choiceActions[i].cardDefId) continue;
+      const card = choice.cards[i];
+      const isOpp = card && !!findUnitInAnyZone(state.players[oppIdx], card.instanceId);
+      const def = getCardDef(choiceActions[i].cardDefId!);
+      const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("assassination-source", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit+exhaust ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const found = findUnitInZone(player.zones.alert, chosenCard.instanceId);
+    if (found) {
+      found.stack.exhausted = true;
+      player.zones.alert.splice(found.index, 1);
+      player.zones.reserve.push(found.stack);
+      const def = getCardDef(chosenCard.defId);
+      log.push(`Assassination: ${helpers.cardName(def)} committed and exhausted.`);
+    }
+    const targets: CardInstance[] = [];
+    for (const p of state.players) {
+      for (const zone of [p.zones.alert, p.zones.reserve]) {
+        for (const st of zone) {
+          const top = st.cards[0];
+          if (!top?.faceUp) continue;
+          const d = getCardDef(top.defId);
+          if (d?.type === "personnel") targets.push(top);
+        }
+      }
+    }
+    if (targets.length > 0) {
+      state.pendingChoice = {
+        type: "assassination-target",
+        playerIndex,
+        cards: targets,
+      };
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("assassination-target", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Defeat ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      if (findUnitInAnyZone(p, chosenCard.instanceId)) {
+        const def = getCardDef(chosenCard.defId);
+        helpers.defeatUnit(p, chosenCard.instanceId, log, state, pi);
+        log.push(`Assassination: defeated ${helpers.cardName(def)}.`);
+        break;
+      }
+    }
+  },
+  aiDecide(choice, choiceActions, state, playerIndex) {
+    const oppIdx = 1 - playerIndex;
+    let bestIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const card = choice.cards[i];
+      const isOpp = card && !!findUnitInAnyZone(state.players[oppIdx], card.instanceId);
+      const defId = choiceActions[i].cardDefId;
+      const def = defId ? getCardDef(defId) : undefined;
+      const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("arrow-of-apollo-search", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Take ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const deckIdx = player.deck.findIndex((c) => c.instanceId === chosenCard.instanceId);
+    if (deckIdx >= 0) {
+      player.deck.splice(deckIdx, 1);
+      player.hand.push(chosenCard);
+      const def = getCardDef(chosenCard.defId);
+      log.push(`Arrow Of Apollo: took ${helpers.cardName(def)} from deck.`);
+    }
+    for (let j = player.deck.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [player.deck[j], player.deck[k]] = [player.deck[k], player.deck[j]];
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestMystic = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const mystic = def?.mysticValue ?? 0;
+        if (mystic > bestMystic) {
+          bestMystic = mystic;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("life-has-a-melody-search", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Take ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    actions.push({ type: "makeChoice", description: "Take nothing" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    if (choiceIndex >= choice.cards.length) {
+      log.push("Life Has A Melody: chose not to take a card.");
+    } else {
+      const chosenCard = choice.cards[choiceIndex];
+      if (chosenCard) {
+        const deckIdx = player.deck.findIndex((c) => c.instanceId === chosenCard.instanceId);
+        if (deckIdx >= 0) {
+          player.deck.splice(deckIdx, 1);
+          player.hand.push(chosenCard);
+          const def = getCardDef(chosenCard.defId);
+          log.push(`Life Has A Melody: took ${helpers.cardName(def)} from deck.`);
+        }
+      }
+    }
+    for (let j = player.deck.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [player.deck[j], player.deck[k]] = [player.deck[k], player.deck[j]];
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestMystic = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const mystic = def?.mysticValue ?? 0;
+        if (mystic > bestMystic) {
+          bestMystic = mystic;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("hunt-for-tylium-hand", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Play ${helpers.cardName(def)} as supply`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const handIdx = player.hand.findIndex((c) => c.instanceId === chosenCard.instanceId);
+    if (handIdx >= 0) {
+      const [card] = player.hand.splice(handIdx, 1);
+      card.faceUp = false;
+      if (player.zones.resourceStacks.length > 0) {
+        player.zones.resourceStacks[0].supplyCards.push(card);
+      }
+      const def = getCardDef(chosenCard.defId);
+      log.push(`Hunt For Tylium: played ${helpers.cardName(def)} as supply card.`);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestMystic = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const mystic = def?.mysticValue ?? 0;
+        if (mystic < bestMystic) {
+          bestMystic = mystic;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("meet-new-boss-hand", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Exchange ${helpers.cardName(def)} from hand`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const handDef = getCardDef(chosenCard.defId);
+    const handPower = handDef?.power ?? 0;
+    const fieldMatches: CardInstance[] = [];
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const st of zone) {
+        const top = st.cards[0];
+        if (!top?.faceUp) continue;
+        const d = getCardDef(top.defId);
+        if (d?.type === "personnel" && (d.power ?? 0) === handPower) {
+          fieldMatches.push(top);
+        }
+      }
+    }
+    if (fieldMatches.length > 0) {
+      state.pendingChoice = {
+        type: "meet-new-boss-field",
+        playerIndex,
+        cards: fieldMatches,
+        context: { handInstanceId: chosenCard.instanceId },
+      };
+    } else {
+      log.push("Meet The New Boss: no matching personnel in play.");
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("meet-new-boss-field", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Exchange with ${helpers.cardName(def)} in play`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const handInstanceId = ctx.handInstanceId as string;
+    const handIdx = player.hand.findIndex((c) => c.instanceId === handInstanceId);
+    if (handIdx < 0) return;
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const st of zone) {
+        if (st.cards[0]?.instanceId === chosenCard.instanceId) {
+          const handCard = player.hand.splice(handIdx, 1)[0];
+          const playCards = st.cards.splice(0, st.cards.length);
+          st.cards.push(handCard);
+          for (const c of playCards) player.hand.push(c);
+          const handDef = getCardDef(handCard.defId);
+          const playDef = getCardDef(chosenCard.defId);
+          log.push(
+            `Meet The New Boss: exchanged ${helpers.cardName(handDef)} with ${helpers.cardName(playDef)}.`,
+          );
+          return;
+        }
+      }
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("article-23", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Sacrifice ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    actions.push({ type: "makeChoice", description: "Lose 2 influence" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const remainingPlayers = (ctx.remainingPlayers as number[]) ?? [];
+    if (choiceIndex < choice.cards.length) {
+      const chosenCard = choice.cards[choiceIndex];
+      if (chosenCard) {
+        const found = findUnitInAnyZone(player, chosenCard.instanceId);
+        if (found) {
+          helpers.defeatUnit(player, chosenCard.instanceId, log, state, playerIndex);
+          log.push(`Article 23: Player ${playerIndex + 1} sacrifices a personnel.`);
+        }
+      }
+    } else {
+      helpers.applyInfluenceLoss(state, playerIndex, 2, log, helpers.bases);
+      log.push(`Article 23: Player ${playerIndex + 1} loses 2 influence.`);
+    }
+    if (remainingPlayers.length > 0) {
+      const nextPlayer = remainingPlayers[0];
+      const nextRemaining = remainingPlayers.slice(1);
+      const nextP = state.players[nextPlayer];
+      const nextPersonnel: CardInstance[] = [];
+      for (const zone of [nextP.zones.alert, nextP.zones.reserve]) {
+        for (const st of zone) {
+          const top = st.cards[0];
+          if (!top?.faceUp) continue;
+          const d = getCardDef(top.defId);
+          if (d?.type === "personnel") nextPersonnel.push(top);
+        }
+      }
+      state.pendingChoice = {
+        type: "article-23",
+        playerIndex: nextPlayer,
+        cards: nextPersonnel,
+        context: { remainingPlayers: nextRemaining },
+      };
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    if (choiceActions.length <= 1) return 0;
+    let cheapestIdx = 0;
+    let cheapestPow = Infinity;
+    for (let i = 0; i < choiceActions.length - 1; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const pow = def?.power ?? 0;
+        if (pow < cheapestPow) {
+          cheapestPow = pow;
+          cheapestIdx = i;
+        }
+      }
+    }
+    return cheapestIdx;
+  },
+});
+
+registerPendingChoice("prophetic-visions-arrange", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Put ${helpers.cardName(def)} on top`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    const otherCard = choice.cards[1 - choiceIndex];
+    const opIdx = ctx.opponentIndex as number;
+    const opp = state.players[opIdx];
+    if (chosenCard && otherCard) {
+      opp.deck.unshift(chosenCard);
+      opp.deck.push(otherCard);
+      const chosenDef = getCardDef(chosenCard.defId);
+      const otherDef = getCardDef(otherCard.defId);
+      log.push(
+        `Prophetic Visions: ${helpers.cardName(chosenDef)} on top, ${helpers.cardName(otherDef)} on bottom.`,
+      );
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let worstIdx = 0;
+    let worstMystic = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const mystic = def?.mysticValue ?? 0;
+        if (mystic < worstMystic) {
+          worstMystic = mystic;
+          worstIdx = i;
+        }
+      }
+    }
+    return worstIdx;
+  },
+});

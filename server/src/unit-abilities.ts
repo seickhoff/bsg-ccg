@@ -7,9 +7,11 @@ import type {
   Keyword,
   PlayerState,
   ChallengeState,
+  CardInstance,
 } from "@bsg/shared";
 import { hasKeyword } from "@bsg/shared";
 import { fireMissionOnDraw } from "./mission-abilities.js";
+import { registerPendingChoice, getHelpers } from "./pending-choice-registry.js";
 
 // ============================================================
 // BSG CCG — Unit Ability Registry
@@ -83,6 +85,23 @@ export interface UnitAbilityHandler {
 
   /** Can this unit challenge? false = cannot */
   canChallenge?: false;
+
+  // --- DIP hooks (Phase 3) ---
+
+  /** Freighter resource type — replaces FREIGHTER_RESOURCE map in game-engine.ts */
+  freighterResource?: "security" | "logistics" | "persuasion";
+
+  /** Power buff when used as commit-other cost (default 1, sacrifice-other always 3) */
+  commitOtherPowerBuff?: number;
+
+  /** Can be flash-played from hand to defend against a ship challenger */
+  canFlashPlayToDefend?: boolean;
+
+  /** This unit's trigger acts as a challenge pending trigger (different from base triggers) */
+  isChallengePendingTrigger?: boolean;
+
+  /** Commit this unit to reduce influence loss by 1 */
+  interceptInfluenceLoss?: boolean;
 }
 
 // --- Registry ---
@@ -1091,6 +1110,7 @@ register("baltar-boost", {
 
 // Centurion Hunter: "Commit target other Cylon personnel you control: +2 power. Once per turn."
 register("centurion-hunt", {
+  commitOtherPowerBuff: 2,
   activation: {
     cost: "commit-other",
     otherFilter: (def) => def.type === "personnel" && !!def.traits?.includes("Cylon"),
@@ -1614,6 +1634,7 @@ register("gaeta-ready", {
 // Saul Tigh XO: "Each time challenged, ready self. At end, commit+exhaust."
 register("tigh-xo", {
   trigger: "onChallengeEnd",
+  isChallengePendingTrigger: true,
 });
 
 // Centurion Tracker: "Each time challenges, sacrifice at end."
@@ -2184,19 +2205,19 @@ register("nuclear-raider-win", {
 
 // Cloud 9, Cruise Ship: "Each time you lose influence, may commit to reduce by 1."
 // Logic in interceptCloud9Loss() above + game-engine.ts interceptCloud9() + base-abilities.ts
-register("cloud9-shield", {});
+register("cloud9-shield", { interceptInfluenceLoss: true });
 
 // Ordnance Freighter: "Each time you spend a resource stack, may commit. Generate [security]."
 // Logic in game-engine.ts payResourceCost/spendAnyResources + FREIGHTER_RESOURCE map
-register("ordnance-freighter", {});
+register("ordnance-freighter", { freighterResource: "security" });
 
 // Supply Freighter: "Each time you spend a resource stack, may commit. Generate [logistics]."
 // Logic in game-engine.ts payResourceCost/spendAnyResources + FREIGHTER_RESOURCE map
-register("supply-freighter", {});
+register("supply-freighter", { freighterResource: "logistics" });
 
 // Troop Freighter: "Each time you spend a resource stack, may commit. Generate [persuasion]."
 // Logic in game-engine.ts payResourceCost/spendAnyResources + FREIGHTER_RESOURCE map
-register("troop-freighter", {});
+register("troop-freighter", { freighterResource: "persuasion" });
 
 // Olympic Carrier: "When resolving Cylon mission, sacrifice for 2 requirements."
 // Logic in game-engine.ts canResolveMission + resolveMission handler
@@ -2204,7 +2225,7 @@ register("olympic-carrier-mission", {});
 
 // Raptor 432: "Flash play from hand when challenged by ship to defend."
 // Logic in game-engine.ts getValidActions (defender selection) + defend case handler
-register("raptor432-flash", {});
+register("raptor432-flash", { canFlashPlayToDefend: true });
 
 // ============================================================
 // DISPATCHERS
@@ -2754,3 +2775,445 @@ function applyChallengePowerBuff(
     log.push(`Defender gets ${amount > 0 ? "+" : ""}${amount} power.`);
   }
 }
+
+// ============================================================
+// DIP Dispatchers (Phase 3 hooks)
+// ============================================================
+
+/** Get the freighter resource type for a given abilityId, or undefined if not a freighter. */
+export function getFreighterResource(
+  abilityId: string,
+): "security" | "logistics" | "persuasion" | undefined {
+  return registry.get(abilityId)?.freighterResource;
+}
+
+/** Get the commit-other power buff amount for a unit ability (default 1). */
+export function getCommitOtherPowerBuff(abilityId: string): number {
+  return registry.get(abilityId)?.commitOtherPowerBuff ?? 1;
+}
+
+/** Check if a unit ability can be flash-played from hand to defend. */
+export function canFlashDefend(abilityId: string): boolean {
+  return registry.get(abilityId)?.canFlashPlayToDefend ?? false;
+}
+
+/** Check if a unit's trigger should be treated as a challenge pending trigger (not a base trigger). */
+export function isChallengePendingTriggerAbility(abilityId: string): boolean {
+  return registry.get(abilityId)?.isChallengePendingTrigger ?? false;
+}
+
+/** Check if a unit ability can intercept influence loss. */
+export function canInterceptInfluenceLoss(abilityId: string): boolean {
+  return registry.get(abilityId)?.interceptInfluenceLoss ?? false;
+}
+
+// ============================================================
+// Pending Choice Handlers
+// ============================================================
+
+registerPendingChoice("space-park-scry", {
+  getActions(choice) {
+    const def = getCardDef(choice.cards[0].defId);
+    if (!def) return [];
+    return [
+      { type: "makeChoice", description: `Keep ${cardName(def)} on top`, cardDefId: def.id },
+      { type: "makeChoice", description: `Put ${cardName(def)} on bottom`, cardDefId: def.id },
+    ];
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    const card = choice.cards[0];
+    if (!card) return;
+    const def = getCardDef(card.defId);
+    if (choiceIndex === 0) {
+      player.deck.unshift(card);
+      if (def) log.push(`Space Park: Kept ${cardName(def)} on top.`);
+    } else {
+      player.deck.push(card);
+      if (def) log.push(`Space Park: Put ${cardName(def)} on bottom.`);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestMystic = -1;
+    for (const action of choiceActions) {
+      if (action.cardDefId) {
+        const def = getCardDef(action.cardDefId);
+        bestMystic = Math.max(bestMystic, def?.mysticValue ?? 0);
+      }
+    }
+    return bestMystic < 2 ? 1 : 0;
+  },
+});
+
+registerPendingChoice("mining-ship-dig", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Send ${cardName(def)} to bottom`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const ownerIdx = ctx.ownerIndex as number;
+    const owner = state.players[ownerIdx];
+    const bottomCard = choice.cards[choiceIndex];
+    const handCard = choice.cards[1 - choiceIndex];
+    if (bottomCard && handCard) {
+      owner.deck.push(bottomCard);
+      owner.hand.push(handCard);
+      const bDef = getCardDef(bottomCard.defId);
+      const hDef = getCardDef(handCard.defId);
+      if (bDef && hDef) {
+        log.push(`Mining Ship: ${cardName(bDef)} goes to bottom, ${cardName(hDef)} goes to hand.`);
+      }
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let worstIdx = 0;
+    let worstPow = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const pow = def?.power ?? 0;
+        if (pow > worstPow) {
+          worstPow = pow;
+          worstIdx = i;
+        }
+      }
+    }
+    return worstIdx;
+  },
+});
+
+registerPendingChoice("boomer-search", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Take ${cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    actions.push({ type: "makeChoice", description: "Take nothing" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    if (choiceIndex >= choice.cards.length) {
+      log.push("Boomer: Chose not to take a personnel.");
+      for (let j = player.deck.length - 1; j > 0; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        [player.deck[j], player.deck[k]] = [player.deck[k], player.deck[j]];
+      }
+    } else {
+      const card = choice.cards[choiceIndex];
+      const def = getCardDef(card.defId);
+      const deckIdx = player.deck.findIndex((c) => c.instanceId === card.instanceId);
+      if (deckIdx >= 0) player.deck.splice(deckIdx, 1);
+      player.hand.push(card);
+      if (def) log.push(`Boomer: Searched deck and found ${cardName(def)}.`);
+      for (let j = player.deck.length - 1; j > 0; j--) {
+        const k = Math.floor(Math.random() * (j + 1));
+        [player.deck[j], player.deck[k]] = [player.deck[k], player.deck[j]];
+      }
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestPow = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const pow = def?.power ?? 0;
+        if (pow > bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("zarek-etb", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Defeat ${cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const h = getHelpers();
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      if (findUnitInAnyZone(p, chosenCard.instanceId)) {
+        h.defeatUnit(p, chosenCard.instanceId, log, state, pi);
+        log.push("Tom Zarek: Defeats a personnel on entering play.");
+        break;
+      }
+    }
+  },
+  aiDecide(choice, choiceActions, state, playerIndex) {
+    const oppIdx = 1 - playerIndex;
+    let bestIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const pow = def?.power ?? 0;
+        const card = choice.cards[i];
+        const isOpp = card && !!findUnitInAnyZone(state.players[oppIdx], card.instanceId);
+        const score = pow + (isOpp ? 100 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("astral-queen-second", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Exhaust ${cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    for (const p of state.players) {
+      const found = findUnitInAnyZone(p, chosenCard.instanceId);
+      if (found) {
+        found.stack.exhausted = true;
+        const def = getCardDef(found.stack.cards[0].defId);
+        if (def) log.push(`Astral Queen: ${cardName(def)} also exhausted.`);
+        break;
+      }
+    }
+  },
+  aiDecide(choice, choiceActions, state, playerIndex) {
+    const oppIdx = 1 - playerIndex;
+    let bestIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const card = choice.cards[i];
+      const isOpp = card && !!findUnitInAnyZone(state.players[oppIdx], card.instanceId);
+      const defId = choiceActions[i].cardDefId;
+      const def = defId ? getCardDef(defId) : undefined;
+      const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("tyrol-etb-choice", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Ready ${cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (chosenCard) {
+      readyUnit(player, chosenCard.instanceId);
+      const def = getCardDef(chosenCard.defId);
+      if (def) log.push(`Galen Tyrol: Readied ${cardName(def)}.`);
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("tyrol-chief-choice", {
+  getActions() {
+    return [
+      { type: "makeChoice" as const, description: "Commit Tyrol to ready ship" },
+      { type: "makeChoice" as const, description: "Decline" },
+    ];
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const tyrolId = ctx.tyrolInstanceId as string;
+    const shipId = ctx.shipInstanceId as string;
+    if (choiceIndex === 0) {
+      commitUnit(player, tyrolId);
+      readyUnit(player, shipId);
+      log.push("Galen Tyrol commits to ready entering ship.");
+    } else {
+      log.push("Galen Tyrol declines to ready entering ship.");
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("six-seductress", {
+  getActions() {
+    return [
+      { type: "makeChoice" as const, description: "Commit Six — challenger gets +2 power" },
+      { type: "makeChoice" as const, description: "Decline" },
+    ];
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    if (choiceIndex === 0 && state.challenge) {
+      const sixId = ctx.sixInstanceId as string;
+      commitUnit(player, sixId);
+      state.challenge.sixSeductressBuff = 2;
+      log.push("Number Six Seductress commits — challenger gets +2 power.");
+    } else {
+      log.push("Number Six Seductress: declined.");
+    }
+    if (state.challenge) {
+      const h = getHelpers();
+      h.resumeChallenge(state, log, h.bases);
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("starbuck-reroll", {
+  getActions(choice) {
+    const currentVal =
+      (((choice.context ?? {}) as Record<string, unknown>).currentValue as number) ?? 0;
+    return [
+      {
+        type: "makeChoice" as const,
+        description: `Commit Starbuck — reroll (current: ${currentVal})`,
+      },
+      { type: "makeChoice" as const, description: `Keep mystic value (${currentVal})` },
+    ];
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const side = ctx.side as string;
+    if (choiceIndex === 0 && state.challenge) {
+      const starbuckCard = choice.cards[0];
+      if (starbuckCard) {
+        commitUnit(player, starbuckCard.instanceId);
+        log.push("Starbuck commits — ignoring mystic value, revealing another.");
+        if (side === "challenger") {
+          state.challenge.challengerMysticValue = null;
+        } else {
+          state.challenge.defenderMysticValue = null;
+        }
+      }
+    } else {
+      log.push("Starbuck: keeping current mystic value.");
+    }
+    if (state.challenge) {
+      const h = getHelpers();
+      h.resumeChallenge(state, log, h.bases);
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("gaeta-ready-choice", {
+  getActions() {
+    return [
+      { type: "makeChoice" as const, description: "Ready Mr. Gaeta" },
+      { type: "makeChoice" as const, description: "Decline" },
+    ];
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const unitId = ctx.unitId as string;
+    if (choiceIndex === 0) {
+      readyUnit(player, unitId);
+      if (!player.oncePerTurnUsed) player.oncePerTurnUsed = {};
+      player.oncePerTurnUsed["gaeta-ready"] = true;
+      log.push("Mr. Gaeta readies after challenging.");
+    } else {
+      log.push("Mr. Gaeta declines to ready.");
+    }
+    if (state.challenge) {
+      const h = getHelpers();
+      h.resumeChallenge(state, log, h.bases);
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("helo-toaster-choice", {
+  getActions() {
+    return [
+      { type: "makeChoice" as const, description: "Ready Helo" },
+      { type: "makeChoice" as const, description: "Decline" },
+    ];
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const unitId = ctx.unitId as string;
+    if (choiceIndex === 0) {
+      readyUnit(player, unitId);
+      if (!player.oncePerTurnUsed) player.oncePerTurnUsed = {};
+      player.oncePerTurnUsed["helo-toaster"] = true;
+      log.push("Helo readies after challenging (Boomer in play).");
+    } else {
+      log.push("Helo declines to ready.");
+    }
+    if (state.challenge) {
+      const h = getHelpers();
+      h.resumeChallenge(state, log, h.bases);
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});

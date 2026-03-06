@@ -166,7 +166,13 @@ function broadcastGameState(room: GameRoom): void {
     const slot = room.players[i];
     if (slot.type === "human" && slot.ws) {
       const view = getPlayerView(room.gameState, i);
-      const validActions = room.aiProcessing ? [] : getValidActions(room.gameState, i, bases);
+      let validActions: ValidAction[];
+      try {
+        validActions = room.aiProcessing ? [] : getValidActions(room.gameState, i, bases);
+      } catch (err) {
+        console.error(`getValidActions failed for player ${i} in ${room.id}:`, err);
+        validActions = [];
+      }
       sendToPlayer(slot.ws, {
         type: "gameState",
         state: view,
@@ -216,7 +222,16 @@ function startGame(room: GameRoom): void {
     if (room.gameGeneration === gen) {
       room.aiProcessing = false;
       room.pendingNotification = null;
-      broadcastGameState(room);
+      if (room.gameState) {
+        room.gameState.log.push(
+          `[Engine error: ${err instanceof Error ? err.message : String(err)}]`,
+        );
+      }
+      try {
+        broadcastGameState(room);
+      } catch (broadcastErr) {
+        console.error(`broadcastGameState also failed in ${room.id}:`, broadcastErr);
+      }
     }
   });
 }
@@ -322,7 +337,16 @@ async function processAITurns(room: GameRoom): Promise<void> {
     for (let i = 0; i < 2; i++) {
       if (room.players[i].type !== "ai") continue;
       if (!canPlayerAct(room.gameState, i)) continue;
-      const actions = getValidActions(room.gameState, i, bases);
+      let actions: ValidAction[];
+      try {
+        actions = getValidActions(room.gameState, i, bases);
+      } catch (err) {
+        console.error(
+          `getValidActions failed for AI player ${i} in ${room.id} (phase: ${room.gameState.phase}):`,
+          err,
+        );
+        break;
+      }
       if (actions.length > 0) {
         aiIdx = i;
         aiActions = actions;
@@ -342,7 +366,14 @@ async function processAITurns(room: GameRoom): Promise<void> {
       const result = applyAction(room.gameState, aiIdx, decision, bases);
       room.gameState = result.state;
     } catch (err) {
-      console.error(`AI action error: ${err instanceof Error ? err.message : err}`);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const phase = room.gameState.phase;
+      const actionType = decision.type;
+      console.error(
+        `AI action error in ${room.id} [phase=${phase}, action=${actionType}, player=${aiIdx}]: ${errMsg}`,
+      );
+      // Append error to game log so it's visible to the player
+      room.gameState.log.push(`[Engine error during AI ${actionType}: ${errMsg}]`);
       break;
     }
 
@@ -638,7 +669,16 @@ wss.on("connection", (ws) => {
             if (room.gameGeneration === gen) {
               room.aiProcessing = false;
               room.pendingNotification = null;
-              broadcastGameState(room);
+              if (room.gameState) {
+                room.gameState.log.push(
+                  `[Engine error: ${err instanceof Error ? err.message : String(err)}]`,
+                );
+              }
+              try {
+                broadcastGameState(room);
+              } catch (broadcastErr) {
+                console.error(`broadcastGameState also failed in ${room.id}:`, broadcastErr);
+              }
             }
           });
         } catch (err) {

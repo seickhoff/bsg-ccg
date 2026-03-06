@@ -6,6 +6,7 @@ import type {
   UnitStack,
   CardInstance,
 } from "@bsg/shared";
+import { registerPendingChoice } from "./pending-choice-registry.js";
 
 // ============================================================
 // BSG CCG — Base Ability Registry
@@ -46,6 +47,17 @@ export interface BaseAbilityHandler {
     log: string[],
     bases: Record<string, BaseCardDef>,
   ): void;
+
+  // --- DIP hooks (Phase 3) ---
+
+  /** Base counts as a Civilian unit for mission requirements */
+  countsAsCivilian?: boolean;
+
+  /** Base can auto-exhaust to reduce influence loss (return reduced amount) */
+  influenceLossReduction?: number;
+
+  /** Base can auto-exhaust to prevent the worst cylon threat text */
+  preventThreatText?: boolean;
 }
 
 // --- Registry ---
@@ -54,6 +66,10 @@ const registry = new Map<string, BaseAbilityHandler>();
 
 function registerBaseAbility(abilityId: string, handler: BaseAbilityHandler): void {
   registry.set(abilityId, handler);
+}
+
+export function getBaseAbilityHandler(abilityId: string): BaseAbilityHandler | undefined {
+  return registry.get(abilityId);
 }
 
 // --- Card Def Helper (duplicated from engine to avoid circular imports) ---
@@ -353,30 +369,30 @@ registerBaseAbility("flattop", {
 registerBaseAbility("iht-colonial-one", {
   usableIn: [],
   trigger: "onInfluenceLoss",
+  influenceLossReduction: 2,
   getTargets: () => null,
   resolve() {
-    // Handled by interceptInfluenceLoss dispatcher — not called directly
+    // Handled by interceptInfluenceLoss dispatcher
   },
 });
 
-// --- Blockading Base Star: prevent Cylon threat text ---
-// Handled directly in game-engine.ts fireCylonThreatRedText() — auto-exhausts base to prevent worst threat.
 registerBaseAbility("blockading-base-star", {
   usableIn: [],
   trigger: "onCylonReveal",
+  preventThreatText: true,
   getTargets: () => null,
   resolve() {
-    // Logic is in game-engine.ts fireCylonThreatRedText
+    // Handled by fireCylonThreatRedText in game-engine.ts
   },
 });
 
-// --- Colonial Heavy 798: counts as Civilian for mission ---
 registerBaseAbility("colonial-heavy-798", {
   usableIn: [],
   trigger: "onMissionResolve",
+  countsAsCivilian: true,
   getTargets: () => null,
   resolve() {
-    // Handled by mission resolve logic in engine — not called directly
+    // Handled by mission resolve logic in engine
   },
 });
 
@@ -517,15 +533,17 @@ export function interceptInfluenceLoss(
   if (amount <= 0) return amount;
   const player = state.players[playerIndex];
   const baseDef = bases[player.baseDefId];
-  if (baseDef?.abilityId !== "iht-colonial-one") return amount;
+  if (!baseDef?.abilityId) return amount;
+
+  const handler = registry.get(baseDef.abilityId);
+  if (!handler?.influenceLossReduction) return amount;
 
   const baseStack = player.zones.resourceStacks[0];
   if (!baseStack || baseStack.exhausted) return amount;
 
-  // Auto-apply: exhaust base, reduce loss by 2
   baseStack.exhausted = true;
-  const reduced = Math.max(0, amount - 2);
-  log.push(`I.H.T. Colonial One: Reduced influence loss from ${amount} to ${reduced}.`);
+  const reduced = Math.max(0, amount - handler.influenceLossReduction);
+  log.push(`${baseDef.title}: Reduced influence loss from ${amount} to ${reduced}.`);
   return reduced;
 }
 
@@ -538,7 +556,7 @@ export function isBaseAbilityUsableIn(
   return handler?.usableIn.includes(context) ?? false;
 }
 
-/** Check if the base has Colonial Heavy 798 ability (for mission resolve). */
+/** Check if the base counts as a Civilian unit (for mission resolve). */
 export function hasColonialHeavy798(
   state: GameState,
   playerIndex: number,
@@ -546,22 +564,28 @@ export function hasColonialHeavy798(
 ): boolean {
   const player = state.players[playerIndex];
   const baseDef = bases[player.baseDefId];
-  if (baseDef?.abilityId !== "colonial-heavy-798") return false;
+  if (!baseDef?.abilityId) return false;
+
+  const handler = registry.get(baseDef.abilityId);
+  if (!handler?.countsAsCivilian) return false;
+
   const baseStack = player.zones.resourceStacks[0];
   return !!baseStack && !baseStack.exhausted;
 }
 
-/** Exhaust Colonial Heavy 798 base (called when mission uses it). */
+/** Exhaust the civilian-counting base (called when mission uses it). */
 export function exhaustColonialHeavy798(
   state: GameState,
   playerIndex: number,
   log: string[],
+  bases: Record<string, BaseCardDef>,
 ): void {
   const player = state.players[playerIndex];
+  const baseDef = bases[player.baseDefId];
   const baseStack = player.zones.resourceStacks[0];
   if (baseStack) {
     baseStack.exhausted = true;
-    log.push("Colonial Heavy 798: Counts as 1 Civilian unit for mission requirements.");
+    log.push(`${baseDef?.title ?? "Base"}: Counts as 1 Civilian unit for mission requirements.`);
   }
 }
 
@@ -581,3 +605,55 @@ function findChallengeUnitDef(state: GameState, instanceId: string): CardDef | n
   }
   return null;
 }
+
+// ============================================================
+// Pending Choice Handlers
+// ============================================================
+
+registerPendingChoice("celestra", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Keep ${cardName(def)} on top`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    const otherCard = choice.cards[1 - choiceIndex];
+    if (chosenCard && otherCard) {
+      const chosenDef = getCardDef(chosenCard.defId);
+      const otherDef = getCardDef(otherCard.defId);
+      player.deck.unshift(chosenCard);
+      player.deck.push(otherCard);
+      if (chosenDef && otherDef) {
+        log.push(
+          `Player ${playerIndex + 1} puts ${cardName(chosenDef)} on top and ${cardName(otherDef)} on the bottom.`,
+        );
+      }
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestMystic = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = getCardDef(defId);
+        const mystic = def?.mysticValue ?? 0;
+        if (mystic > bestMystic) {
+          bestMystic = mystic;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});

@@ -1274,11 +1274,39 @@ function handleActionClick(
 
     case "playCard": {
       const cardIdx = action.selectableCardIndices?.[0] ?? 0;
+      const card = state.you.hand[cardIdx];
+      const def = card ? cardDefs[card.defId] : null;
       const targets = action.selectableInstanceIds;
-      // If server provided targets for this event, prompt for target selection
-      if (targets && targets.length > 0) {
-        const card = state.you.hand[cardIdx];
-        const def = card ? cardDefs[card.defId] : null;
+      const cost = def?.cost ?? null;
+      const needsStackPicker = cost && hasResourceChoice(cost, state.you.zones.resourceStacks);
+
+      if (needsStackPicker && targets && targets.length > 0) {
+        // Both stack selection AND target selection needed — stack picker first
+        showResourceStackPicker(cardIdx, cost, state, validActions, container, (stackIndices) => {
+          const cardLabel = def ? getCardName(card.defId) : "event";
+          enterSelectModeInstance(
+            container,
+            `Select target for ${cardLabel}`,
+            targets,
+            (targetId) => {
+              onAction!({
+                type: "playCard",
+                cardIndex: cardIdx,
+                targetInstanceId: targetId,
+                selectedStackIndices: stackIndices,
+              });
+            },
+            validActions,
+            state,
+          );
+        });
+      } else if (needsStackPicker) {
+        // Only stack selection needed
+        showResourceStackPicker(cardIdx, cost, state, validActions, container, (stackIndices) => {
+          onAction!({ type: "playCard", cardIndex: cardIdx, selectedStackIndices: stackIndices });
+        });
+      } else if (targets && targets.length > 0) {
+        // Only target selection (no meaningful stack choice)
         const cardLabel = def ? getCardName(card.defId) : "event";
         enterSelectModeInstance(
           container,
@@ -1502,63 +1530,67 @@ function handleActionClick(
     case "playEventInChallenge": {
       const indices = action.selectableCardIndices ?? [];
       const targets = action.selectableInstanceIds;
-      if (indices.length === 1) {
-        const cardIdx = indices[0];
-        // If server provided targets, prompt for target selection
-        if (targets && targets.length > 0) {
-          const card = state.you.hand[cardIdx];
-          const cardLabel = card ? getCardName(card.defId) : "event";
-          enterSelectModeInstance(
-            container,
-            `Select target for ${cardLabel}`,
-            targets,
-            (targetId) => {
-              onAction!({
-                type: "playEventInChallenge",
-                cardIndex: cardIdx,
-                targetInstanceId: targetId,
-              });
-            },
-            validActions,
-            state,
-          );
+
+      /** Send challenge event action, with optional stack picker first. */
+      const sendChallengeEvent = (cardIdx: number, eventTargets?: string[]): void => {
+        const evCard = state.you.hand[cardIdx];
+        const evDef = evCard ? cardDefs[evCard.defId] : null;
+        const evCost = evDef?.cost ?? null;
+        const needsPicker = evCost && hasResourceChoice(evCost, state.you.zones.resourceStacks);
+
+        const sendWithStacks = (stackIndices?: number[]): void => {
+          if (eventTargets && eventTargets.length > 0) {
+            const cardLabel = evCard ? getCardName(evCard.defId) : "event";
+            enterSelectModeInstance(
+              container,
+              `Select target for ${cardLabel}`,
+              eventTargets,
+              (targetId) => {
+                onAction!({
+                  type: "playEventInChallenge",
+                  cardIndex: cardIdx,
+                  targetInstanceId: targetId,
+                  ...(stackIndices ? { selectedStackIndices: stackIndices } : {}),
+                });
+              },
+              validActions,
+              state,
+            );
+          } else {
+            onAction!({
+              type: "playEventInChallenge",
+              cardIndex: cardIdx,
+              ...(stackIndices ? { selectedStackIndices: stackIndices } : {}),
+            });
+          }
+        };
+
+        if (needsPicker) {
+          showResourceStackPicker(cardIdx, evCost, state, validActions, container, sendWithStacks);
         } else {
-          onAction({ type: "playEventInChallenge", cardIndex: cardIdx });
+          sendWithStacks();
         }
+      };
+
+      if (indices.length === 1) {
+        sendChallengeEvent(indices[0], targets && targets.length > 0 ? targets : undefined);
       } else {
-        // Multiple events selectable — pick card first, then check for targets
+        // Multiple events selectable — pick card first
         enterSelectMode(
           container,
           "Select event to play",
           indices,
           (idx) => {
-            // Find the matching action to get its server-provided targets
             const matchingAction = validActions.find(
               (a) =>
                 a.type === "playEventInChallenge" &&
                 a.selectableCardIndices?.includes(idx as number),
             );
             const eventTargets = matchingAction?.selectableInstanceIds;
-            if (eventTargets && eventTargets.length > 0) {
-              const card = state.you.hand[idx];
-              const cardLabel = card ? getCardName(card.defId) : "event";
-              enterSelectModeInstance(
-                container,
-                `Select target for ${cardLabel}`,
-                eventTargets,
-                (targetId) => {
-                  onAction!({
-                    type: "playEventInChallenge",
-                    cardIndex: idx as number,
-                    targetInstanceId: targetId,
-                  });
-                },
-                validActions,
-                state,
-              );
-              return;
-            }
-            onAction!({ type: "playEventInChallenge", cardIndex: idx as number });
+            sendChallengeEvent(
+              idx as number,
+              eventTargets && eventTargets.length > 0 ? eventTargets : undefined,
+            );
           },
           validActions,
           state,
@@ -1813,6 +1845,270 @@ function showResourceDeployChoice(
       },
     },
   ]);
+}
+
+/** Check if there's a meaningful resource stack choice for a given cost. */
+function hasResourceChoice(
+  cost: { persuasion?: number; logistics?: number; security?: number } | null,
+  stacks: ResourceStack[],
+): boolean {
+  if (!cost) return false;
+  for (const [resType, amount] of Object.entries(cost) as [string, number][]) {
+    const candidates = stacks.filter(
+      (s) => !s.exhausted && getResourceName(s.topCard.defId) === resType,
+    );
+    if (candidates.length <= 1) continue;
+    // Multiple stacks of this type — is there more than one valid combination?
+    const total = candidates.reduce((sum, s) => sum + 1 + s.supplyCards.length, 0);
+    if (total > amount && candidates.length > 1) return true;
+  }
+  return false;
+}
+
+/** Compute the optimal stack selection (minimize waste) for a given cost. */
+function computeOptimalStacks(
+  cost: { persuasion?: number; logistics?: number; security?: number } | null,
+  stacks: ResourceStack[],
+): number[] {
+  if (!cost) return [];
+  const selected: number[] = [];
+  for (const [resType, amount] of Object.entries(cost) as [string, number][]) {
+    // Gather un-exhausted stacks of this type, sorted smallest first
+    const candidates = stacks
+      .map((s, i) => ({
+        index: i,
+        resType: getResourceName(s.topCard.defId),
+        count: 1 + s.supplyCards.length,
+        exhausted: s.exhausted,
+      }))
+      .filter((c) => !c.exhausted && c.resType === resType)
+      .sort((a, b) => a.count - b.count);
+
+    let remaining = amount;
+    for (const c of candidates) {
+      if (remaining <= 0) break;
+      selected.push(c.index);
+      remaining -= c.count;
+    }
+  }
+  return selected;
+}
+
+/** Interactive resource stack picker modal for choosing which stacks to spend. */
+function showResourceStackPicker(
+  cardIndex: number,
+  cost: { persuasion?: number; logistics?: number; security?: number },
+  state: PlayerGameView,
+  validActions: ValidAction[],
+  container: HTMLElement,
+  onConfirm: (selectedStackIndices: number[]) => void,
+): void {
+  dismissPlayerActionModal();
+
+  const card = state.you.hand[cardIndex];
+  const cardDefId = card?.defId ?? "";
+  const cardLabel = card ? getCardName(card.defId) : "card";
+  const cardImage = cardDefs[cardDefId]?.image ?? baseDefs[cardDefId]?.image ?? "";
+
+  // Pre-select optimal stacks
+  const selectedSet = new Set(computeOptimalStacks(cost, state.you.zones.resourceStacks));
+
+  // Group stacks by resource type (only types present in the cost)
+  const costTypes = Object.entries(cost).filter(([, amt]) => amt > 0) as [string, number][];
+  const stacksByType: Record<
+    string,
+    { index: number; name: string; count: number; defId: string; image: string; isBase: boolean }[]
+  > = {};
+
+  for (const [resType] of costTypes) {
+    stacksByType[resType] = [];
+    state.you.zones.resourceStacks.forEach((stack, i) => {
+      if (stack.exhausted) return;
+      if (getResourceName(stack.topCard.defId) !== resType) return;
+      const def = cardDefs[stack.topCard.defId] ?? baseDefs[stack.topCard.defId];
+      const name = def?.title ?? stack.topCard.defId;
+      const isBase = !!baseDefs[stack.topCard.defId];
+      stacksByType[resType].push({
+        index: i,
+        name,
+        count: 1 + stack.supplyCards.length,
+        defId: stack.topCard.defId,
+        image: (cardDefs[stack.topCard.defId]?.image ?? baseDefs[stack.topCard.defId]?.image) || "",
+        isBase,
+      });
+    });
+  }
+
+  // Build HTML
+  const cardHeaderHtml = `
+    <div class="resource-picker-card-header">
+      ${cardImage ? `<img src="${cardImage}" alt="" class="resource-picker-card-thumb" />` : ""}
+      <div class="resource-picker-card-info">
+        <div class="resource-picker-card-name">${escapeHtml(cardLabel)}</div>
+        <div class="resource-picker-card-cost">Cost: ${costBadgeHtml(cost)}</div>
+      </div>
+    </div>
+  `;
+
+  let sectionsHtml = "";
+  for (const [resType, amount] of costTypes) {
+    const stacks = stacksByType[resType] ?? [];
+    const resLabel = resType.charAt(0).toUpperCase() + resType.slice(1);
+    const letter = resourceIcon(resType);
+
+    let rowsHtml = "";
+    for (const s of stacks) {
+      const sel = selectedSet.has(s.index) ? " resource-picker-row--selected" : "";
+      const thumbClass = s.isBase
+        ? "resource-picker-row-thumb card-clip-landscape"
+        : "resource-picker-row-thumb";
+      const thumbHtml = s.image
+        ? `<img src="${s.image}" alt="" class="${thumbClass}" loading="lazy" data-def-id="${s.defId}" />`
+        : "";
+      rowsHtml += `
+        <div class="resource-picker-row${sel}" data-stack-index="${s.index}" data-res-type="${resType}">
+          ${thumbHtml}
+          <span class="resource-picker-row-name">${escapeHtml(s.name)}</span>
+          <span class="resource-inline-badge resource-inline-badge--${resType}">${s.count}${letter}</span>
+          <span class="resource-picker-toggle"><span class="resource-picker-toggle-check">&#x2713;</span></span>
+        </div>
+      `;
+    }
+
+    sectionsHtml += `
+      <div class="resource-picker-section" data-res-type="${resType}">
+        <div class="resource-picker-type-header">
+          <span>${resLabel} (need ${amount})</span>
+          <span class="resource-picker-provided" data-provided-type="${resType}"></span>
+        </div>
+        ${rowsHtml}
+      </div>
+    `;
+  }
+
+  const overlay = document.createElement("div");
+  overlay.className = "player-action-overlay";
+  overlay.innerHTML = `
+    <div class="action-modal">
+      <div class="action-modal-top">
+        <div class="action-modal-header-row">
+          <div class="action-modal-text">Spend resources</div>
+          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
+        </div>
+        ${cardHeaderHtml}
+        ${sectionsHtml}
+        <div class="resource-picker-summary" data-picker-summary></div>
+        <div class="resource-picker-buttons">
+          <button class="resource-picker-confirm" data-picker-confirm disabled>Confirm</button>
+          <button class="action-modal-btn cancel-modal-btn" data-picker-cancel>Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Toggle / collapse
+  const modal = overlay.querySelector(".action-modal") as HTMLElement;
+  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
+  const headerFab = document.getElementById("actions-fab");
+  toggle.addEventListener("click", () => {
+    modal.style.display = "none";
+    if (headerFab) {
+      headerFab.style.display = "";
+      headerFab.onclick = () => {
+        modal.style.display = "";
+        headerFab.style.display = "none";
+      };
+    }
+  });
+
+  // Thumbnail → card preview
+  overlay.querySelectorAll(".resource-picker-row-thumb").forEach((thumb) => {
+    thumb.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const defId = (thumb as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
+
+  const confirmBtn = overlay.querySelector("[data-picker-confirm]") as HTMLButtonElement;
+  const cancelBtn = overlay.querySelector("[data-picker-cancel]") as HTMLElement;
+  const summaryEl = overlay.querySelector("[data-picker-summary]") as HTMLElement;
+
+  // Update summary and confirm state based on current selection
+  function updatePicker(): void {
+    const currentSelected = new Set(
+      Array.from(overlay.querySelectorAll(".resource-picker-row--selected")).map((el) =>
+        parseInt((el as HTMLElement).dataset.stackIndex ?? "-1"),
+      ),
+    );
+
+    let allMet = true;
+    let totalExcess = 0;
+    const excessParts: string[] = [];
+
+    for (const [resType, amount] of costTypes) {
+      let provided = 0;
+      for (const idx of currentSelected) {
+        const stack = state.you.zones.resourceStacks[idx];
+        if (!stack) continue;
+        if (getResourceName(stack.topCard.defId) === resType) {
+          provided += 1 + stack.supplyCards.length;
+        }
+      }
+      const met = provided >= amount;
+      if (!met) allMet = false;
+      const excess = Math.max(0, provided - amount);
+      totalExcess += excess;
+      if (excess > 0) excessParts.push(`${excess}${resourceIcon(resType)}`);
+
+      // Update per-type provided indicator
+      const provEl = overlay.querySelector(`[data-provided-type="${resType}"]`);
+      if (provEl) {
+        provEl.textContent = `${provided}/${amount}`;
+        provEl.className = `resource-picker-provided ${met ? "resource-picker-provided--met" : "resource-picker-provided--short"}`;
+      }
+    }
+
+    // Summary
+    if (allMet && totalExcess === 0) {
+      summaryEl.innerHTML = `<span class="resource-picker-exact">Exact payment</span>`;
+    } else if (allMet) {
+      summaryEl.innerHTML = `<span class="resource-picker-excess">Excess: ${excessParts.join(" ")} wasted</span>`;
+    } else {
+      summaryEl.innerHTML = `<span class="resource-picker-provided--short">Insufficient resources selected</span>`;
+    }
+
+    confirmBtn.disabled = !allMet;
+    confirmBtn.textContent = `Confirm (${currentSelected.size} stack${currentSelected.size !== 1 ? "s" : ""})`;
+  }
+
+  // Wire row clicks to toggle selection
+  overlay.querySelectorAll(".resource-picker-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      row.classList.toggle("resource-picker-row--selected");
+      updatePicker();
+    });
+  });
+
+  // Initial update
+  updatePicker();
+
+  // Confirm
+  confirmBtn.addEventListener("click", () => {
+    const indices = Array.from(overlay.querySelectorAll(".resource-picker-row--selected")).map(
+      (el) => parseInt((el as HTMLElement).dataset.stackIndex ?? "-1"),
+    );
+    dismissPlayerActionModal();
+    onConfirm(indices);
+  });
+
+  // Cancel
+  cancelBtn.addEventListener("click", () => {
+    dismissPlayerActionModal();
+    restoreActionsBar(container, validActions, state);
+  });
 }
 
 /** Prompt to choose which stack to place a no-resource card under as supply. */

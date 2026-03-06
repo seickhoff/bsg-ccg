@@ -13,7 +13,9 @@ import type {
   BaseCardDef,
   UnitStack,
   CardInstance,
+  ValidAction,
 } from "@bsg/shared";
+import { registerPendingChoice } from "./pending-choice-registry.js";
 
 // ============================================================
 // Handler Interface
@@ -2535,3 +2537,523 @@ export function isEventPlayableIn(
   if (!handler) return true;
   return handler.playableIn.includes(context);
 }
+
+// ============================================================
+// Pending Choice Handlers
+// ============================================================
+
+registerPendingChoice("godfrey-reveal", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Put ${helpers.cardName(def)} on deck`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const oppIdx = ctx.opponentIndex as number;
+    const opp = state.players[oppIdx];
+    const def = helpers.getCardDef(chosenCard.defId);
+    const handIdx = opp.hand.findIndex((c) => c.instanceId === chosenCard.instanceId);
+    if (handIdx >= 0) {
+      opp.hand.splice(handIdx, 1);
+      opp.deck.unshift(chosenCard);
+      log.push(`Godfrey: ${helpers.cardName(def)} put on top of opponent's deck.`);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestCost = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const cost = def?.cost
+          ? Object.values(def.cost).reduce((a: number, b: number) => a + b, 0)
+          : 0;
+        if (cost > bestCost) {
+          bestCost = cost;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("act-of-contrition", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Discard ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const oppIdx = ctx.opponentIndex as number;
+    const opp = state.players[oppIdx];
+    const def = helpers.getCardDef(chosenCard.defId);
+    const handIdx = opp.hand.findIndex((c) => c.instanceId === chosenCard.instanceId);
+    if (handIdx >= 0) {
+      opp.hand.splice(handIdx, 1);
+      opp.discard.push(chosenCard);
+      log.push(`Act of Contrition: ${helpers.cardName(def)} discarded from opponent's hand.`);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestCost = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const cost = def?.cost
+          ? Object.values(def.cost).reduce((a: number, b: number) => a + b, 0)
+          : 0;
+        if (cost > bestCost) {
+          bestCost = cost;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("covering-fire-commit", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const commitDef = helpers.getCardDef(chosenCard.defId);
+    helpers.commitUnit(player, chosenCard.instanceId);
+    log.push(`Covering Fire: ${helpers.cardName(commitDef)} committed.`);
+    const targetId = ctx.targetId as string;
+    if (targetId) {
+      helpers.applyPowerBuff(state, targetId, 2, log);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("distraction-commit", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const commitDef = helpers.getCardDef(chosenCard.defId);
+    helpers.commitUnit(player, chosenCard.instanceId);
+    log.push(`Distraction: ${helpers.cardName(commitDef)} committed.`);
+    const targetId = ctx.targetId as string;
+    if (targetId) {
+      for (const p of state.players) {
+        const found = findUnitInAnyZone(p, targetId);
+        if (found && found.zone === "alert") {
+          p.zones.alert.splice(found.index, 1);
+          found.stack.exhausted = true;
+          p.zones.reserve.push(found.stack);
+          log.push("Distraction: target unit committed and exhausted.");
+          break;
+        }
+      }
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("military-coup-exhaust", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Exhaust ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const found = findUnitInAnyZone(player, chosenCard.instanceId);
+    if (found) found.stack.exhausted = true;
+    const ownDef = helpers.getCardDef(chosenCard.defId);
+    log.push(`Military Coup: ${helpers.cardName(ownDef)} exhausted.`);
+    const targetId = ctx.targetId as string;
+    if (targetId) {
+      for (const p of state.players) {
+        const tgt = findUnitInAnyZone(p, targetId);
+        if (tgt) {
+          tgt.stack.exhausted = true;
+          log.push("Military Coup: target opponent personnel exhausted.");
+          break;
+        }
+      }
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("painful-recovery-cylon", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Put on deck ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const found = findUnitInAnyZone(player, chosenCard.instanceId);
+    if (found) {
+      const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+      zone.splice(found.index, 1);
+      for (const card of found.stack.cards.reverse()) {
+        player.deck.unshift(card);
+      }
+      const d = helpers.getCardDef(chosenCard.defId);
+      log.push(`Painful Recovery: ${helpers.cardName(d)} put on top of deck.`);
+    }
+    const targetId = ctx.targetId as string;
+    if (targetId) {
+      for (const p of state.players) {
+        const tgt = findUnitInAnyZone(p, targetId);
+        if (tgt && tgt.zone === "alert") {
+          p.zones.alert.splice(tgt.index, 1);
+          tgt.stack.exhausted = true;
+          p.zones.reserve.push(tgt.stack);
+          log.push("Painful Recovery: target personnel committed and exhausted.");
+          break;
+        } else if (tgt) {
+          tgt.stack.exhausted = true;
+          log.push("Painful Recovery: target personnel exhausted.");
+          break;
+        }
+      }
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("suicide-bomber-cylon", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Sacrifice ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const found = findUnitInAnyZone(player, chosenCard.instanceId);
+    if (found) {
+      const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+      zone.splice(found.index, 1);
+      for (const card of found.stack.cards) player.discard.push(card);
+      const d = helpers.getCardDef(chosenCard.defId);
+      log.push(`Suicide Bomber: ${helpers.cardName(d)} sacrificed.`);
+    }
+    const targetId = ctx.targetId as string;
+    if (targetId) {
+      for (let pi = 0; pi < state.players.length; pi++) {
+        const p = state.players[pi];
+        if (findUnitInAnyZone(p, targetId)) {
+          helpers.defeatUnit(p, targetId, log, state, pi);
+          break;
+        }
+      }
+    }
+    const secondTargets: CardInstance[] = [];
+    for (const p of state.players) {
+      for (const zn of [p.zones.alert, p.zones.reserve]) {
+        for (const stack of zn) {
+          const tc = stack.cards[0];
+          if (tc?.faceUp && tc.instanceId !== targetId) {
+            const d = helpers.getCardDef(tc.defId);
+            if (d?.type === "personnel") secondTargets.push(tc);
+          }
+        }
+      }
+    }
+    if (secondTargets.length > 0) {
+      state.pendingChoice = {
+        type: "suicide-bomber-target2",
+        playerIndex,
+        cards: secondTargets,
+      };
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("suicide-bomber-target2", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Defeat ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    actions.push({ type: "makeChoice", description: "No second target" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    if (choiceIndex >= choice.cards.length) {
+      log.push("Suicide Bomber: No second target.");
+    } else {
+      const chosenCard = choice.cards[choiceIndex];
+      if (chosenCard) {
+        for (let pi = 0; pi < state.players.length; pi++) {
+          const p = state.players[pi];
+          if (findUnitInAnyZone(p, chosenCard.instanceId)) {
+            helpers.defeatUnit(p, chosenCard.instanceId, log, state, pi);
+            log.push("Suicide Bomber: Second personnel defeated.");
+            break;
+          }
+        }
+      }
+    }
+  },
+  aiDecide(choice, choiceActions, state, playerIndex) {
+    const oppIdx = 1 - playerIndex;
+    let bestIdx = 0;
+    let bestScore = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        const card = choice.cards[i];
+        const isOpp = card && !!findUnitInAnyZone(state.players[oppIdx], card.instanceId);
+        const score = pow + (isOpp ? 100 : 0);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("decoys-count", {
+  getActions(choice) {
+    const maxCommit =
+      (((choice.context ?? {}) as Record<string, unknown>).maxCommit as number) ?? 1;
+    const actions: ValidAction[] = [];
+    for (let i = 1; i <= maxCommit; i++) {
+      actions.push({
+        type: "makeChoice",
+        description: `Commit ${i} unit${i > 1 ? "s" : ""} (+${i * 2} power)`,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const count = choiceIndex + 1;
+    const targetId = ctx.targetId as string;
+    const eligible = player.zones.alert.filter(
+      (st) => !st.exhausted && st.cards[0] && st.cards[0].instanceId !== targetId,
+    );
+    eligible.sort((a, b) => {
+      const aPow = cardRegistry[a.cards[0].defId]?.power ?? 0;
+      const bPow = cardRegistry[b.cards[0].defId]?.power ?? 0;
+      return aPow - bPow;
+    });
+    let committed = 0;
+    for (const st of eligible) {
+      if (committed >= count) break;
+      helpers.commitUnit(player, st.cards[0].instanceId);
+      committed++;
+    }
+    if (committed > 0 && targetId) {
+      helpers.applyPowerBuff(state, targetId, committed * 2, log);
+      log.push(`Decoys: ${committed} unit(s) committed, target gets +${committed * 2} power.`);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    return choiceActions.length - 1;
+  },
+});
+
+registerPendingChoice("reformat-count", {
+  getActions(choice) {
+    const maxDiscard =
+      (((choice.context ?? {}) as Record<string, unknown>).maxDiscard as number) ?? 1;
+    const actions: ValidAction[] = [];
+    for (let i = 1; i <= maxDiscard; i++) {
+      actions.push({ type: "makeChoice", description: `Discard ${i}, draw ${i}` });
+    }
+    return actions;
+  },
+  resolve(_choice, choiceIndex, state, player, playerIndex, log) {
+    const discardCount = choiceIndex + 1;
+    const sorted = player.hand
+      .map((c, i) => ({ card: c, idx: i, mystic: cardRegistry[c.defId]?.mysticValue ?? 0 }))
+      .sort((a, b) => a.mystic - b.mystic);
+    const toDiscard = sorted.slice(0, discardCount);
+    const indices = toDiscard.map((t) => t.idx).sort((a, b) => b - a);
+    for (const idx of indices) {
+      const removed = player.hand.splice(idx, 1)[0];
+      player.discard.push(removed);
+    }
+    helpers.drawCards(player, discardCount, log, `Player ${playerIndex + 1}`, state, playerIndex);
+    log.push(`Reformat: discarded ${discardCount} cards, drew ${discardCount}.`);
+  },
+  aiDecide(_choice, choiceActions) {
+    const mid = Math.max(0, Math.floor(choiceActions.length / 2) - 1);
+    return mid;
+  },
+});

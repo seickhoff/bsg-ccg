@@ -5,14 +5,47 @@ import type {
   CardRegistry,
   CardDef,
   BaseCardDef,
+  CardCost,
+  PlayerState,
 } from "@bsg/shared";
 import { getMissionCategory } from "./mission-abilities.js";
 import { getEventTargets } from "./event-abilities.js";
+import { dispatchAIDecidePendingChoice } from "./pending-choice-registry.js";
 
 // ============================================================
 // BSG CCG — AI Decision Engine
 // Pure function: given game state + valid actions, returns a GameAction.
 // ============================================================
+
+/** Compute optimal stack selection (minimize waste) for a given cost. */
+function computeOptimalStacksAI(
+  player: PlayerState,
+  cost: CardCost,
+  registry: CardRegistry,
+): number[] | undefined {
+  if (!cost) return undefined;
+  const selected: number[] = [];
+  for (const [resType, amount] of Object.entries(cost) as [string, number][]) {
+    const candidates = player.zones.resourceStacks
+      .map((s, i) => {
+        if (s.exhausted) return null;
+        const base = registry.bases[s.topCard.defId];
+        const resName = base ? base.resource : registry.cards[s.topCard.defId]?.resource;
+        if (resName !== resType) return null;
+        return { index: i, count: 1 + s.supplyCards.length };
+      })
+      .filter((c): c is { index: number; count: number } => c !== null)
+      .sort((a, b) => a.count - b.count);
+
+    let remaining = amount;
+    for (const c of candidates) {
+      if (remaining <= 0) break;
+      selected.push(c.index);
+      remaining -= c.count;
+    }
+  }
+  return selected.length > 0 ? selected : undefined;
+}
 
 export function makeAIDecision(
   state: GameState,
@@ -361,7 +394,14 @@ function decideChallengeEffects(
         const ctx = state.challenge?.isCylonChallenge ? "cylon-challenge" : "challenge";
         targetId = pickEventTarget(bestDef, state, playerIndex, registry, ctx);
       }
-      return { type: "playEventInChallenge", cardIndex: bestEventIdx, targetInstanceId: targetId };
+      return {
+        type: "playEventInChallenge",
+        cardIndex: bestEventIdx,
+        targetInstanceId: targetId,
+        selectedStackIndices: bestDef?.cost
+          ? computeOptimalStacksAI(player, bestDef.cost, registry)
+          : undefined,
+      };
     }
   }
 
@@ -373,335 +413,18 @@ function decidePendingChoice(
   actions: ValidAction[],
   state: GameState,
   playerIndex: number,
-  registry: CardRegistry,
+  _registry: CardRegistry,
 ): GameAction {
   const choiceActions = actions.filter((a) => a.type === "makeChoice");
   if (choiceActions.length === 0) return { type: "pass" };
 
-  const choiceType = state.pendingChoice?.type ?? "";
-
-  switch (choiceType) {
-    case "celestra":
-    case "space-park-scry": {
-      // Pick card with higher mystic value to keep on top (index 0 = keep)
-      let bestIdx = 0;
-      let bestMystic = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const mystic = def?.mysticValue ?? 0;
-          if (mystic > bestMystic) {
-            bestMystic = mystic;
-            bestIdx = i;
-          }
-        }
-      }
-      // space-park-scry: index 0=keep, 1=bottom — keep if mystic >= 2
-      if (choiceType === "space-park-scry" && bestMystic < 2)
-        return { type: "makeChoice", choiceIndex: 1 };
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    case "mining-ship-dig": {
-      // AI as opponent: send the card that would help the owner more to the bottom
-      // Heuristic: send higher-power card to bottom
-      let worstIdx = 0;
-      let worstPow = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const pow = def?.power ?? 0;
-          if (pow > worstPow) {
-            worstPow = pow;
-            worstIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: worstIdx };
-    }
-
-    case "boomer-search": {
-      // Pick highest-power personnel from deck
-      let bestIdx = 0;
-      let bestPow = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const pow = def?.power ?? 0;
-          if (pow > bestPow) {
-            bestPow = pow;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    case "godfrey-reveal":
-    case "act-of-contrition": {
-      // Pick highest-cost card from opponent's hand
-      let bestIdx = 0;
-      let bestCost = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const cost = def?.cost
-            ? Object.values(def.cost).reduce((a: number, b: number) => a + b, 0)
-            : 0;
-          if (cost > bestCost) {
-            bestCost = cost;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    case "zarek-etb":
-    case "suicide-bomber-target2": {
-      // Defeat opponent's strongest personnel
-      const oppIdx = 1 - playerIndex;
-      let bestIdx = 0;
-      let bestPow = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const pow = def?.power ?? 0;
-          // Prefer opponent's units
-          const isOpp =
-            state.pendingChoice?.cards[i] &&
-            isOpponentUnit(state, oppIdx, state.pendingChoice.cards[i].instanceId);
-          const score = pow + (isOpp ? 100 : 0);
-          if (score > bestPow) {
-            bestPow = score;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    case "astral-queen-second": {
-      // Exhaust opponent's personnel preferentially
-      const oppIdx = 1 - playerIndex;
-      let bestIdx = 0;
-      let bestScore = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const card = state.pendingChoice?.cards[i];
-        const isOpp = card && isOpponentUnit(state, oppIdx, card.instanceId);
-        const defId = choiceActions[i].cardDefId;
-        const def = defId ? registry.cards[defId] : null;
-        const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = i;
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    case "covering-fire-commit":
-    case "distraction-commit":
-    case "military-coup-exhaust":
-    case "painful-recovery-cylon":
-    case "suicide-bomber-cylon": {
-      // Pick lowest-power own unit to commit/exhaust/sacrifice as cost
-      let bestIdx = 0;
-      let bestPow = Infinity;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const pow = def?.power ?? 0;
-          if (pow < bestPow) {
-            bestPow = pow;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    case "decoys-count": {
-      // Commit all available (max buff)
-      return { type: "makeChoice", choiceIndex: choiceActions.length - 1 };
-    }
-
-    case "reformat-count": {
-      // Discard about half the hand
-      const mid = Math.max(0, Math.floor(choiceActions.length / 2) - 1);
-      return { type: "makeChoice", choiceIndex: mid };
-    }
-
-    // --- Mission: Pulling Rank — pick opponent's highest-power personnel ---
-    case "pulling-rank-1":
-    case "pulling-rank-2": {
-      const oppIdx = 1 - playerIndex;
-      let bestIdx = 0;
-      let bestScore = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        if (!choiceActions[i].cardDefId) continue;
-        const card = state.pendingChoice?.cards[i];
-        const isOpp = card && isOpponentUnit(state, oppIdx, card.instanceId);
-        const def = registry.cards[choiceActions[i].cardDefId!];
-        const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = i;
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    // --- Mission: Assassination — pick lowest-power own as source, highest-power opponent as target ---
-    case "assassination-source": {
-      // Pick lowest-power own personnel
-      let bestIdx = 0;
-      let bestPow = Infinity;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const pow = def?.power ?? 0;
-          if (pow < bestPow) {
-            bestPow = pow;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-    case "assassination-target": {
-      // Pick highest-power opponent personnel
-      const oppIdx = 1 - playerIndex;
-      let bestIdx = 0;
-      let bestScore = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const card = state.pendingChoice?.cards[i];
-        const isOpp = card && isOpponentUnit(state, oppIdx, card.instanceId);
-        const defId = choiceActions[i].cardDefId;
-        const def = defId ? registry.cards[defId] : null;
-        const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = i;
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    // --- Mission: Arrow of Apollo — pick highest mystic value ---
-    case "arrow-of-apollo-search": {
-      let bestIdx = 0;
-      let bestMystic = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const mystic = def?.mysticValue ?? 0;
-          if (mystic > bestMystic) {
-            bestMystic = mystic;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    // --- Mission: Life Has A Melody — pick highest mystic Cylon card ---
-    case "life-has-a-melody-search": {
-      let bestIdx = 0;
-      let bestMystic = -1;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const mystic = def?.mysticValue ?? 0;
-          if (mystic > bestMystic) {
-            bestMystic = mystic;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    // --- Mission: Hunt For Tylium — pick lowest mystic value from hand ---
-    case "hunt-for-tylium-hand": {
-      let bestIdx = 0;
-      let bestMystic = Infinity;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const mystic = def?.mysticValue ?? 0;
-          if (mystic < bestMystic) {
-            bestMystic = mystic;
-            bestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: bestIdx };
-    }
-
-    // --- Mission: Meet The New Boss — AI picks first valid option ---
-    case "meet-new-boss-hand":
-    case "meet-new-boss-field": {
-      return { type: "makeChoice", choiceIndex: 0 };
-    }
-
-    // --- Mission: Article 23 — sacrifice cheapest personnel, or lose 2 if none ---
-    case "article-23": {
-      // If last option is "Lose 2 influence" and there are personnel to sacrifice,
-      // sacrifice cheapest. Otherwise lose 2.
-      if (choiceActions.length <= 1) {
-        // Only "Lose 2 influence" option
-        return { type: "makeChoice", choiceIndex: 0 };
-      }
-      let cheapestIdx = 0;
-      let cheapestPow = Infinity;
-      for (let i = 0; i < choiceActions.length - 1; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const pow = def?.power ?? 0;
-          if (pow < cheapestPow) {
-            cheapestPow = pow;
-            cheapestIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: cheapestIdx };
-    }
-
-    // --- Mission: Prophetic Visions — put lower mystic on top (worse for opponent) ---
-    case "prophetic-visions-arrange": {
-      let worstIdx = 0;
-      let worstMystic = Infinity;
-      for (let i = 0; i < choiceActions.length; i++) {
-        const defId = choiceActions[i].cardDefId;
-        if (defId) {
-          const def = registry.cards[defId];
-          const mystic = def?.mysticValue ?? 0;
-          if (mystic < worstMystic) {
-            worstMystic = mystic;
-            worstIdx = i;
-          }
-        }
-      }
-      return { type: "makeChoice", choiceIndex: worstIdx };
-    }
-
-    default: {
-      // Fallback: pick first option
-      return { type: "makeChoice", choiceIndex: 0 };
-    }
+  const registeredIdx = dispatchAIDecidePendingChoice(state, choiceActions, playerIndex);
+  if (registeredIdx !== null) {
+    return { type: "makeChoice", choiceIndex: registeredIdx };
   }
+
+  // Fallback: pick first option
+  return { type: "makeChoice", choiceIndex: 0 };
 }
 
 /** Check if a unit instanceId belongs to a specific player. */
@@ -896,7 +619,15 @@ function pickBestCardToPlay(
     if (def?.type === "event" && def.abilityId) {
       bestTargetId = pickEventTarget(def, state, playerIndex, registry, "execution");
     }
-    return { type: "playCard", cardIndex: bestIndex, targetInstanceId: bestTargetId };
+    const bestDef = card ? registry.cards[card.defId] : null;
+    return {
+      type: "playCard",
+      cardIndex: bestIndex,
+      targetInstanceId: bestTargetId,
+      selectedStackIndices: bestDef?.cost
+        ? computeOptimalStacksAI(player, bestDef.cost, registry)
+        : undefined,
+    };
   }
   return null;
 }
@@ -988,7 +719,17 @@ function resolveAction(
 
     case "playCard":
       if (action.selectableCardIndices?.length) {
-        return { type: "playCard", cardIndex: action.selectableCardIndices[0] };
+        const pcIdx = action.selectableCardIndices[0];
+        const pcPlayer = state.players[playerIndex];
+        const pcCard = pcPlayer.hand[pcIdx];
+        const pcDef = pcCard ? registry.cards[pcCard.defId] : null;
+        return {
+          type: "playCard",
+          cardIndex: pcIdx,
+          selectedStackIndices: pcDef?.cost
+            ? computeOptimalStacksAI(pcPlayer, pcDef.cost, registry)
+            : undefined,
+        };
       }
       return { type: "pass" };
 
@@ -1045,9 +786,16 @@ function resolveAction(
 
     case "playEventInChallenge":
       if (action.selectableCardIndices?.length) {
+        const ceIdx = action.selectableCardIndices[0];
+        const cePlayer = state.players[playerIndex];
+        const ceCard = cePlayer.hand[ceIdx];
+        const ceDef = ceCard ? registry.cards[ceCard.defId] : null;
         return {
           type: "playEventInChallenge",
-          cardIndex: action.selectableCardIndices[0],
+          cardIndex: ceIdx,
+          selectedStackIndices: ceDef?.cost
+            ? computeOptimalStacksAI(cePlayer, ceDef.cost, registry)
+            : undefined,
         };
       }
       return { type: "challengePass" };

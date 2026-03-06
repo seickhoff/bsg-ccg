@@ -259,7 +259,12 @@ export type GameAction =
   | { type: "playToResource"; cardIndex: number; asSupply: boolean; targetStackIndex?: number }
   | { type: "passResource" }
   | { type: "doneReorder" }
-  | { type: "playCard"; cardIndex: number; targetInstanceId?: string }
+  | {
+      type: "playCard";
+      cardIndex: number;
+      targetInstanceId?: string;
+      selectedStackIndices?: number[];
+    }
   | { type: "playAbility"; sourceInstanceId: string; targetInstanceId?: string }
   | {
       type: "resolveMission";
@@ -271,7 +276,12 @@ export type GameAction =
   | { type: "challenge"; challengerInstanceId: string; opponentIndex: number }
   | { type: "defend"; defenderInstanceId: string | null }
   | { type: "challengePass" }
-  | { type: "playEventInChallenge"; cardIndex: number; targetInstanceId?: string }
+  | {
+      type: "playEventInChallenge";
+      cardIndex: number;
+      targetInstanceId?: string;
+      selectedStackIndices?: number[];
+    }
   | { type: "pass" }
   | { type: "challengeCylon"; challengerInstanceId: string; threatIndex: number }
   | { type: "passCylon" }
