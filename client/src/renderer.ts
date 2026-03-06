@@ -13,6 +13,7 @@ import type {
   ActionNotification,
 } from "@bsg/shared";
 import { setPreviewRegistry, showCardPreview, showCardPreviewNav } from "./card-preview.js";
+import { ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, DRAG_THRESHOLD } from "./constants.js";
 
 // ============================================================
 // BSG CCG — Client Renderer
@@ -27,6 +28,9 @@ let onResetGame: (() => void) | null = null;
 let playerName = "YOU";
 let currentLog: string[] = [];
 let currentPlayerIndex = 0;
+let savedModalPosition: { top: number; left: number } | null = null;
+let boardZoomPercent = parseInt(localStorage.getItem("boardZoomPercent") ?? "0", 10); // 0–100 in 5% steps
+let savedBoardScrollTop = 0;
 let selectMode: {
   type: string;
   callback: (id: string | number) => void;
@@ -264,7 +268,8 @@ export function renderGame(
 
   // Preserve play-area scroll position across re-renders
   const prevBoards = container.querySelector(".boards");
-  const prevScrollTop = prevBoards ? prevBoards.scrollTop : 0;
+  if (prevBoards) savedBoardScrollTop = prevBoards.scrollTop;
+  const scrollToRestore = savedBoardScrollTop;
 
   container.innerHTML = `
     <div class="game-board">
@@ -277,6 +282,11 @@ export function renderGame(
           <span class="info-item threat-level">Threat: ${computeThreatLevel(state)}</span>
         </div>
         <div class="info-bar-right">
+          <div class="zoom-control" id="zoom-control">
+            <button class="zoom-btn" id="zoom-out">&minus;</button>
+            <span class="zoom-label" id="zoom-label">${boardZoomPercent}%</span>
+            <button class="zoom-btn" id="zoom-in">+</button>
+          </div>
           <button class="header-btn" id="actions-fab" style="display:none">Actions</button>
           <button class="header-btn" id="log-btn">Log</button>
           <button class="header-btn" id="new-game-btn">New Game</button>
@@ -325,12 +335,12 @@ export function renderGame(
     </div>
   `;
 
-  // Restore play-area scroll position
-  const newBoards = container.querySelector(".boards");
-  if (newBoards) newBoards.scrollTop = prevScrollTop;
-
-  // Attach event listeners
+  // Attach event listeners (also applies zoom)
   attachEventListeners(container, validActions, state);
+
+  // Restore play-area scroll position AFTER zoom is applied
+  const newBoards = container.querySelector(".boards");
+  if (newBoards) newBoards.scrollTop = scrollToRestore;
 
   // Dismiss stale overlays before showing new ones
   document.querySelector(".action-modal-overlay")?.remove();
@@ -698,57 +708,105 @@ function showPlayerActionModal(
 
   const modal = overlay.querySelector(".action-modal") as HTMLElement;
 
+  // Restore saved position if available
+  if (savedModalPosition) {
+    modal.style.top = savedModalPosition.top + "px";
+    modal.style.left = savedModalPosition.left + "px";
+    modal.style.transform = "none";
+    modal.style.maxHeight = window.innerHeight - savedModalPosition.top + "px";
+  }
+
   // Drag handle: drag to reposition, click/tap to minimize/expand
   const dragHandle = overlay.querySelector(".action-modal-drag-handle") as HTMLElement;
   const modalBody = overlay.querySelector(".action-modal-top") as HTMLElement;
   let dragged = false;
 
-  function applyDragPosition(newTop: number) {
+  function applyVerticalPosition(newTop: number) {
     const handleH = dragHandle.offsetHeight;
-    // Clamp: don't go above viewport or drag header below viewport
     const maxTop = window.innerHeight - handleH;
     const clampedTop = Math.max(0, Math.min(newTop, maxTop));
     modal.style.top = clampedTop + "px";
-    // Shrink max-height so bottom doesn't go off-screen
     modal.style.maxHeight = window.innerHeight - clampedTop + "px";
   }
 
-  function startDrag(startY: number) {
+  function applyFullPosition(newTop: number, newLeft: number) {
+    const handleH = dragHandle.offsetHeight;
+    const modalW = modal.offsetWidth;
+    const maxTop = window.innerHeight - handleH;
+    const maxLeft = window.innerWidth - modalW;
+    const clampedTop = Math.max(0, Math.min(newTop, maxTop));
+    const clampedLeft = Math.max(0, Math.min(newLeft, maxLeft));
+    modal.style.top = clampedTop + "px";
+    modal.style.left = clampedLeft + "px";
+    modal.style.transform = "none";
+    modal.style.maxHeight = window.innerHeight - clampedTop + "px";
+  }
+
+  function savePosition() {
+    savedModalPosition = {
+      top: modal.getBoundingClientRect().top,
+      left: modal.getBoundingClientRect().left,
+    };
+  }
+
+  // Desktop: drag in any direction (mouse)
+  dragHandle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
     dragged = false;
-    const startTop = modal.getBoundingClientRect().top;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const rect = modal.getBoundingClientRect();
+    const startTop = rect.top;
+    const startLeft = rect.left;
+    // Ensure we're in absolute positioning mode
+    if (modal.style.transform !== "none") {
+      modal.style.left = startLeft + "px";
+      modal.style.transform = "none";
+    }
     const onMouseMove = (ev: MouseEvent) => {
-      if (Math.abs(ev.clientY - startY) > 4) dragged = true;
-      if (dragged) applyDragPosition(startTop + (ev.clientY - startY));
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragged = true;
+      if (dragged) applyFullPosition(startTop + dy, startLeft + dx);
     };
-    const onTouchMove = (ev: TouchEvent) => {
-      if (Math.abs(ev.touches[0].clientY - startY) > 4) dragged = true;
-      if (dragged) applyDragPosition(startTop + (ev.touches[0].clientY - startY));
-    };
-    const onEnd = () => {
+    const onMouseUp = () => {
       dragHandle.style.cursor = "grab";
       document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onEnd);
-      document.removeEventListener("touchmove", onTouchMove);
-      document.removeEventListener("touchend", onEnd);
-      if (!dragged) {
-        // Click/tap — toggle modal body
+      document.removeEventListener("mouseup", onMouseUp);
+      if (dragged) {
+        savePosition();
+      } else {
         const hidden = modalBody.style.display === "none";
         modalBody.style.display = hidden ? "" : "none";
       }
     };
     dragHandle.style.cursor = "grabbing";
     document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onEnd);
-    document.addEventListener("touchmove", onTouchMove, { passive: true });
-    document.addEventListener("touchend", onEnd);
-  }
-  dragHandle.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    startDrag(e.clientY);
+    document.addEventListener("mouseup", onMouseUp);
   });
+
+  // Mobile: vertical drag only (touch)
   dragHandle.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    startDrag(e.touches[0].clientY);
+    dragged = false;
+    const startY = e.touches[0].clientY;
+    const startTop = modal.getBoundingClientRect().top;
+    const onTouchMove = (ev: TouchEvent) => {
+      if (Math.abs(ev.touches[0].clientY - startY) > DRAG_THRESHOLD) dragged = true;
+      if (dragged) applyVerticalPosition(startTop + (ev.touches[0].clientY - startY));
+    };
+    const onTouchEnd = () => {
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+      if (dragged) {
+        savePosition();
+      } else {
+        const hidden = modalBody.style.display === "none";
+        modalBody.style.display = hidden ? "" : "none";
+      }
+    };
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", onTouchEnd);
   });
 
   // Wire action buttons
@@ -1153,6 +1211,15 @@ function renderActions(
 // Event Listeners
 // ============================================================
 
+function applyBoardZoom(boards: HTMLElement | null): void {
+  if (!boards) return;
+  if (boardZoomPercent === 0) {
+    (boards.style as any).zoom = "";
+  } else {
+    (boards.style as any).zoom = `${1 + boardZoomPercent / 100}`;
+  }
+}
+
 function attachEventListeners(
   container: HTMLElement,
   validActions: ValidAction[],
@@ -1212,6 +1279,35 @@ function attachEventListeners(
       showConfirmResetModal();
     }
   });
+
+  // Zoom controls (desktop only)
+  const boards = container.querySelector(".boards") as HTMLElement | null;
+  container.querySelector("#zoom-in")?.addEventListener("click", () => {
+    if (boardZoomPercent < ZOOM_MAX) {
+      boardZoomPercent = Math.min(ZOOM_MAX, boardZoomPercent + ZOOM_STEP);
+      localStorage.setItem("boardZoomPercent", String(boardZoomPercent));
+      applyBoardZoom(boards);
+      const label = container.querySelector("#zoom-label");
+      if (label) label.textContent = boardZoomPercent + "%";
+    }
+  });
+  container.querySelector("#zoom-out")?.addEventListener("click", () => {
+    if (boardZoomPercent > ZOOM_MIN) {
+      boardZoomPercent = Math.max(ZOOM_MIN, boardZoomPercent - ZOOM_STEP);
+      localStorage.setItem("boardZoomPercent", String(boardZoomPercent));
+      applyBoardZoom(boards);
+      const label = container.querySelector("#zoom-label");
+      if (label) label.textContent = boardZoomPercent + "%";
+    }
+  });
+  applyBoardZoom(boards);
+
+  // Track scroll position continuously so it survives modal open/close cycles
+  if (boards) {
+    boards.addEventListener("scroll", () => {
+      savedBoardScrollTop = boards.scrollTop;
+    });
+  }
 
   // Discard pile browsers
   container.querySelector("#your-discard-btn")?.addEventListener("click", () => {
