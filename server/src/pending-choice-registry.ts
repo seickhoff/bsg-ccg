@@ -15,6 +15,8 @@ import type {
   UnitStack,
   CardDef,
   BaseCardDef,
+  LogItem,
+  PendingChoiceType,
 } from "@bsg/shared";
 
 // ============================================================
@@ -27,29 +29,29 @@ export interface PendingChoiceHelpers {
   defeatUnit(
     player: PlayerState,
     instanceId: string,
-    log: string[],
+    log: LogItem[],
     state: GameState,
     playerIndex: number,
   ): void;
-  commitUnit(player: PlayerState, instanceId: string): void;
-  readyUnit(player: PlayerState, instanceId: string): boolean;
+  commitUnit(player: PlayerState, instanceId: string, log?: LogItem[]): void;
+  readyUnit(player: PlayerState, instanceId: string, log?: LogItem[]): boolean;
   drawCards(
     player: PlayerState,
     count: number,
-    log: string[],
+    log: LogItem[],
     label: string,
     state?: GameState,
     playerIndex?: number,
   ): void;
-  applyPowerBuff(state: GameState, instanceId: string, amount: number, log: string[]): void;
+  applyPowerBuff(state: GameState, instanceId: string, amount: number, log: LogItem[]): void;
   applyInfluenceLoss(
     state: GameState,
     playerIndex: number,
     amount: number,
-    log: string[],
+    log: LogItem[],
     bases: Record<string, BaseCardDef>,
   ): void;
-  resumeChallenge(state: GameState, log: string[], bases: Record<string, BaseCardDef>): void;
+  resumeChallenge(state: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void;
   findUnitInZone(zone: UnitStack[], instanceId: string): { stack: UnitStack; index: number } | null;
   findUnitInAnyZone(
     player: PlayerState,
@@ -78,7 +80,7 @@ export interface PendingChoiceHandler {
     state: GameState,
     player: PlayerState,
     playerIndex: number,
-    log: string[],
+    log: LogItem[],
   ): void;
 
   /**
@@ -97,7 +99,7 @@ export interface PendingChoiceHandler {
 // Registry + DI
 // ============================================================
 
-const registry = new Map<string, PendingChoiceHandler>();
+const registry = new Map<PendingChoiceType, PendingChoiceHandler>();
 
 let h: PendingChoiceHelpers;
 
@@ -109,7 +111,10 @@ export function getHelpers(): PendingChoiceHelpers {
   return h;
 }
 
-export function registerPendingChoice(type: string, handler: PendingChoiceHandler): void {
+export function registerPendingChoice(
+  type: PendingChoiceType,
+  handler: PendingChoiceHandler,
+): void {
   registry.set(type, handler);
 }
 
@@ -131,7 +136,7 @@ export function dispatchResolvePendingChoice(
   choiceIndex: number,
   player: PlayerState,
   playerIndex: number,
-  log: string[],
+  log: LogItem[],
 ): boolean {
   const choice = state.pendingChoice;
   if (!choice) return false;

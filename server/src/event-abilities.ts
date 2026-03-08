@@ -7,6 +7,7 @@
 // ============================================================
 
 import type {
+  LogItem,
   GameState,
   PlayerState,
   CardDef,
@@ -36,7 +37,12 @@ export interface EventAbilityHandler {
   ): string[] | null;
 
   /** Resolve the event effect */
-  resolve(state: GameState, playerIndex: number, targetId: string | undefined, log: string[]): void;
+  resolve(
+    state: GameState,
+    playerIndex: number,
+    targetId: string | undefined,
+    log: LogItem[],
+  ): void;
 }
 
 // ============================================================
@@ -49,28 +55,28 @@ export interface EventGameHelpers {
   defeatUnit(
     player: PlayerState,
     instanceId: string,
-    log: string[],
+    log: LogItem[],
     state: GameState,
     playerIndex: number,
   ): void;
-  commitUnit(player: PlayerState, instanceId: string): void;
+  commitUnit(player: PlayerState, instanceId: string, log?: LogItem[]): void;
   drawCards(
     player: PlayerState,
     count: number,
-    log: string[],
+    log: LogItem[],
     label: string,
     state?: GameState,
     playerIndex?: number,
   ): void;
-  applyPowerBuff(state: GameState, instanceId: string, amount: number, log: string[]): void;
+  applyPowerBuff(state: GameState, instanceId: string, amount: number, log: LogItem[]): void;
   applyInfluenceLoss(
     state: GameState,
     playerIndex: number,
     amount: number,
-    log: string[],
+    log: LogItem[],
     bases: Record<string, BaseCardDef>,
   ): void;
-  revealMysticValue(state: GameState, playerIndex: number, log: string[]): number;
+  revealMysticValue(state: GameState, playerIndex: number, log: LogItem[]): number;
   bases: Record<string, BaseCardDef>;
 }
 
@@ -144,11 +150,15 @@ function findUnitOwner(
   return null;
 }
 
-function commitUnitLocal(player: PlayerState, instanceId: string): boolean {
+function commitUnitLocal(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInZone(player.zones.alert, instanceId);
   if (found) {
     player.zones.alert.splice(found.index, 1);
     player.zones.reserve.push(found.stack);
+    if (log) {
+      const def = helpers.getCardDef(found.stack.cards[0].defId);
+      log.push(`${def ? helpers.cardName(def) : "Unit"} committed.`);
+    }
     return true;
   }
   return false;
@@ -163,11 +173,15 @@ function exhaustUnitLocal(player: PlayerState, instanceId: string): boolean {
   return false;
 }
 
-function readyUnitLocal(player: PlayerState, instanceId: string): boolean {
+function readyUnitLocal(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInZone(player.zones.reserve, instanceId);
   if (found && !found.stack.exhausted) {
     player.zones.reserve.splice(found.index, 1);
     player.zones.alert.push(found.stack);
+    if (log) {
+      const def = helpers.getCardDef(found.stack.cards[0].defId);
+      log.push(`${def ? helpers.cardName(def) : "Unit"} readied.`);
+    }
     return true;
   }
   return false;
@@ -255,7 +269,7 @@ function shuffle<T>(array: T[]): void {
   }
 }
 
-function sacrificeUnit(player: PlayerState, instanceId: string, log: string[]): boolean {
+function sacrificeUnit(player: PlayerState, instanceId: string, log: LogItem[]): boolean {
   const found = findUnitInAnyZone(player, instanceId);
   if (!found) return false;
   const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
@@ -268,7 +282,7 @@ function sacrificeUnit(player: PlayerState, instanceId: string, log: string[]): 
   return true;
 }
 
-function returnToHand(player: PlayerState, instanceId: string, log: string[]): boolean {
+function returnToHand(player: PlayerState, instanceId: string, log: LogItem[]): boolean {
   const found = findUnitInAnyZone(player, instanceId);
   if (!found) return false;
   const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
@@ -447,9 +461,7 @@ register("covering-fire", {
     if (eligible.length === 0) return;
     if (eligible.length === 1) {
       // Only one option — commit it automatically
-      const commitDef = getUnitDef(eligible[0]);
-      commitUnitLocal(player, eligible[0].cards[0].instanceId);
-      log.push(`Covering Fire: ${commitDef ? helpers.cardName(commitDef) : "unit"} committed.`);
+      commitUnitLocal(player, eligible[0].cards[0].instanceId, log);
       helpers.applyPowerBuff(state, targetId, 2, log);
       return;
     }
@@ -690,8 +702,7 @@ register("condition-one", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     for (const p of state.players) {
-      if (readyUnitLocal(p, targetId)) {
-        log.push("Condition One: target unit readied.");
+      if (readyUnitLocal(p, targetId, log)) {
         return;
       }
     }
@@ -713,8 +724,7 @@ register("condition-two", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     for (const p of state.players) {
-      if (commitUnitLocal(p, targetId)) {
-        log.push("Condition Two: target unit committed.");
+      if (commitUnitLocal(p, targetId, log)) {
         return;
       }
     }
@@ -759,9 +769,7 @@ register("distraction", {
     if (personnel.length === 0) return;
     if (personnel.length === 1) {
       // Only one option — commit automatically
-      commitUnitLocal(player, personnel[0].cards[0].instanceId);
-      const commitDef = getUnitDef(personnel[0]);
-      log.push(`Distraction: ${commitDef ? helpers.cardName(commitDef) : "personnel"} committed.`);
+      commitUnitLocal(player, personnel[0].cards[0].instanceId, log);
       for (const p of state.players) {
         const found = findUnitInZone(p.zones.alert, targetId);
         if (found) {
@@ -851,10 +859,9 @@ register("sneak-attack", {
         return d && hasTrait(d, "Fighter");
       });
       for (const s of toCommit) {
-        commitUnitLocal(p, s.cards[0].instanceId);
+        commitUnitLocal(p, s.cards[0].instanceId, log);
       }
     }
-    log.push("Sneak Attack: all Fighters committed.");
   },
 });
 
@@ -892,10 +899,9 @@ register("massive-assault", {
         return d && (hasTrait(d, "Capital Ship") || hasTrait(d, "Fighter"));
       });
       for (const s of toReady) {
-        readyUnitLocal(p, s.cards[0].instanceId);
+        readyUnitLocal(p, s.cards[0].instanceId, log);
       }
     }
-    log.push("Massive Assault: all Capital Ships and Fighters readied.");
   },
 });
 
@@ -941,9 +947,8 @@ register("decoys", {
     if (eligible.length === 0) return;
     if (eligible.length === 1) {
       // Only one option — commit it automatically
-      commitUnitLocal(player, eligible[0].cards[0].instanceId);
+      commitUnitLocal(player, eligible[0].cards[0].instanceId, log);
       helpers.applyPowerBuff(state, targetId, 2, log);
-      log.push("Decoys: 1 unit committed, target gets +2 power.");
       return;
     }
     log.push("Decoys: Choose how many units to commit.");
@@ -972,9 +977,7 @@ register("downed-pilot", {
       return d && d.type === "ship";
     });
     if (alertShip) {
-      commitUnitLocal(oppPlayer, alertShip.cards[0].instanceId);
-      const d = getUnitDef(alertShip);
-      log.push(`Downed Pilot: ${pLabel(opp)} commits ${d ? helpers.cardName(d) : "ship"}.`);
+      commitUnitLocal(oppPlayer, alertShip.cards[0].instanceId, log);
     } else {
       // Sacrifice cheapest personnel
       const allPersonnel = [...oppPlayer.zones.alert, ...oppPlayer.zones.reserve].filter((s) => {
@@ -996,153 +999,179 @@ register("downed-pilot", {
   },
 });
 
-// BSG1-025 Endless Task: Target player: commit OR exhaust a unit
+// BSG1-025 Endless Task: Target player chooses one — commit or exhaust a unit
 register("endless-task", {
   playableIn: ["execution"],
-  resolve(state, playerIndex, _targetId, log) {
-    // "Target player" — AI always targets opponent
-    const targetIdx = 1 - playerIndex;
-    const targetPlayer = state.players[targetIdx];
-    // AI picks: exhaust reserve unit if available, else commit alert
-    const reserveUnit = targetPlayer.zones.reserve.find((s) => !s.exhausted && s.cards[0]);
-    if (reserveUnit) {
-      reserveUnit.exhausted = true;
-      const d = getUnitDef(reserveUnit);
-      log.push(`Endless Task: ${pLabel(targetIdx)} exhausts ${d ? helpers.cardName(d) : "unit"}.`);
-    } else {
-      const alertUnit = targetPlayer.zones.alert.find((s) => s.cards[0]);
-      if (alertUnit) {
-        commitUnitLocal(targetPlayer, alertUnit.cards[0].instanceId);
-        const d = getUnitDef(alertUnit);
-        log.push(`Endless Task: ${pLabel(targetIdx)} commits ${d ? helpers.cardName(d) : "unit"}.`);
-      } else {
-        log.push(`Endless Task: ${pLabel(targetIdx)} has no units.`);
-      }
-    }
+  canPlay(state, _playerIndex) {
+    return state.players.some(
+      (p) =>
+        p.zones.alert.some((s) => s.cards[0]) ||
+        p.zones.reserve.some((s) => !s.exhausted && s.cards[0]),
+    );
+  },
+  resolve(state, playerIndex, _targetId, _log) {
+    state.pendingChoice = {
+      type: "endless-task-target",
+      playerIndex,
+      cards: [],
+    };
   },
 });
 
-// BSG1-029 Grounded: Opponent: commit ship OR commit all personnel
+// BSG1-029 Grounded: Target opponent chooses one — commit a ship OR commit all personnel
 register("grounded", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
     const opp = 1 - playerIndex;
     const oppPlayer = state.players[opp];
-    // AI picks: commit one ship if cheaper than committing all personnel
-    const alertShip = oppPlayer.zones.alert.find((s) => {
+    const alertShips = oppPlayer.zones.alert.filter((s) => {
       const d = getUnitDef(s);
       return d && d.type === "ship";
     });
-    if (alertShip) {
-      commitUnitLocal(oppPlayer, alertShip.cards[0].instanceId);
-      const d = getUnitDef(alertShip);
-      log.push(`Grounded: ${pLabel(opp)} commits ${d ? helpers.cardName(d) : "ship"}.`);
-    } else {
-      // Commit all personnel
-      const personnel = oppPlayer.zones.alert.filter((s) => {
-        const d = getUnitDef(s);
-        return d && d.type === "personnel";
-      });
-      for (const s of personnel) {
-        commitUnitLocal(oppPlayer, s.cards[0].instanceId);
-      }
-      log.push(`Grounded: ${pLabel(opp)} commits all personnel (${personnel.length}).`);
+    const alertPersonnel = oppPlayer.zones.alert.filter((s) => {
+      const d = getUnitDef(s);
+      return d && d.type === "personnel";
+    });
+    if (alertShips.length === 0 && alertPersonnel.length === 0) return;
+    if (alertShips.length === 0) {
+      // Must commit all personnel (no choice)
+      for (const s of alertPersonnel) commitUnitLocal(oppPlayer, s.cards[0].instanceId, log);
+      return;
     }
+    if (alertPersonnel.length === 0) {
+      // Must commit a ship — if only one, auto-resolve
+      if (alertShips.length === 1) {
+        commitUnitLocal(oppPlayer, alertShips[0].cards[0].instanceId, log);
+        return;
+      }
+    }
+    // Opponent chooses
+    state.pendingChoice = {
+      type: "grounded-choice",
+      playerIndex: opp,
+      cards: [],
+      context: { shipCount: alertShips.length, personnelCount: alertPersonnel.length },
+    };
   },
 });
 
-// BSG1-030 Hangar Deck Fire: Opponent: sacrifice ship OR sacrifice supply card
+// BSG1-030 Hangar Deck Fire: Target opponent chooses one — sacrifice ship OR sacrifice supply card
 register("hangar-deck-fire", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
     const opp = 1 - playerIndex;
     const oppPlayer = state.players[opp];
-    // AI picks: sacrifice supply card if available, else sacrifice ship
-    for (const stack of oppPlayer.zones.resourceStacks) {
-      if (stack.supplyCards.length > 0) {
-        // Remove bottom supply card
-        const supply = stack.supplyCards.pop()!;
-        oppPlayer.discard.push(supply);
-        log.push(`Hangar Deck Fire: ${pLabel(opp)} sacrifices a supply card.`);
-        return;
-      }
-    }
-    // No supply cards, sacrifice cheapest ship
+    const hasSupply = oppPlayer.zones.resourceStacks.some((s) => s.supplyCards.length > 0);
     const ships = [...oppPlayer.zones.alert, ...oppPlayer.zones.reserve].filter((s) => {
       const d = getUnitDef(s);
       return d && d.type === "ship";
     });
-    if (ships.length > 0) {
-      let cheapest = ships[0];
-      for (const s of ships) {
-        const d = getUnitDef(s);
-        if (d && (d.power ?? 0) < (getUnitDef(cheapest)?.power ?? 0)) cheapest = s;
-      }
-      sacrificeUnit(oppPlayer, cheapest.cards[0].instanceId, log);
-    } else {
+    if (!hasSupply && ships.length === 0) {
       log.push(`Hangar Deck Fire: ${pLabel(opp)} has nothing to sacrifice.`);
+      return;
     }
+    if (!hasSupply) {
+      // Must sacrifice a ship — if only one, auto-resolve
+      if (ships.length === 1) {
+        log.push(`Hangar Deck Fire: ${pLabel(opp)} must sacrifice a ship.`);
+        sacrificeUnit(oppPlayer, ships[0].cards[0].instanceId, log);
+        return;
+      }
+      // Multiple ships — opponent picks which
+      state.pendingChoice = {
+        type: "hangar-deck-fire-ship",
+        playerIndex: opp,
+        cards: ships.map((s) => s.cards[0]),
+      };
+      return;
+    }
+    if (ships.length === 0) {
+      // Must sacrifice supply — auto-resolve (supply cards aren't meaningfully different)
+      for (const stack of oppPlayer.zones.resourceStacks) {
+        if (stack.supplyCards.length > 0) {
+          const supply = stack.supplyCards.pop()!;
+          oppPlayer.discard.push(supply);
+          log.push(`Hangar Deck Fire: ${pLabel(opp)} sacrifices a supply card.`);
+          return;
+        }
+      }
+      return;
+    }
+    // Both options available — opponent chooses
+    state.pendingChoice = {
+      type: "hangar-deck-fire-choice",
+      playerIndex: opp,
+      cards: [],
+    };
   },
 });
 
-// BSG1-034 Network Hacking: Each player: commit Cylon OR commit all ships
+// BSG1-034 Network Hacking: Each player chooses one — commit a Cylon OR commit all ships
 register("network-hacking", {
   playableIn: ["execution"],
   resolve(state, _playerIndex, _targetId, log) {
-    for (let pi = 0; pi < state.players.length; pi++) {
-      const p = state.players[pi];
-      // AI: commit one Cylon unit if available
-      const cylon = p.zones.alert.find((s) => {
-        const d = getUnitDef(s);
-        return d && hasTrait(d, "Cylon");
-      });
-      if (cylon) {
-        commitUnitLocal(p, cylon.cards[0].instanceId);
-        const d = getUnitDef(cylon);
-        log.push(
-          `Network Hacking: ${pLabel(pi)} commits ${d ? helpers.cardName(d) : "Cylon unit"}.`,
-        );
-      } else {
-        const ships = p.zones.alert.filter((s) => {
-          const d = getUnitDef(s);
-          return d && d.type === "ship";
-        });
-        for (const s of ships) {
-          commitUnitLocal(p, s.cards[0].instanceId);
-        }
-        log.push(`Network Hacking: ${pLabel(pi)} commits all ships (${ships.length}).`);
-      }
-    }
+    // Chain: player 0 chooses first, then player 1
+    networkHackingForPlayer(state, 0, log);
   },
 });
 
-// BSG1-041 Setback: Target player: exhaust alert OR exhaust reserve unit
+function networkHackingForPlayer(state: GameState, pi: number, log?: LogItem[]): void {
+  if (pi >= state.players.length) return;
+  const p = state.players[pi];
+  const cylons = p.zones.alert.filter((s) => {
+    const d = getUnitDef(s);
+    return d && hasTrait(d, "Cylon");
+  });
+  const ships = p.zones.alert.filter((s) => {
+    const d = getUnitDef(s);
+    return d && d.type === "ship";
+  });
+  if (cylons.length === 0 && ships.length === 0) {
+    // Nothing to do for this player, move to next
+    networkHackingForPlayer(state, pi + 1, log);
+    return;
+  }
+  if (cylons.length === 0) {
+    // Must commit all ships (no choice)
+    for (const s of ships) commitUnitLocal(p, s.cards[0].instanceId, log);
+    networkHackingForPlayer(state, pi + 1, log);
+    return;
+  }
+  if (ships.length === 0) {
+    // Must commit a Cylon — if only one, auto-resolve
+    if (cylons.length === 1) {
+      commitUnitLocal(p, cylons[0].cards[0].instanceId, log);
+      networkHackingForPlayer(state, pi + 1, log);
+      return;
+    }
+  }
+  // Player has a real choice
+  state.pendingChoice = {
+    type: "network-hacking-choice",
+    playerIndex: pi,
+    cards: [],
+    context: { nextPlayer: pi + 1 },
+  };
+}
+
+// BSG1-041 Setback: Target player chooses one — exhaust alert unit OR exhaust reserve unit
 register("setback", {
   playableIn: ["execution"],
-  resolve(state, playerIndex, _targetId, log) {
-    // "Target player" — AI always targets opponent
-    const targetIdx = 1 - playerIndex;
-    const targetPlayer = state.players[targetIdx];
-    // AI: exhaust reserve unit if available (less impactful)
-    const reserveUnit = targetPlayer.zones.reserve.find((s) => !s.exhausted && s.cards[0]);
-    if (reserveUnit) {
-      reserveUnit.exhausted = true;
-      const d = getUnitDef(reserveUnit);
-      log.push(
-        `Setback: ${pLabel(targetIdx)} exhausts reserve ${d ? helpers.cardName(d) : "unit"}.`,
-      );
-    } else {
-      const alertUnit = targetPlayer.zones.alert.find((s) => !s.exhausted && s.cards[0]);
-      if (alertUnit) {
-        alertUnit.exhausted = true;
-        const d = getUnitDef(alertUnit);
-        log.push(
-          `Setback: ${pLabel(targetIdx)} exhausts alert ${d ? helpers.cardName(d) : "unit"}.`,
-        );
-      } else {
-        log.push(`Setback: ${pLabel(targetIdx)} has no units to exhaust.`);
-      }
-    }
+  canPlay(state, _playerIndex) {
+    // Playable if any player has a non-exhausted unit
+    return state.players.some(
+      (p) =>
+        p.zones.alert.some((s) => !s.exhausted && s.cards[0]) ||
+        p.zones.reserve.some((s) => !s.exhausted && s.cards[0]),
+    );
+  },
+  resolve(state, playerIndex, _targetId, _log) {
+    // Create pending choice: pick which player to target
+    state.pendingChoice = {
+      type: "setback-target",
+      playerIndex,
+      cards: [],
+    };
   },
 });
 
@@ -1157,11 +1186,7 @@ register("still-no-contact", {
       return d && d.type === "personnel";
     });
     if (alertPersonnel) {
-      commitUnitLocal(oppPlayer, alertPersonnel.cards[0].instanceId);
-      const d = getUnitDef(alertPersonnel);
-      log.push(
-        `Still No Contact: ${pLabel(opp)} commits ${d ? helpers.cardName(d) : "personnel"}.`,
-      );
+      commitUnitLocal(oppPlayer, alertPersonnel.cards[0].instanceId, log);
     } else {
       const anyPersonnel = [...oppPlayer.zones.alert, ...oppPlayer.zones.reserve].find((s) => {
         const d = getUnitDef(s);
@@ -1763,19 +1788,18 @@ register("crackdown", {
       log.push(`Crackdown: ${pLabel(opp)} has no cards.`);
       return;
     }
-    // AI: discard lowest mystic value
-    let worstIdx = 0;
-    let worstMystic = Infinity;
-    for (let i = 0; i < oppPlayer.hand.length; i++) {
-      const def = cardRegistry[oppPlayer.hand[i].defId];
-      if (def && (def.mysticValue ?? 0) < worstMystic) {
-        worstMystic = def.mysticValue ?? 0;
-        worstIdx = i;
-      }
+    if (oppPlayer.hand.length === 1) {
+      const discarded = oppPlayer.hand.splice(0, 1)[0];
+      oppPlayer.discard.push(discarded);
+      log.push(`Crackdown: ${pLabel(opp)} discards a card.`);
+      return;
     }
-    const discarded = oppPlayer.hand.splice(worstIdx, 1)[0];
-    oppPlayer.discard.push(discarded);
-    log.push(`Crackdown: ${pLabel(opp)} discards a card.`);
+    // Opponent chooses which card to discard
+    state.pendingChoice = {
+      type: "crackdown-discard",
+      playerIndex: opp,
+      cards: [...oppPlayer.hand],
+    };
   },
 });
 
@@ -2074,10 +2098,10 @@ register("sign", {
     const defender = state.challenge.defenderInstanceId
       ? findUnitOwner(state, state.challenge.defenderInstanceId)
       : null;
-    if (challenger) commitUnitLocal(challenger.player, state.challenge.challengerInstanceId);
-    if (defender) commitUnitLocal(defender.player, state.challenge.defenderInstanceId!);
+    if (challenger) commitUnitLocal(challenger.player, state.challenge.challengerInstanceId, log);
+    if (defender) commitUnitLocal(defender.player, state.challenge.defenderInstanceId!, log);
     state.challenge.forceEnd = true;
-    log.push("...Sign: challenge ends; both ships committed.");
+    log.push("...Sign: challenge ends.");
   },
 });
 
@@ -2488,7 +2512,7 @@ export function resolveEventAbility(
   state: GameState,
   playerIndex: number,
   targetId: string | undefined,
-  log: string[],
+  log: LogItem[],
 ): void {
   const handler = registry.get(abilityId);
   if (!handler) {
@@ -2659,9 +2683,7 @@ registerPendingChoice("covering-fire-commit", {
     const ctx = (choice.context ?? {}) as Record<string, unknown>;
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
-    const commitDef = helpers.getCardDef(chosenCard.defId);
-    helpers.commitUnit(player, chosenCard.instanceId);
-    log.push(`Covering Fire: ${helpers.cardName(commitDef)} committed.`);
+    helpers.commitUnit(player, chosenCard.instanceId, log);
     const targetId = ctx.targetId as string;
     if (targetId) {
       helpers.applyPowerBuff(state, targetId, 2, log);
@@ -2704,9 +2726,7 @@ registerPendingChoice("distraction-commit", {
     const ctx = (choice.context ?? {}) as Record<string, unknown>;
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
-    const commitDef = helpers.getCardDef(chosenCard.defId);
-    helpers.commitUnit(player, chosenCard.instanceId);
-    log.push(`Distraction: ${helpers.cardName(commitDef)} committed.`);
+    helpers.commitUnit(player, chosenCard.instanceId, log);
     const targetId = ctx.targetId as string;
     if (targetId) {
       for (const p of state.players) {
@@ -3015,16 +3035,579 @@ registerPendingChoice("decoys-count", {
     let committed = 0;
     for (const st of eligible) {
       if (committed >= count) break;
-      helpers.commitUnit(player, st.cards[0].instanceId);
+      helpers.commitUnit(player, st.cards[0].instanceId, log);
       committed++;
     }
     if (committed > 0 && targetId) {
       helpers.applyPowerBuff(state, targetId, committed * 2, log);
-      log.push(`Decoys: ${committed} unit(s) committed, target gets +${committed * 2} power.`);
     }
   },
   aiDecide(_choice, choiceActions) {
     return choiceActions.length - 1;
+  },
+});
+
+// --- Setback: Step 1 — choose target player ---
+registerPendingChoice("setback-target", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    const caster = choice.playerIndex;
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      const hasUnit =
+        p.zones.alert.some((s) => !s.exhausted && s.cards[0]) ||
+        p.zones.reserve.some((s) => !s.exhausted && s.cards[0]);
+      if (hasUnit) {
+        actions.push({
+          type: "makeChoice",
+          description: pi === caster ? "Target yourself" : "Target opponent",
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const caster = choice.playerIndex;
+    // Build the same player list as getActions to map choiceIndex → playerIndex
+    const eligiblePlayers: number[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      const hasUnit =
+        p.zones.alert.some((s) => !s.exhausted && s.cards[0]) ||
+        p.zones.reserve.some((s) => !s.exhausted && s.cards[0]);
+      if (hasUnit) eligiblePlayers.push(pi);
+    }
+    const targetIdx = eligiblePlayers[choiceIndex] ?? 1 - caster;
+    const targetPlayer = state.players[targetIdx];
+    // Collect non-exhausted units for the targeted player to choose from
+    const units: CardInstance[] = [];
+    for (const s of targetPlayer.zones.alert) {
+      if (!s.exhausted && s.cards[0]) units.push(s.cards[0]);
+    }
+    for (const s of targetPlayer.zones.reserve) {
+      if (!s.exhausted && s.cards[0]) units.push(s.cards[0]);
+    }
+    if (units.length === 0) return; // shouldn't happen given canPlay
+    if (units.length === 1) {
+      // Only one option — auto-exhaust
+      const only = units[0];
+      for (const p of state.players) {
+        exhaustUnitLocal(p, only.instanceId);
+      }
+      const def = helpers.getCardDef(only.defId);
+      log.push(`Setback: ${pLabel(targetIdx)} exhausts ${def ? helpers.cardName(def) : "unit"}.`);
+      return;
+    }
+    // Targeted player chooses which unit to exhaust
+    state.pendingChoice = {
+      type: "setback-exhaust",
+      playerIndex: targetIdx,
+      cards: units,
+    };
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI always targets opponent (last action if both are eligible)
+    return choiceActions.length - 1;
+  },
+});
+
+// --- Setback: Step 2 — targeted player chooses unit to exhaust ---
+registerPendingChoice("setback-exhaust", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Exhaust ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    for (const p of state.players) {
+      exhaustUnitLocal(p, chosenCard.instanceId);
+    }
+    const def = helpers.getCardDef(chosenCard.defId);
+    log.push(`Setback: ${pLabel(playerIndex)} exhausts ${def ? helpers.cardName(def) : "unit"}.`);
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI picks lowest-power unit to exhaust
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+// --- Endless Task: Step 1 — choose target player ---
+registerPendingChoice("endless-task-target", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    const caster = choice.playerIndex;
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      const hasUnit =
+        p.zones.alert.some((s) => s.cards[0]) ||
+        p.zones.reserve.some((s) => !s.exhausted && s.cards[0]);
+      if (hasUnit) {
+        actions.push({
+          type: "makeChoice",
+          description: pi === caster ? "Target yourself" : "Target opponent",
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, _log) {
+    const caster = choice.playerIndex;
+    const eligiblePlayers: number[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      const hasUnit =
+        p.zones.alert.some((s) => s.cards[0]) ||
+        p.zones.reserve.some((s) => !s.exhausted && s.cards[0]);
+      if (hasUnit) eligiblePlayers.push(pi);
+    }
+    const targetIdx = eligiblePlayers[choiceIndex] ?? 1 - caster;
+    const targetPlayer = state.players[targetIdx];
+    // Collect eligible units: alert can be committed or exhausted, reserve can only be exhausted
+    const units: CardInstance[] = [];
+    for (const s of targetPlayer.zones.alert) {
+      if (s.cards[0]) units.push(s.cards[0]);
+    }
+    for (const s of targetPlayer.zones.reserve) {
+      if (!s.exhausted && s.cards[0]) units.push(s.cards[0]);
+    }
+    if (units.length === 0) return;
+    // Targeted player chooses unit + action
+    state.pendingChoice = {
+      type: "endless-task-unit",
+      playerIndex: targetIdx,
+      cards: units,
+    };
+  },
+  aiDecide(_choice, choiceActions) {
+    return choiceActions.length - 1; // target opponent
+  },
+});
+
+// --- Endless Task: Step 2 — targeted player picks unit to commit/exhaust ---
+registerPendingChoice("endless-task-unit", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    const targetPlayer = state.players[choice.playerIndex];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const card = choice.cards[i];
+      const def = helpers.getCardDef(card.defId);
+      if (!def) continue;
+      const name = helpers.cardName(def);
+      // Check if unit is in alert (can commit or exhaust) or reserve (exhaust only)
+      const inAlert = targetPlayer.zones.alert.some(
+        (s) => s.cards[0]?.instanceId === card.instanceId,
+      );
+      if (inAlert) {
+        actions.push({ type: "makeChoice", description: `Commit ${name}`, cardDefId: def.id });
+        const stack = targetPlayer.zones.alert.find(
+          (s) => s.cards[0]?.instanceId === card.instanceId,
+        );
+        if (stack && !stack.exhausted) {
+          actions.push({ type: "makeChoice", description: `Exhaust ${name}`, cardDefId: def.id });
+        }
+      } else {
+        actions.push({ type: "makeChoice", description: `Exhaust ${name}`, cardDefId: def.id });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    // Rebuild the same action list to map choiceIndex to the right action
+    const targetPlayer = state.players[playerIndex];
+    const actionList: { instanceId: string; action: "commit" | "exhaust"; name: string }[] = [];
+    for (const card of choice.cards) {
+      const def = helpers.getCardDef(card.defId);
+      if (!def) continue;
+      const name = helpers.cardName(def);
+      const inAlert = targetPlayer.zones.alert.some(
+        (s) => s.cards[0]?.instanceId === card.instanceId,
+      );
+      if (inAlert) {
+        actionList.push({ instanceId: card.instanceId, action: "commit", name });
+        const stack = targetPlayer.zones.alert.find(
+          (s) => s.cards[0]?.instanceId === card.instanceId,
+        );
+        if (stack && !stack.exhausted) {
+          actionList.push({ instanceId: card.instanceId, action: "exhaust", name });
+        }
+      } else {
+        actionList.push({ instanceId: card.instanceId, action: "exhaust", name });
+      }
+    }
+    const chosen = actionList[choiceIndex];
+    if (!chosen) return;
+    if (chosen.action === "commit") {
+      commitUnitLocal(targetPlayer, chosen.instanceId, log);
+    } else {
+      exhaustUnitLocal(targetPlayer, chosen.instanceId);
+      log.push(`Endless Task: ${pLabel(playerIndex)} exhausts ${chosen.name}.`);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI prefers exhaust over commit (less impactful), pick first exhaust action
+    for (let i = 0; i < choiceActions.length; i++) {
+      if (choiceActions[i].description?.startsWith("Exhaust")) return i;
+    }
+    return 0;
+  },
+});
+
+// --- Grounded: Opponent chooses commit a ship or commit all personnel ---
+registerPendingChoice("grounded-choice", {
+  getActions(choice) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const actions: ValidAction[] = [];
+    if ((ctx.shipCount as number) > 0) {
+      actions.push({ type: "makeChoice", description: "Commit a ship" });
+    }
+    if ((ctx.personnelCount as number) > 0) {
+      actions.push({ type: "makeChoice", description: "Commit all personnel" });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const p = state.players[playerIndex];
+    // Rebuild action list to determine what was chosen
+    const options: string[] = [];
+    if ((ctx.shipCount as number) > 0) options.push("ship");
+    if ((ctx.personnelCount as number) > 0) options.push("personnel");
+    const chosen = options[choiceIndex];
+    if (chosen === "ship") {
+      const alertShips = p.zones.alert.filter((s) => {
+        const d = getUnitDef(s);
+        return d && d.type === "ship";
+      });
+      if (alertShips.length === 1) {
+        commitUnitLocal(p, alertShips[0].cards[0].instanceId, log);
+      } else {
+        // Pick which ship
+        state.pendingChoice = {
+          type: "grounded-ship",
+          playerIndex,
+          cards: alertShips.map((s) => s.cards[0]),
+        };
+      }
+    } else {
+      const personnel = p.zones.alert.filter((s) => {
+        const d = getUnitDef(s);
+        return d && d.type === "personnel";
+      });
+      for (const s of personnel) commitUnitLocal(p, s.cards[0].instanceId, log);
+    }
+  },
+  aiDecide(choice) {
+    // AI prefers committing one ship over all personnel
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    if ((ctx.shipCount as number) > 0) return 0; // "Commit a ship" is first
+    return 0;
+  },
+});
+
+// --- Grounded: Pick which ship to commit ---
+registerPendingChoice("grounded-ship", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    commitUnitLocal(state.players[playerIndex], chosenCard.instanceId, log);
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI commits lowest-power ship
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+// --- Hangar Deck Fire: Opponent chooses sacrifice ship or supply ---
+registerPendingChoice("hangar-deck-fire-choice", {
+  getActions() {
+    return [
+      { type: "makeChoice" as const, description: "Sacrifice a ship" },
+      { type: "makeChoice" as const, description: "Sacrifice a supply card" },
+    ];
+  },
+  resolve(_choice, choiceIndex, state, _player, playerIndex, log) {
+    const p = state.players[playerIndex];
+    if (choiceIndex === 0) {
+      // Sacrifice a ship
+      const ships = [...p.zones.alert, ...p.zones.reserve].filter((s) => {
+        const d = getUnitDef(s);
+        return d && d.type === "ship";
+      });
+      if (ships.length === 1) {
+        sacrificeUnit(p, ships[0].cards[0].instanceId, log);
+      } else if (ships.length > 1) {
+        state.pendingChoice = {
+          type: "hangar-deck-fire-ship",
+          playerIndex,
+          cards: ships.map((s) => s.cards[0]),
+        };
+      }
+    } else {
+      // Sacrifice a supply card
+      for (const stack of p.zones.resourceStacks) {
+        if (stack.supplyCards.length > 0) {
+          const supply = stack.supplyCards.pop()!;
+          p.discard.push(supply);
+          log.push(`Hangar Deck Fire: ${pLabel(playerIndex)} sacrifices a supply card.`);
+          return;
+        }
+      }
+    }
+  },
+  aiDecide() {
+    return 1; // AI prefers sacrificing supply over ship
+  },
+});
+
+// --- Hangar Deck Fire: Pick which ship to sacrifice ---
+registerPendingChoice("hangar-deck-fire-ship", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Sacrifice ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    sacrificeUnit(state.players[playerIndex], chosenCard.instanceId, log);
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI sacrifices lowest-power ship
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+// --- Network Hacking: Player chooses commit a Cylon or commit all ships ---
+registerPendingChoice("network-hacking-choice", {
+  getActions(choice, state) {
+    const p = state.players[choice.playerIndex];
+    const actions: ValidAction[] = [];
+    const hasCylon = p.zones.alert.some((s) => {
+      const d = getUnitDef(s);
+      return d && hasTrait(d, "Cylon");
+    });
+    const hasShip = p.zones.alert.some((s) => {
+      const d = getUnitDef(s);
+      return d && d.type === "ship";
+    });
+    if (hasCylon) actions.push({ type: "makeChoice", description: "Commit a Cylon unit" });
+    if (hasShip) actions.push({ type: "makeChoice", description: "Commit all ships" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const nextPlayer = (ctx.nextPlayer as number) ?? state.players.length;
+    const p = state.players[playerIndex];
+    // Rebuild options
+    const options: string[] = [];
+    const hasCylon = p.zones.alert.some((s) => {
+      const d = getUnitDef(s);
+      return d && hasTrait(d, "Cylon");
+    });
+    const hasShip = p.zones.alert.some((s) => {
+      const d = getUnitDef(s);
+      return d && d.type === "ship";
+    });
+    if (hasCylon) options.push("cylon");
+    if (hasShip) options.push("ships");
+    const chosen = options[choiceIndex];
+    if (chosen === "cylon") {
+      const cylons = p.zones.alert.filter((s) => {
+        const d = getUnitDef(s);
+        return d && hasTrait(d, "Cylon");
+      });
+      if (cylons.length === 1) {
+        commitUnitLocal(p, cylons[0].cards[0].instanceId, log);
+        // Chain to next player
+        networkHackingForPlayer(state, nextPlayer, log);
+      } else {
+        // Pick which Cylon
+        state.pendingChoice = {
+          type: "network-hacking-cylon",
+          playerIndex,
+          cards: cylons.map((s) => s.cards[0]),
+          context: { nextPlayer },
+        };
+      }
+    } else {
+      const ships = p.zones.alert.filter((s) => {
+        const d = getUnitDef(s);
+        return d && d.type === "ship";
+      });
+      for (const s of ships) commitUnitLocal(p, s.cards[0].instanceId, log);
+      networkHackingForPlayer(state, nextPlayer, log);
+    }
+  },
+  aiDecide(choice, choiceActions, state) {
+    // AI prefers committing one Cylon over all ships
+    const p = state.players[choice.playerIndex];
+    const hasCylon = p.zones.alert.some((s) => {
+      const d = getUnitDef(s);
+      return d && hasTrait(d, "Cylon");
+    });
+    return hasCylon ? 0 : 0;
+  },
+});
+
+// --- Network Hacking: Pick which Cylon to commit ---
+registerPendingChoice("network-hacking-cylon", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const nextPlayer = (ctx.nextPlayer as number) ?? state.players.length;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    commitUnitLocal(state.players[playerIndex], chosenCard.instanceId, log);
+    networkHackingForPlayer(state, nextPlayer, log);
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI commits lowest-power Cylon
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+// --- Crackdown: Opponent chooses card to discard ---
+registerPendingChoice("crackdown-discard", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Discard ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const p = state.players[playerIndex];
+    const idx = p.hand.findIndex((c) => c.instanceId === chosenCard.instanceId);
+    if (idx >= 0) {
+      const removed = p.hand.splice(idx, 1)[0];
+      p.discard.push(removed);
+    }
+    log.push(`Crackdown: ${pLabel(playerIndex)} discards a card.`);
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI discards lowest mystic value
+    let worstIdx = 0;
+    let worstMystic = Infinity;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const mystic = def?.mysticValue ?? 0;
+        if (mystic < worstMystic) {
+          worstMystic = mystic;
+          worstIdx = i;
+        }
+      }
+    }
+    return worstIdx;
   },
 });
 

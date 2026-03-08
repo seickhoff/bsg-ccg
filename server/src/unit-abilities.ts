@@ -8,6 +8,7 @@ import type {
   PlayerState,
   ChallengeState,
   CardInstance,
+  LogItem,
 } from "@bsg/shared";
 import { hasKeyword } from "@bsg/shared";
 import { fireMissionOnDraw } from "./mission-abilities.js";
@@ -69,7 +70,7 @@ export interface UnitAbilityHandler {
     playerIndex: number,
     sourceId: string,
     targetId: string | undefined,
-    log: string[],
+    log: LogItem[],
   ): void;
 
   /** Passive power modifier */
@@ -171,7 +172,7 @@ function interceptCloud9Loss(
   state: GameState,
   playerIndex: number,
   amount: number,
-  log: string[],
+  log: LogItem[],
 ): number {
   if (amount <= 0) return amount;
   const player = state.players[playerIndex];
@@ -247,29 +248,37 @@ function hasOtherAlertPersonnel(player: PlayerState, excludeInstanceId: string):
 }
 
 /** Move a unit from reserve to alert */
-export function readyUnit(player: PlayerState, instanceId: string): boolean {
+export function readyUnit(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInAnyZone(player, instanceId);
   if (found && found.zone === "reserve") {
     player.zones.reserve.splice(found.index, 1);
     player.zones.alert.push(found.stack);
+    if (log) {
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`${def ? cardName(def) : "Unit"} readied.`);
+    }
     return true;
   }
   return false;
 }
 
 /** Move a unit from alert to reserve */
-function commitUnit(player: PlayerState, instanceId: string): boolean {
+function commitUnit(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInAnyZone(player, instanceId);
   if (found && found.zone === "alert") {
     player.zones.alert.splice(found.index, 1);
     player.zones.reserve.push(found.stack);
+    if (log) {
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`${def ? cardName(def) : "Unit"} committed.`);
+    }
     return true;
   }
   return false;
 }
 
 /** Defeat a unit (move to discard) */
-function defeatUnitLocal(player: PlayerState, instanceId: string, log: string[]): boolean {
+function defeatUnitLocal(player: PlayerState, instanceId: string, log: LogItem[]): boolean {
   const found = findUnitInAnyZone(player, instanceId);
   if (found) {
     const def = getCardDef(found.stack.cards[0].defId);
@@ -326,7 +335,7 @@ function findTargetUnits(
 function drawCards(
   player: PlayerState,
   count: number,
-  log: string[],
+  log: LogItem[],
   playerLabel: string,
   state?: GameState,
   playerIndex?: number,
@@ -559,9 +568,7 @@ register("centurion-harass", {
   resolve(state, _pi, _sid, targetId, log) {
     if (!targetId) return;
     for (const p of state.players) {
-      if (commitUnit(p, targetId)) {
-        const def = findDefByInstanceIdFromPlayers(state, targetId);
-        log.push(`${def ? cardName(def) : "Personnel"} is committed.`);
+      if (commitUnit(p, targetId, log)) {
         break;
       }
     }
@@ -607,10 +614,7 @@ register("tyrol-ready", {
   },
   resolve(state, playerIndex, _sid, targetId, log) {
     if (!targetId) return;
-    if (readyUnit(state.players[playerIndex], targetId)) {
-      const def = findDefByInstanceIdFromPlayers(state, targetId);
-      log.push(`${def ? cardName(def) : "Ship"} readied.`);
-    }
+    readyUnit(state.players[playerIndex], targetId, log);
   },
 });
 
@@ -729,10 +733,7 @@ register("roslin-mission", {
   },
   resolve(state, playerIndex, _sid, targetId, log) {
     if (!targetId) return;
-    if (readyUnit(state.players[playerIndex], targetId)) {
-      const def = findDefByInstanceIdFromPlayers(state, targetId);
-      log.push(`${def ? cardName(def) : "Mission"} readied.`);
-    }
+    readyUnit(state.players[playerIndex], targetId, log);
   },
 });
 
@@ -973,10 +974,7 @@ register("six-ready-cylon", {
   },
   resolve(state, playerIndex, _sid, targetId, log) {
     if (!targetId) return;
-    if (readyUnit(state.players[playerIndex], targetId)) {
-      const def = findDefByInstanceIdFromPlayers(state, targetId);
-      log.push(`${def ? cardName(def) : "Cylon personnel"} readied.`);
-    }
+    readyUnit(state.players[playerIndex], targetId, log);
   },
 });
 
@@ -994,12 +992,10 @@ register("tigh-lockdown", {
     for (const p of state.players) {
       const found = findUnitInAnyZone(p, targetId);
       if (found && found.zone === "alert") {
-        commitUnit(p, targetId);
+        commitUnit(p, targetId, log);
         // Re-find after commit
         const found2 = findUnitInAnyZone(p, targetId);
         if (found2) found2.stack.exhausted = true;
-        const def = getCardDef(found.stack.cards[0].defId);
-        log.push(`${def ? cardName(def) : "Personnel"} committed and exhausted.`);
         break;
       }
     }
@@ -1214,7 +1210,7 @@ register("apollo-dismiss", {
       log.push("Apollo dismisses the Cylon threat. Challenge ends.");
       // Commit the challenger
       const challenger = state.players[state.challenge.challengerPlayerIndex];
-      commitUnit(challenger, state.challenge.challengerInstanceId);
+      commitUnit(challenger, state.challenge.challengerInstanceId, log);
       state.challenge = null;
     }
   },
@@ -1251,10 +1247,7 @@ register("baltar-vp", {
       return;
     }
     // Check if target is in reserve → ready (move to alert)
-    if (readyUnit(player, targetId)) {
-      const def = findDefByInstanceIdFromPlayers(state, targetId);
-      log.push(`Dr. Baltar readies ${def ? cardName(def) : "mission"}.`);
-    }
+    readyUnit(player, targetId, log);
   },
 });
 
@@ -1362,11 +1355,9 @@ register("hadrian-tribunal", {
     for (const p of state.players) {
       const found = findUnitInAnyZone(p, targetId);
       if (found && found.zone === "alert") {
-        commitUnit(p, targetId);
+        commitUnit(p, targetId, log);
         const found2 = findUnitInAnyZone(p, targetId);
         if (found2) found2.stack.exhausted = true;
-        const def = getCardDef(found.stack.cards[0].defId);
-        log.push(`${def ? cardName(def) : "Personnel"} committed and exhausted.`);
         break;
       }
     }
@@ -1392,11 +1383,9 @@ register("hadrian-investigate", {
     for (const p of state.players) {
       const found = findUnitInAnyZone(p, targetId);
       if (found && found.zone === "alert") {
-        commitUnit(p, targetId);
+        commitUnit(p, targetId, log);
         const found2 = findUnitInAnyZone(p, targetId);
         if (found2) found2.stack.exhausted = true;
-        const def = getCardDef(found.stack.cards[0].defId);
-        log.push(`${def ? cardName(def) : "Personnel"} committed and exhausted.`);
         break;
       }
     }
@@ -1600,9 +1589,7 @@ register("tyrol-etb", {
     if (ships.length === 0) return;
     if (ships.length === 1) {
       // Auto-ready the only ship
-      readyUnit(player, ships[0].instanceId);
-      const def = getCardDef(ships[0].defId)!;
-      log.push(`Galen Tyrol: Readied ${cardName(def)}.`);
+      readyUnit(player, ships[0].instanceId, log);
       return;
     }
     // Multiple ships — let player choose
@@ -1947,9 +1934,7 @@ register("gideon-commit", {
     if (!targetId) return;
     for (const p of state.players) {
       if (findUnitInZone(p.zones.alert, targetId)) {
-        commitUnit(p, targetId);
-        const def = findDefByInstanceIdFromPlayers(state, targetId);
-        log.push(`${def ? cardName(def) : "Ship"} committed by Gideon.`);
+        commitUnit(p, targetId, log);
         break;
       }
     }
@@ -2007,15 +1992,14 @@ register("cloud9-transport", {
     if (!targetId || !state.challenge) return;
     // Commit+exhaust the defending personnel
     const player = state.players[playerIndex];
-    commitUnit(player, targetId);
+    commitUnit(player, targetId, log);
     const found = findUnitInAnyZone(player, targetId);
     if (found) found.stack.exhausted = true;
-    log.push("Cloud 9 Transport Hub: Defender committed and exhausted.");
 
     // Commit the challenger
     const atkPlayer = state.players[state.challenge.challengerPlayerIndex];
-    commitUnit(atkPlayer, state.challenge.challengerInstanceId);
-    log.push("Challenger committed. Challenge ends.");
+    commitUnit(atkPlayer, state.challenge.challengerInstanceId, log);
+    log.push("Challenge ends.");
 
     // End the challenge immediately
     state.challenge.forceEnd = true;
@@ -2276,10 +2260,12 @@ export function getUnitAbilityActions(
   const actions: ValidAction[] = [];
   for (const targetId of targets) {
     const targetDef = findDefByInstanceIdFromPlayers(state, targetId);
+    const ownerIdx = findOwnerIndexFromPlayers(state, targetId);
+    const ownerTag = ownerIdx !== null && ownerIdx !== playerIndex ? "(opponent's) " : "";
     const targetLabel = targetDef ? cardName(targetDef) : targetId;
     actions.push({
       type: "playAbility",
-      description: `${cardName(sourceDef)}: → ${targetLabel}`,
+      description: `${cardName(sourceDef)}: → ${ownerTag}${targetLabel}`,
       cardDefId: sourceDef.id,
       selectableInstanceIds: [sourceInstanceId],
       targetInstanceId: targetId,
@@ -2295,7 +2281,7 @@ export function resolveUnitAbility(
   playerIndex: number,
   sourceInstanceId: string,
   targetInstanceId: string | undefined,
-  log: string[],
+  log: LogItem[],
 ): void {
   const handler = registry.get(abilityId);
   if (!handler) {
@@ -2381,6 +2367,49 @@ export function computePassivePowerModifier(
   return total;
 }
 
+/** Itemized passive power modifiers for a unit (for log breakdown). */
+export function computePassivePowerBreakdown(
+  state: GameState,
+  unitStack: UnitStack,
+  ownerIndex: number,
+  context: PowerContext,
+): { source: string; amount: number }[] {
+  const items: { source: string; amount: number }[] = [];
+  const topCard = unitStack.cards[0];
+  if (!topCard) return items;
+
+  const unitDef = getCardDef(topCard.defId);
+  if (!unitDef) return items;
+
+  // Self-modifying passives
+  if (unitDef.abilityId) {
+    const handler = registry.get(unitDef.abilityId);
+    if (handler?.getPowerModifier) {
+      const mod = handler.getPowerModifier(state, unitStack, ownerIndex, context);
+      if (mod !== 0) items.push({ source: cardName(unitDef), amount: mod });
+    }
+  }
+
+  // Aura passives from other units
+  for (let pIdx = 0; pIdx < state.players.length; pIdx++) {
+    const player = state.players[pIdx];
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const tc = stack.cards[0];
+        if (!tc?.faceUp || tc.instanceId === topCard.instanceId) continue;
+        const tcDef = getCardDef(tc.defId);
+        if (!tcDef?.abilityId) continue;
+        const handler = registry.get(tcDef.abilityId);
+        if (!handler?.getPowerModifier) continue;
+        const mod = handler.getPowerModifier(state, unitStack, ownerIndex, context);
+        if (mod !== 0) items.push({ source: cardName(tcDef), amount: mod });
+      }
+    }
+  }
+
+  return items;
+}
+
 /** Compute fleet defense modifiers from all units in play. */
 export function computeFleetDefenseModifiers(state: GameState): number {
   let total = 0;
@@ -2425,7 +2454,7 @@ export function fireOnEnterPlay(
   playerIndex: number,
   def: CardDef,
   instanceId: string,
-  log: string[],
+  log: LogItem[],
 ): void {
   if (!def.abilityId) return;
   const handler = registry.get(def.abilityId);
@@ -2439,7 +2468,7 @@ export function fireOnDefeat(
   playerIndex: number,
   def: CardDef,
   instanceId: string,
-  log: string[],
+  log: LogItem[],
 ): void {
   if (!def.abilityId) return;
   const handler = registry.get(def.abilityId);
@@ -2454,7 +2483,7 @@ export function fireOnDefeat(
 export function fireOnChallengeEnd(
   state: GameState,
   challenge: ChallengeState,
-  log: string[],
+  log: LogItem[],
 ): void {
   // Check challenger for challenge-end triggers
   const attackerPlayer = state.players[challenge.challengerPlayerIndex];
@@ -2535,7 +2564,7 @@ export function fireOnShipEnterPlay(
   state: GameState,
   playerIndex: number,
   shipInstanceId: string,
-  log: string[],
+  log: LogItem[],
 ): void {
   const player = state.players[playerIndex];
   for (const stack of player.zones.alert) {
@@ -2562,7 +2591,7 @@ export function fireOnChallengeInit(
   state: GameState,
   playerIndex: number,
   challengerInstanceId: string,
-  log: string[],
+  log: LogItem[],
 ): void {
   const player = state.players[playerIndex];
   // Check the challenger itself for onChallengeInit triggers
@@ -2582,11 +2611,11 @@ export function fireOnChallengeInit(
       if (tc?.faceUp && tc.instanceId !== challengerInstanceId) {
         const def = getCardDef(tc.defId);
         if (def?.type === "personnel" && def.traits?.includes("Pilot")) {
-          commitUnit(player, tc.instanceId);
+          commitUnit(player, tc.instanceId, log);
           if (state.challenge) {
             state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 3;
           }
-          log.push(`${cardName(def)} committed — Viper 762 gets +3 power.`);
+          log.push(`Viper 762 gets +3 power.`);
           return;
         }
       }
@@ -2599,7 +2628,7 @@ export function fireOnChallengeWin(
   state: GameState,
   winnerPlayerIndex: number,
   winnerInstanceId: string,
-  log: string[],
+  log: LogItem[],
 ): void {
   const player = state.players[winnerPlayerIndex];
   const winnerFound = findUnitInAnyZone(player, winnerInstanceId);
@@ -2760,11 +2789,20 @@ function findDefByInstanceIdFromPlayers(state: GameState, instanceId: string): C
   return findDefByInstanceId(state, instanceId);
 }
 
+function findOwnerIndexFromPlayers(state: GameState, instanceId: string): number | null {
+  const idx = state.players.findIndex((p) =>
+    [...p.zones.alert, ...p.zones.reserve].some((stack) =>
+      stack.cards.some((c) => c.instanceId === instanceId),
+    ),
+  );
+  return idx === -1 ? null : idx;
+}
+
 function applyChallengePowerBuff(
   state: GameState,
   instanceId: string,
   amount: number,
-  log: string[],
+  log: LogItem[],
 ): void {
   if (!state.challenge) return;
   if (instanceId === state.challenge.challengerInstanceId) {
@@ -3062,9 +3100,7 @@ registerPendingChoice("tyrol-etb-choice", {
   resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
     const chosenCard = choice.cards[choiceIndex];
     if (chosenCard) {
-      readyUnit(player, chosenCard.instanceId);
-      const def = getCardDef(chosenCard.defId);
-      if (def) log.push(`Galen Tyrol: Readied ${cardName(def)}.`);
+      readyUnit(player, chosenCard.instanceId, log);
     }
   },
   aiDecide() {
@@ -3084,9 +3120,8 @@ registerPendingChoice("tyrol-chief-choice", {
     const tyrolId = ctx.tyrolInstanceId as string;
     const shipId = ctx.shipInstanceId as string;
     if (choiceIndex === 0) {
-      commitUnit(player, tyrolId);
-      readyUnit(player, shipId);
-      log.push("Galen Tyrol commits to ready entering ship.");
+      commitUnit(player, tyrolId, log);
+      readyUnit(player, shipId, log);
     } else {
       log.push("Galen Tyrol declines to ready entering ship.");
     }
@@ -3107,9 +3142,9 @@ registerPendingChoice("six-seductress", {
     const ctx = (choice.context ?? {}) as Record<string, unknown>;
     if (choiceIndex === 0 && state.challenge) {
       const sixId = ctx.sixInstanceId as string;
-      commitUnit(player, sixId);
+      commitUnit(player, sixId, log);
       state.challenge.sixSeductressBuff = 2;
-      log.push("Number Six Seductress commits — challenger gets +2 power.");
+      log.push("Number Six Seductress — challenger gets +2 power.");
     } else {
       log.push("Number Six Seductress: declined.");
     }
@@ -3141,8 +3176,8 @@ registerPendingChoice("starbuck-reroll", {
     if (choiceIndex === 0 && state.challenge) {
       const starbuckCard = choice.cards[0];
       if (starbuckCard) {
-        commitUnit(player, starbuckCard.instanceId);
-        log.push("Starbuck commits — ignoring mystic value, revealing another.");
+        commitUnit(player, starbuckCard.instanceId, log);
+        log.push("Starbuck — ignoring mystic value, revealing another.");
         if (side === "challenger") {
           state.challenge.challengerMysticValue = null;
         } else {
@@ -3173,10 +3208,9 @@ registerPendingChoice("gaeta-ready-choice", {
     const ctx = (choice.context ?? {}) as Record<string, unknown>;
     const unitId = ctx.unitId as string;
     if (choiceIndex === 0) {
-      readyUnit(player, unitId);
+      readyUnit(player, unitId, log);
       if (!player.oncePerTurnUsed) player.oncePerTurnUsed = {};
       player.oncePerTurnUsed["gaeta-ready"] = true;
-      log.push("Mr. Gaeta readies after challenging.");
     } else {
       log.push("Mr. Gaeta declines to ready.");
     }
@@ -3201,10 +3235,9 @@ registerPendingChoice("helo-toaster-choice", {
     const ctx = (choice.context ?? {}) as Record<string, unknown>;
     const unitId = ctx.unitId as string;
     if (choiceIndex === 0) {
-      readyUnit(player, unitId);
+      readyUnit(player, unitId, log);
       if (!player.oncePerTurnUsed) player.oncePerTurnUsed = {};
       player.oncePerTurnUsed["helo-toaster"] = true;
-      log.push("Helo readies after challenging (Boomer in play).");
     } else {
       log.push("Helo declines to ready.");
     }

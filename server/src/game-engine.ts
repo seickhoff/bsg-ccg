@@ -14,6 +14,7 @@ import type {
   ResourceType,
   ReadyStep,
   OpponentView,
+  LogItem,
 } from "@bsg/shared";
 import { hasKeyword } from "@bsg/shared";
 import {
@@ -37,7 +38,7 @@ import {
   resolveUnitAbility,
   getUnitAbilityCost,
   canUnitAbilityChallenge,
-  computePassivePowerModifier,
+  computePassivePowerBreakdown,
   computeFleetDefenseModifiers,
   computeCylonThreatBonus,
   fireOnEnterPlay,
@@ -70,7 +71,7 @@ import {
   resolveMissionAbility,
   getMissionCategory,
   getLinkTargetType,
-  computeMissionPowerModifier,
+  computeMissionPowerBreakdown,
   computeMissionFleetDefenseModifier,
   computeMissionCylonThreatBonus,
   getMissionKeywordGrants,
@@ -128,7 +129,7 @@ export function setCardRegistry(
     drawCards,
     applyPowerBuff,
     applyInfluenceLoss,
-    revealMysticValue(state: GameState, playerIndex: number, log: string[]): number {
+    revealMysticValue(state: GameState, playerIndex: number, log: LogItem[]): number {
       const player = state.players[playerIndex];
       const result = revealMysticValue(player, log, `Player ${playerIndex + 1}`);
       return result.value;
@@ -207,20 +208,6 @@ function cardName(def: CardDef): string {
   return def.title ?? def.subtitle ?? "?";
 }
 
-const resourceAbbrev: Record<ResourceType, string> = {
-  persuasion: "P",
-  logistics: "L",
-  security: "S",
-};
-
-function formatCost(cost: CardCost): string {
-  if (!cost) return "";
-  return (Object.entries(cost) as [ResourceType, number][])
-    .filter(([, n]) => n > 0)
-    .map(([r, n]) => `${n}${resourceAbbrev[r]}`)
-    .join(" ");
-}
-
 /**
  * Find an existing unit stack whose top card shares the same title as the given def.
  * Searches alert first, then reserve (per rules, overlay keeps the stack's current zone).
@@ -283,7 +270,7 @@ function cloneState(state: GameState): GameState {
 function drawCards(
   player: PlayerState,
   count: number,
-  log: string[],
+  log: LogItem[],
   playerLabel: string,
   state?: GameState,
   playerIndex?: number,
@@ -311,7 +298,7 @@ function drawCards(
 
 // --- Reveal mystic value (flip top of deck) ---
 
-function revealTopCard(player: PlayerState, log: string[], playerLabel: string): CardInstance {
+function revealTopCard(player: PlayerState, log: LogItem[], playerLabel: string): CardInstance {
   if (player.deck.length === 0) {
     if (player.discard.length === 0) {
       // Both deck and discard empty — use Condition One as a dummy reveal
@@ -329,7 +316,7 @@ function revealTopCard(player: PlayerState, log: string[], playerLabel: string):
 
 function revealMysticValue(
   player: PlayerState,
-  log: string[],
+  log: LogItem[],
   playerLabel: string,
 ): { value: number; card: CardInstance } {
   const card = revealTopCard(player, log, playerLabel);
@@ -373,12 +360,62 @@ function findUnitInZone(
   return null;
 }
 
-// --- Get power of top card in a unit stack ---
+// --- Power breakdown logging ---
 
-function getUnitPower(stack: UnitStack): number {
+function logPowerBreakdown(
+  log: LogItem[],
+  label: string,
+  stack: UnitStack,
+  challengeBuff: number,
+  state: GameState,
+  ownerIndex: number,
+  context: {
+    phase?: string;
+    isChallenger?: boolean;
+    isDefender?: boolean;
+    challengerDef?: CardDef;
+    defenderDef?: CardDef;
+  },
+  opts?: { extraBuff?: number; extraLabel?: string; mystic?: number },
+): number {
   const topCard = stack.cards[0];
-  if (!topCard) return 0;
-  return (getCardDef(topCard.defId).power ?? 0) + (stack.powerBuff ?? 0);
+  const def = topCard ? getCardDef(topCard.defId) : null;
+  const basePower = def?.power ?? 0;
+  const stackBuff = stack.powerBuff ?? 0;
+
+  const passiveItems = computePassivePowerBreakdown(state, stack, ownerIndex, context);
+  const missionItems = computeMissionPowerBreakdown(state, stack, ownerIndex, context);
+  const passiveTotal = passiveItems.reduce((s, i) => s + i.amount, 0);
+  const missionTotal = missionItems.reduce((s, i) => s + i.amount, 0);
+  const unitPower =
+    basePower + stackBuff + challengeBuff + passiveTotal + missionTotal + (opts?.extraBuff ?? 0);
+
+  // Build breakdown parts
+  const parts: string[] = [`base ${basePower}`];
+  if (stackBuff) parts.push(`buff ${stackBuff > 0 ? "+" : ""}${stackBuff}`);
+  if (challengeBuff) parts.push(`challenge ${challengeBuff > 0 ? "+" : ""}${challengeBuff}`);
+  for (const p of passiveItems) parts.push(`${p.source} ${p.amount > 0 ? "+" : ""}${p.amount}`);
+  for (const m of missionItems) parts.push(`${m.source} ${m.amount > 0 ? "+" : ""}${m.amount}`);
+  if (opts?.extraBuff)
+    parts.push(`${opts.extraLabel ?? "extra"} ${opts.extraBuff > 0 ? "+" : ""}${opts.extraBuff}`);
+
+  const unitName = def ? cardName(def) : "?";
+  log.push({
+    msg: `${label} ${unitName}: power ${unitPower} (${parts.join(", ")})`,
+    d: 2,
+    cat: "power",
+  });
+
+  if (opts?.mystic !== undefined) {
+    const total = unitPower + opts.mystic;
+    log.push({
+      msg: `${label} total: ${total} (power ${unitPower} + mystic ${opts.mystic})`,
+      d: 2,
+      cat: "power",
+    });
+    return total;
+  }
+  return unitPower;
 }
 
 // ============================================================
@@ -393,9 +430,11 @@ function timestamp(): string {
   return `[${h}:${m}:${s}]`;
 }
 
-function stampLog(entries: string[]): string[] {
+function stampLog(entries: LogItem[]): LogItem[] {
   const ts = timestamp();
-  return entries.map((e) => `${ts} ${e}`);
+  return entries.map((e) =>
+    typeof e === "string" ? `${ts} ${e}` : { ...e, msg: `${ts} ${e.msg}` },
+  );
 }
 
 // ============================================================
@@ -440,7 +479,7 @@ export function createGame(
   shuffle(p2.deck);
 
   // Draw starting hands
-  const log: string[] = [];
+  const log: LogItem[] = [];
   drawCards(p1, base1.handSize, log, "Player 1");
   drawCards(p2, base2.handSize, log, "Player 2");
   log.push("Game created. Players may choose to keep or redraw their hands.");
@@ -692,7 +731,7 @@ export function getValidActions(
           const unitLabel = unitDef ? cardName(unitDef) : "unit";
           actions.push({
             type: "challenge",
-            description: `Challenge with ${unitLabel}${costSuffix}`,
+            description: `${unitLabel}${costSuffix}`,
             cardDefId: unitDef?.id,
             selectableInstanceIds: [unitId],
             ...(cantAfford ? { disabled: true } : {}),
@@ -833,11 +872,27 @@ function getChallengeActions(
 
   // Waiting for defender choice
   if (challenge.waitingForDefender) {
-    // Determine who is selecting the defender (Sniper → challenger picks)
-    const selectorPlayerIndex =
-      challenge.defenderSelector === "challenger"
-        ? challenge.challengerPlayerIndex
-        : challenge.defenderPlayerIndex;
+    const isSniper = challenge.defenderSelector === "challenger";
+
+    // Sniper two-step flow:
+    //   Step A: defending player decides accept/decline (sniperDefendAccepted not yet set)
+    //   Step B: challenger picks which unit defends (sniperDefendAccepted === true)
+    // Normal flow: defending player picks unit or declines.
+
+    if (isSniper && !challenge.sniperDefendAccepted) {
+      // Step A: defending player decides whether to accept defense
+      if (playerIndex === challenge.defenderPlayerIndex) {
+        actions.push({ type: "sniperAccept", description: "Accept defense (opponent picks unit)" });
+        actions.push({ type: "sniperAccept", description: "Decline to defend" });
+        return actions;
+      }
+      return actions; // challenger waits
+    }
+
+    // Either normal flow (defending player picks) or Sniper step B (challenger picks unit)
+    const selectorPlayerIndex = isSniper
+      ? challenge.challengerPlayerIndex
+      : challenge.defenderPlayerIndex;
 
     if (playerIndex === selectorPlayerIndex) {
       const challengerDef = findCardDefByInstanceId(state, challenge.challengerInstanceId);
@@ -868,10 +923,9 @@ function getChallengeActions(
               !(state.politiciansCantDefend && def.traits?.includes("Politician")) &&
               !tribunalBlock
             ) {
-              const label =
-                challenge.defenderSelector === "challenger"
-                  ? `Choose defender: ${cardName(def)}`
-                  : `Defend with ${cardName(def)}`;
+              const label = isSniper
+                ? `Choose defender: ${cardName(def)}`
+                : `Defend with ${cardName(def)}`;
               actions.push({
                 type: "defend",
                 description: label,
@@ -902,7 +956,10 @@ function getChallengeActions(
         }
       }
 
-      actions.push({ type: "defend", description: "Decline to defend" });
+      // In Sniper step B, challenger must pick a unit (no decline option — defender already accepted)
+      if (!isSniper) {
+        actions.push({ type: "defend", description: "Decline to defend" });
+      }
       return actions;
     }
     return actions;
@@ -922,7 +979,7 @@ function getChallengeActions(
       ) {
         const challengeEventAction: ValidAction = {
           type: "playEventInChallenge",
-          description: `${cardName(def)} — Event${formatCost(def.cost) ? ` (${formatCost(def.cost)})` : ""}`,
+          description: `${cardName(def)} — Event`,
           cardDefId: def.id,
           selectableCardIndices: [i],
         };
@@ -1212,9 +1269,9 @@ export function applyAction(
   playerIndex: number,
   action: GameAction,
   bases: Record<string, BaseCardDef>,
-): { state: GameState; log: string[] } {
+): { state: GameState; log: LogItem[] } {
   const s = cloneState(state);
-  const log: string[] = [];
+  const log: LogItem[] = [];
   const pLabel = `Player ${playerIndex + 1}`;
   const player = s.players[playerIndex];
   const opponent = s.players[1 - playerIndex];
@@ -1499,9 +1556,9 @@ export function applyAction(
 
           // Pay activation cost
           if (costType === "commit") {
-            commitUnit(player, sourceInstanceId);
+            commitUnit(player, sourceInstanceId, log);
           } else if (costType === "commit-exhaust") {
-            commitUnit(player, sourceInstanceId);
+            commitUnit(player, sourceInstanceId, log);
             const found = findUnitInAnyZone(player, sourceInstanceId);
             if (found) found.stack.exhausted = true;
           } else if (costType === "commit-sacrifice") {
@@ -1521,7 +1578,7 @@ export function applyAction(
             // The target IS the other unit to commit/sacrifice as cost
             if (targetInstanceId) {
               if (costType === "commit-other") {
-                commitUnit(player, targetInstanceId);
+                commitUnit(player, targetInstanceId, log);
               } else {
                 // sacrifice-other
                 const found = findUnitInAnyZone(player, targetInstanceId);
@@ -1630,7 +1687,7 @@ export function applyAction(
                   if (cat === "link") {
                     log.push(`${pLabel} activates ${cardName(mDef)} (linked).`);
                     // Pay cost: commit the unit
-                    commitUnit(player, sourceInstanceId);
+                    commitUnit(player, sourceInstanceId, log);
                     resolveMissionActivation(
                       mDef.abilityId,
                       s,
@@ -1748,7 +1805,7 @@ export function applyAction(
       if (s.phase !== "gameOver") {
         if (s.forceEndExecution) {
           s.forceEndExecution = undefined;
-          log.push("Execution phase ends (False Peace).");
+          log.push({ msg: "Execution phase ends (False Peace).", d: 0, cat: "phase" });
           startCylonPhase(s, log, bases);
         } else if (s.pendingChoice) {
           // Stay on same player for choice resolution
@@ -1772,7 +1829,12 @@ export function applyAction(
       }
 
       const selector = getDefenderSelector(challengerDef);
-      log.push(`${pLabel} challenges with ${cardName(challengerDef)}.`);
+      log.push({
+        msg: `${pLabel} challenges with ${cardName(challengerDef)}.`,
+        d: 0,
+        p: playerIndex,
+        cat: "flow",
+      });
 
       s.challenge = {
         challengerInstanceId,
@@ -1820,9 +1882,29 @@ export function applyAction(
       break;
     }
 
+    // --- Sniper: defender accepts or declines defense ---
+    case "sniperAccept": {
+      if (!s.challenge) break;
+      if (action.accept) {
+        s.challenge.sniperDefendAccepted = true;
+        log.push(`${pLabel} accepts defense.`);
+        // Now challenger picks the defending unit
+        s.activePlayerIndex = s.challenge.challengerPlayerIndex;
+      } else {
+        log.push(`${pLabel} declines to defend.`);
+        s.challenge.waitingForDefender = false;
+        s.challenge.step = 2;
+        s.challenge.consecutivePasses = 0;
+        log.push({ msg: "── Effects round ──", d: 1, cat: "flow" });
+        s.activePlayerIndex = s.challenge.challengerPlayerIndex;
+      }
+      break;
+    }
+
     // --- Defend response ---
     case "defend": {
       if (!s.challenge) break;
+
       if (action.defenderInstanceId) {
         // Check if defender is being flash-played from hand (Raptor 432)
         const handIndex = player.hand.findIndex((c) => c.instanceId === action.defenderInstanceId);
@@ -1849,6 +1931,7 @@ export function applyAction(
       s.challenge.waitingForDefender = false;
       s.challenge.step = 2;
       s.challenge.consecutivePasses = 0;
+      log.push({ msg: "── Effects round ──", d: 1, cat: "flow" });
       // Challenging player gets first chance to play effects
       s.activePlayerIndex = s.challenge.challengerPlayerIndex;
       break;
@@ -1858,7 +1941,7 @@ export function applyAction(
     case "challengePass": {
       if (!s.challenge) break;
       s.challenge.consecutivePasses++;
-      log.push(`${pLabel} passes in the challenge.`);
+      log.push({ msg: `${pLabel} passes in the challenge.`, d: 1, p: playerIndex });
 
       if (s.challenge.consecutivePasses >= 2) {
         // All passed, resolve challenge
@@ -1914,7 +1997,7 @@ export function applyAction(
       // Check if all players have passed consecutively
       if (s.players.every((p) => p.consecutivePasses > 0)) {
         // Execution phase ends, move to Cylon phase
-        log.push("All players passed. Execution phase ends.");
+        log.push({ msg: "All players passed. Execution phase ends.", d: 0, cat: "phase" });
         startCylonPhase(s, log, bases);
       } else {
         advanceExecutionTurn(s);
@@ -1929,9 +2012,12 @@ export function applyAction(
       if (!threat) break;
 
       const challengerDef = findCardDefByInstanceId(s, action.challengerInstanceId);
-      log.push(
-        `${pLabel} challenges Cylon threat (power ${threat.power}) with ${challengerDef ? cardName(challengerDef) : "unknown"}.`,
-      );
+      log.push({
+        msg: `${pLabel} challenges Cylon threat (power ${threat.power}) with ${challengerDef ? cardName(challengerDef) : "unknown"}.`,
+        d: 0,
+        p: playerIndex,
+        cat: "flow",
+      });
 
       // The player to the left is the "Cylon player"
       const cylonPlayerIndex = (playerIndex + 1) % s.players.length;
@@ -1985,9 +2071,8 @@ export function applyAction(
       if (triggerAbilityId === "tigh-xo") {
         // Tigh XO: ready from reserve
         const sourceId = s.challenge.pendingTrigger.sourceInstanceId!;
-        readyUnit(triggerPlayer, sourceId);
+        readyUnit(triggerPlayer, sourceId, log);
         s.challenge.tighXoReadied = sourceId;
-        log.push("Saul Tigh readies when challenged.");
 
         // Clear trigger, proceed to defender selection
         s.challenge.pendingTrigger = undefined;
@@ -2131,14 +2216,18 @@ export function applyAction(
 // Phase Transitions
 // ============================================================
 
-function checkSetupComplete(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
+function checkSetupComplete(
+  s: GameState,
+  log: LogItem[],
+  bases: Record<string, BaseCardDef>,
+): void {
   if (s.players.every((p) => p.hasMulliganed)) {
     log.push("Both players ready. Starting Turn 1.");
     startReadyPhase(s, log, bases);
   }
 }
 
-function startReadyPhase(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
+function startReadyPhase(s: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void {
   s.turn++;
   s.phase = "ready";
   s.firstPlayerIndex = determineFirstPlayer(s);
@@ -2215,7 +2304,7 @@ function playerHasReorderableStacks(p: GameState["players"][number]): boolean {
   return false;
 }
 
-function advanceReadyStep4(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
+function advanceReadyStep4(s: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void {
   // Check if all players have had their turn at step 4
   if (s.players.every((p) => p.hasPlayedResource)) {
     // Move to step 5 — skip if no player has reorderable stacks
@@ -2236,7 +2325,7 @@ function advanceReadyStep4(s: GameState, log: string[], bases: Record<string, Ba
   }
 }
 
-function advanceReadyStep5(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
+function advanceReadyStep5(s: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void {
   // Advance to next player, skipping those without reorderable stacks
   let nextPlayer = (s.activePlayerIndex + 1) % s.players.length;
   while (nextPlayer !== s.firstPlayerIndex) {
@@ -2250,7 +2339,7 @@ function advanceReadyStep5(s: GameState, log: string[], bases: Record<string, Ba
   startExecutionPhase(s, log);
 }
 
-function startExecutionPhase(s: GameState, log: string[]): void {
+function startExecutionPhase(s: GameState, log: LogItem[]): void {
   s.phase = "execution";
   s.firstPlayerIndex = determineFirstPlayer(s);
   s.activePlayerIndex = s.firstPlayerIndex;
@@ -2264,7 +2353,7 @@ function startExecutionPhase(s: GameState, log: string[]): void {
     player.consecutivePasses = 0;
     player.hasResolvedMission = false;
   }
-  log.push("Execution phase begins.");
+  log.push({ msg: "Execution phase begins.", d: 0, cat: "phase" });
 }
 
 function advanceExecutionTurn(s: GameState): void {
@@ -2291,7 +2380,7 @@ function advanceExecutionTurn(s: GameState): void {
  */
 function fireCylonThreatRedText(
   s: GameState,
-  log: string[],
+  log: LogItem[],
   bases: Record<string, BaseCardDef>,
 ): void {
   // Check for Blockading Base Star — if unexhausted, auto-prevent the worst threat's text
@@ -2345,7 +2434,7 @@ function fireCylonThreatRedText(
 // Legacy cylon threat if-else chain removed — all 22 patterns migrated to
 // registerCylonThreat() calls in cylon-threat-handlers.ts
 
-function startCylonPhase(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
+function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void {
   s.phase = "cylon";
   // Cylon Betrayal override: use forced first player if set
   if (s.cylonPhaseFirstOverride !== undefined) {
@@ -2374,7 +2463,11 @@ function startCylonPhase(s: GameState, log: string[], bases: Record<string, Base
   const threatLevel = computeCylonThreatLevel(s);
   const effectiveDefense =
     s.fleetDefenseLevel + computeFleetDefenseModifiers(s) + computeMissionFleetDefenseModifier(s);
-  log.push(`Cylon phase: threat level is ${threatLevel}, fleet defense is ${effectiveDefense}.`);
+  log.push({
+    msg: `Cylon phase: threat level is ${threatLevel}, fleet defense is ${effectiveDefense}.`,
+    d: 0,
+    cat: "phase",
+  });
 
   if (threatLevel <= effectiveDefense) {
     log.push("No Cylon attack this turn.");
@@ -2484,14 +2577,14 @@ function advanceCylonTurn(s: GameState): void {
   s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;
 }
 
-function endCylonPhase(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
+function endCylonPhase(s: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void {
   // Put remaining threats into owners' discard piles
   for (const threat of s.cylonThreats) {
     s.players[threat.ownerIndex].discard.push(threat.card);
   }
   s.cylonThreats = [];
 
-  log.push("Cylon phase ends.");
+  log.push({ msg: "Cylon phase ends.", d: 0, cat: "phase" });
   checkVictory(s, log);
   if (s.phase !== "gameOver") {
     // False Peace: check for queued extra phases
@@ -2512,7 +2605,7 @@ function endCylonPhase(s: GameState, log: string[], bases: Record<string, BaseCa
 // Challenge Resolution
 // ============================================================
 
-function resolveChallenge(s: GameState, log: string[], bases: Record<string, BaseCardDef>): void {
+function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void {
   const challenge = s.challenge!;
   const attackerPlayer = s.players[challenge.challengerPlayerIndex];
   const defenderPlayer = s.players[challenge.defenderPlayerIndex];
@@ -2524,6 +2617,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
 
   // ============= RESOLUTION PHASE (re-entrant via checkpoint flags) =============
   if (!challenge.resolutionComplete) {
+    log.push({ msg: "── Resolution ──", d: 1, cat: "flow" });
     // Find challenger unit
     const challengerStack = findUnitInAnyZone(attackerPlayer, challenge.challengerInstanceId);
     if (!challengerStack) {
@@ -2555,22 +2649,17 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
       }
 
       const challengerPowerContext = { phase: s.phase, isChallenger: true };
-      const challengerPower =
-        getUnitPower(challengerStack.stack) +
-        (challenge.challengerPowerBuff ?? 0) +
-        computePassivePowerModifier(
-          s,
-          challengerStack.stack,
-          challenge.challengerPlayerIndex,
-          challengerPowerContext,
-        ) +
-        computeMissionPowerModifier(
-          s,
-          challengerStack.stack,
-          challenge.challengerPlayerIndex,
-          challengerPowerContext,
-        );
-      const undefendedPower = challengerPower + (challenge.sixSeductressBuff ?? 0);
+      const sixBuff = challenge.sixSeductressBuff ?? 0;
+      const undefendedPower = logPowerBreakdown(
+        log,
+        "Challenger",
+        challengerStack.stack,
+        challenge.challengerPowerBuff ?? 0,
+        s,
+        challenge.challengerPlayerIndex,
+        challengerPowerContext,
+        sixBuff ? { extraBuff: sixBuff, extraLabel: "Six Seductress" } : undefined,
+      );
       const challengerDef = getCardDef(challengerStack.stack.cards[0].defId);
       const effect = getUndefendedEffect(challengerDef);
       if (effect === "gain-influence") {
@@ -2587,7 +2676,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
         applyInfluenceLoss(s, challenge.defenderPlayerIndex, undefendedPower, log, bases);
         log.push(`Undefended!`);
       }
-      commitUnit(attackerPlayer, challenge.challengerInstanceId);
+      commitUnit(attackerPlayer, challenge.challengerInstanceId, log);
       challenge.resolutionComplete = true;
     } else {
       // --- DEFENDED CHALLENGE (with Starbuck reroll checkpoints) ---
@@ -2722,7 +2811,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
       const defenderStack = findUnitInAnyZone(defenderPlayer, challenge.defenderInstanceId);
       if (!defenderStack) {
         log.push("Defender left play during challenge. Challenge ends. Challenger commits.");
-        commitUnit(attackerPlayer, challenge.challengerInstanceId);
+        commitUnit(attackerPlayer, challenge.challengerInstanceId, log);
         s.challenge = null;
         checkVictory(s, log);
         if (s.phase !== "gameOver") {
@@ -2742,53 +2831,38 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
         isChallenger: true,
         defenderDef: defenderDefForContext,
       };
-      const challengerPower =
-        getUnitPower(challengerStack.stack) +
-        (challenge.challengerPowerBuff ?? 0) +
-        computePassivePowerModifier(
-          s,
-          challengerStack.stack,
-          challenge.challengerPlayerIndex,
-          challengerPowerContext,
-        ) +
-        computeMissionPowerModifier(
-          s,
-          challengerStack.stack,
-          challenge.challengerPlayerIndex,
-          challengerPowerContext,
-        );
-      const atkTotal = challengerPower + atkMysticValue;
+      const atkTotal = logPowerBreakdown(
+        log,
+        "Challenger",
+        challengerStack.stack,
+        challenge.challengerPowerBuff ?? 0,
+        s,
+        challenge.challengerPlayerIndex,
+        challengerPowerContext,
+        { mystic: atkMysticValue },
+      );
       const defPowerContext = {
         phase: s.phase,
         isDefender: true,
         challengerDef: challengerDefForContext,
       };
-      const defPower =
-        getUnitPower(defenderStack.stack) +
-        (challenge.defenderPowerBuff ?? 0) +
-        computePassivePowerModifier(
-          s,
-          defenderStack.stack,
-          challenge.defenderPlayerIndex,
-          defPowerContext,
-        ) +
-        computeMissionPowerModifier(
-          s,
-          defenderStack.stack,
-          challenge.defenderPlayerIndex,
-          defPowerContext,
-        );
-      const defTotal = defPower + defMysticValue;
-
-      log.push(`Challenger total: ${atkTotal} (${challengerPower} + ${atkMysticValue})`);
-      log.push(`Defender total: ${defTotal} (${defPower} + ${defMysticValue})`);
+      const defTotal = logPowerBreakdown(
+        log,
+        "Defender",
+        defenderStack.stack,
+        challenge.defenderPowerBuff ?? 0,
+        s,
+        challenge.defenderPlayerIndex,
+        defPowerContext,
+        { mystic: defMysticValue },
+      );
 
       if (atkTotal >= defTotal) {
         // Challenger wins (ties go to challenger)
         log.push("Challenger wins!");
-        commitUnit(attackerPlayer, challenge.challengerInstanceId);
+        commitUnit(attackerPlayer, challenge.challengerInstanceId, log);
         if (challenge.defenderImmune) {
-          commitUnit(defenderPlayer, challenge.defenderInstanceId);
+          commitUnit(defenderPlayer, challenge.defenderInstanceId, log);
           log.push("Discourage Pursuit: defender is immune to defeat (committed instead).");
         } else if (challenge.losesExhaustedNotDefeated) {
           const dStack = findUnitInAnyZone(defenderPlayer, challenge.defenderInstanceId);
@@ -2828,7 +2902,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
       } else {
         // Defender wins
         log.push("Defender wins!");
-        commitUnit(defenderPlayer, challenge.defenderInstanceId);
+        commitUnit(defenderPlayer, challenge.defenderInstanceId, log);
         if (challenge.losesExhaustedNotDefeated) {
           const aStack = findUnitInAnyZone(attackerPlayer, challenge.challengerInstanceId);
           if (aStack) {
@@ -2874,7 +2948,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
     const tighFound = findUnitInAnyZone(dp, challenge.tighXoReadied);
     if (tighFound) {
       if (tighFound.zone === "alert") {
-        commitUnit(dp, challenge.tighXoReadied);
+        commitUnit(dp, challenge.tighXoReadied, log);
       }
       const f2 = findUnitInAnyZone(dp, challenge.tighXoReadied);
       if (f2) f2.stack.exhausted = true;
@@ -2888,7 +2962,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
     const readiedId = s.challenge!.triggerReadiedInstanceId;
     const readiedUnitFound = findUnitInAnyZone(triggerOwner, readiedId);
     if (readiedUnitFound && readiedUnitFound.zone === "alert") {
-      commitUnit(triggerOwner, readiedId);
+      commitUnit(triggerOwner, readiedId, log);
       log.push("Triggered unit commits at end of challenge.");
     }
   }
@@ -2917,6 +2991,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
     }
   }
 
+  log.push({ msg: "Challenge ends.", d: 0, cat: "flow" });
   s.challenge = null;
   checkVictory(s, log);
   if (s.phase !== "gameOver") {
@@ -2926,7 +3001,7 @@ function resolveChallenge(s: GameState, log: string[], bases: Record<string, Bas
 
 function resolveCylonChallenge(
   s: GameState,
-  log: string[],
+  log: LogItem[],
   bases: Record<string, BaseCardDef>,
 ): void {
   const challenge = s.challenge!;
@@ -2941,21 +3016,6 @@ function resolveCylonChallenge(
   }
 
   const cylonChallengerCtx = { phase: "cylon" as const, isChallenger: true };
-  const challengerPower =
-    getUnitPower(challengerStack.stack) +
-    (challenge.challengerPowerBuff ?? 0) +
-    computePassivePowerModifier(
-      s,
-      challengerStack.stack,
-      challenge.challengerPlayerIndex,
-      cylonChallengerCtx,
-    ) +
-    computeMissionPowerModifier(
-      s,
-      challengerStack.stack,
-      challenge.challengerPlayerIndex,
-      cylonChallengerCtx,
-    );
 
   // Reveal mystic values (with hooks)
   const atkMystic = revealMysticValue(
@@ -2977,11 +3037,22 @@ function resolveCylonChallenge(
     return;
   }
 
-  const atkTotal = challengerPower + atkMysticValue;
+  const atkTotal = logPowerBreakdown(
+    log,
+    "Challenger",
+    challengerStack.stack,
+    challenge.challengerPowerBuff ?? 0,
+    s,
+    challenge.challengerPlayerIndex,
+    cylonChallengerCtx,
+    { mystic: atkMysticValue },
+  );
   const defTotal = threat.power + defMystic.value;
-
-  log.push(`Challenger total: ${atkTotal} (${challengerPower} + ${atkMysticValue})`);
-  log.push(`Cylon threat total: ${defTotal} (${threat.power} + ${defMystic.value})`);
+  log.push({
+    msg: `Cylon threat: power ${threat.power} + mystic ${defMystic.value} = ${defTotal}`,
+    d: 2,
+    cat: "power",
+  });
 
   if (atkTotal >= defTotal) {
     log.push("Challenger defeats the Cylon threat!");
@@ -2996,7 +3067,7 @@ function resolveCylonChallenge(
         `Player ${challenge.challengerPlayerIndex + 1} gains ${gain} influence. (${before} → ${attackerPlayer.influence})`,
       );
     }
-    commitUnit(attackerPlayer, challenge.challengerInstanceId);
+    commitUnit(attackerPlayer, challenge.challengerInstanceId, log);
     // Fire onChallengeWin triggers (e.g., Nuclear-Armed Raider)
     fireOnChallengeWin(s, challenge.challengerPlayerIndex, challenge.challengerInstanceId, log);
     // Fire mission Cylon defeat triggers (Nothin' But The Rain: +1 influence)
@@ -3134,18 +3205,22 @@ function findUnitStackByInstanceId(s: GameState, instanceId: string): UnitStack 
   return null;
 }
 
-function commitUnit(player: PlayerState, instanceId: string): void {
+function commitUnit(player: PlayerState, instanceId: string, log?: LogItem[]): void {
   const found = findUnitInAnyZone(player, instanceId);
   if (found && found.zone === "alert") {
     player.zones.alert.splice(found.index, 1);
     player.zones.reserve.push(found.stack);
+    if (log) {
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`${def ? cardName(def) : "Unit"} committed.`);
+    }
   }
 }
 
 function defeatUnit(
   player: PlayerState,
   instanceId: string,
-  log: string[],
+  log: LogItem[],
   state?: GameState,
   playerIndex?: number,
 ): void {
@@ -3180,7 +3255,7 @@ function payResourceCost(
   player: PlayerState,
   cost: CardCost,
   bases: Record<string, BaseCardDef>,
-  log?: string[],
+  log?: LogItem[],
 ): Record<ResourceType, number> {
   const excess: Record<ResourceType, number> = { persuasion: 0, logistics: 0, security: 0 };
   if (!cost) return excess;
@@ -3306,7 +3381,7 @@ function payResourceCostWithSelection(
   cost: CardCost,
   bases: Record<string, BaseCardDef>,
   selectedStackIndices: number[],
-  log?: string[],
+  log?: LogItem[],
 ): Record<ResourceType, number> {
   const excess: Record<ResourceType, number> = { persuasion: 0, logistics: 0, security: 0 };
   if (!cost) return excess;
@@ -3380,7 +3455,7 @@ function commitFreightersForResource(
   player: PlayerState,
   resType: ResourceType,
   remaining: number,
-  log?: string[],
+  log?: LogItem[],
 ): number {
   for (let i = player.zones.alert.length - 1; i >= 0; i--) {
     if (remaining <= 0) break;
@@ -3430,7 +3505,7 @@ function countAllFreighters(player: PlayerState): number {
 }
 
 /** Spend N resource stacks of any type (Difference of Opinion challenge cost). Prefers smallest stacks. */
-function spendAnyResources(player: PlayerState, count: number, log: string[]): void {
+function spendAnyResources(player: PlayerState, count: number, log: LogItem[]): void {
   const available = player.zones.resourceStacks
     .filter((s) => !s.exhausted)
     .sort((a, b) => stackResourceCount(a) - stackResourceCount(b));
@@ -3473,7 +3548,7 @@ function interceptUnitInfluenceLoss(
   s: GameState,
   playerIndex: number,
   amount: number,
-  log: string[],
+  log: LogItem[],
 ): number {
   if (amount <= 0) return amount;
   const player = s.players[playerIndex];
@@ -3484,9 +3559,9 @@ function interceptUnitInfluenceLoss(
     if (!topCard?.faceUp) continue;
     const def = getCardDef(topCard.defId);
     if (!def.abilityId || !canInterceptInfluenceLoss(def.abilityId)) continue;
-    commitUnit(player, topCard.instanceId);
+    commitUnit(player, topCard.instanceId, log);
     amount = Math.max(0, amount - 1);
-    log.push(`${cardName(def)}: committed to reduce influence loss by 1.`);
+    log.push(`${cardName(def)}: reduces influence loss by 1.`);
   }
   return amount;
 }
@@ -3496,7 +3571,7 @@ function applyInfluenceLoss(
   s: GameState,
   playerIndex: number,
   amount: number,
-  log: string[],
+  log: LogItem[],
   bases: Record<string, BaseCardDef>,
 ): void {
   if (s.preventInfluenceLoss) {
@@ -3524,7 +3599,7 @@ function resolvePendingChoice(
   choiceIndex: number,
   player: PlayerState,
   playerIndex: number,
-  log: string[],
+  log: LogItem[],
   _bases: Record<string, BaseCardDef>,
 ): void {
   if (dispatchResolvePendingChoice(s, choiceIndex, player, playerIndex, log)) {
@@ -3564,7 +3639,7 @@ function applyPowerBuff(
   s: GameState,
   targetInstanceId: string,
   amount: number,
-  log: string[],
+  log: LogItem[],
 ): void {
   // Effect immunity: "power" or "all" blocks power changes
   if (s.effectImmunity?.[targetInstanceId]) {
@@ -3597,7 +3672,7 @@ function resolveEventEffect(
   s: GameState,
   playerIndex: number,
   def: CardDef,
-  log: string[],
+  log: LogItem[],
   targetInstanceId: string | undefined,
 ): void {
   if (def.abilityId) {
@@ -3611,7 +3686,7 @@ function resolveMissionEffect(
   s: GameState,
   playerIndex: number,
   def: CardDef,
-  log: string[],
+  log: LogItem[],
   targetInstanceId?: string,
 ): void {
   if (def.abilityId) {
@@ -3625,7 +3700,7 @@ function resolveMissionEffect(
 // Victory Check
 // ============================================================
 
-function checkVictory(s: GameState, log: string[]): void {
+function checkVictory(s: GameState, log: LogItem[]): void {
   for (let i = 0; i < s.players.length; i++) {
     if (s.players[i].influence >= 20) {
       s.phase = "gameOver";

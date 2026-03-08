@@ -10,10 +10,70 @@ export { extractKeywords, hasKeyword } from "./keywords.js";
 
 export type GameMode = "vs-ai" | "ai-vs-ai" | "vs-player";
 
+// --- Structured Log ---
+
+export interface LogEntry {
+  msg: string;
+  d?: number; // depth: 0=top-level action, 1=challenge sub-action, 2=resolution detail
+  p?: number; // player index (0 or 1)
+  cat?: "power" | "flow" | "phase";
+}
+export type LogItem = string | LogEntry;
+
 // --- Resource & Card Types ---
 
 export type ResourceType = "persuasion" | "logistics" | "security";
 export type CardType = "personnel" | "ship" | "event" | "mission";
+
+export type PendingChoiceType =
+  // base-abilities
+  | "celestra"
+  // unit-abilities
+  | "space-park-scry"
+  | "mining-ship-dig"
+  | "boomer-search"
+  | "zarek-etb"
+  | "astral-queen-second"
+  | "tyrol-etb-choice"
+  | "tyrol-chief-choice"
+  | "six-seductress"
+  | "starbuck-reroll"
+  | "gaeta-ready-choice"
+  | "helo-toaster-choice"
+  // event-abilities
+  | "godfrey-reveal"
+  | "act-of-contrition"
+  | "covering-fire-commit"
+  | "distraction-commit"
+  | "military-coup-exhaust"
+  | "painful-recovery-cylon"
+  | "suicide-bomber-cylon"
+  | "suicide-bomber-target2"
+  | "decoys-count"
+  | "reformat-count"
+  | "setback-target"
+  | "setback-exhaust"
+  | "endless-task-target"
+  | "endless-task-unit"
+  | "grounded-choice"
+  | "grounded-ship"
+  | "hangar-deck-fire-choice"
+  | "hangar-deck-fire-ship"
+  | "network-hacking-choice"
+  | "network-hacking-cylon"
+  | "crackdown-discard"
+  // mission-abilities
+  | "pulling-rank-1"
+  | "pulling-rank-2"
+  | "assassination-source"
+  | "assassination-target"
+  | "arrow-of-apollo-search"
+  | "life-has-a-melody-search"
+  | "hunt-for-tylium-hand"
+  | "meet-new-boss-hand"
+  | "meet-new-boss-field"
+  | "article-23"
+  | "prophetic-visions-arrange";
 
 export type Trait =
   | "Capital Ship"
@@ -156,6 +216,7 @@ export interface ChallengeState {
   defMysticRerollChecked?: boolean; // Starbuck reroll already offered for defender
   tighXoReadied?: string; // instanceId of Tigh readied by challenge trigger
   challengeEndTriggersChecked?: boolean; // optional end-of-challenge triggers already resolved
+  sniperDefendAccepted?: boolean; // Sniper two-step: defender accepted, now challenger picks unit
 }
 
 export interface CylonThreatCard {
@@ -196,7 +257,7 @@ export interface GameState {
   fleetDefenseLevel: number;
   challenge: ChallengeState | null;
   cylonThreats: CylonThreatCard[];
-  log: string[];
+  log: LogItem[];
   winner: number | null; // player index or null
   preventInfluenceLoss?: boolean; // Executive Privilege: prevent all influence loss this phase
   preventInfluenceGain?: boolean; // Standoff: prevent all influence gain this phase
@@ -204,7 +265,7 @@ export interface GameState {
   politiciansCantDefend?: boolean; // Martial Law: politicians can't defend this phase
   skipEventDiscard?: boolean; // Top Off the Tank: event doesn't go to discard
   pendingChoice?: {
-    type: string; // e.g. "celestra", "boomer-search", "godfrey-reveal", etc.
+    type: PendingChoiceType;
     playerIndex: number;
     cards: CardInstance[]; // revealed cards to choose between
     context?: Record<string, unknown>; // ability-specific state (targetId, sourceId, etc.)
@@ -246,7 +307,7 @@ export interface PlayerGameView {
   fleetDefenseLevel: number;
   challenge: ChallengeState | null;
   cylonThreats: CylonThreatCard[];
-  log: string[];
+  log: LogItem[];
   winner: number | null;
 }
 
@@ -275,6 +336,7 @@ export type GameAction =
     }
   | { type: "challenge"; challengerInstanceId: string; opponentIndex: number }
   | { type: "defend"; defenderInstanceId: string | null }
+  | { type: "sniperAccept"; accept: boolean } // Sniper: defender accepts/declines defense
   | { type: "challengePass" }
   | {
       type: "playEventInChallenge";
@@ -333,7 +395,7 @@ export type ServerMessage =
       type: "gameState";
       state: PlayerGameView;
       validActions: ValidAction[];
-      log: string[];
+      log: LogItem[];
       aiActing?: boolean;
       notification?: ActionNotification;
     }

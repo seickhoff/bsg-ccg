@@ -5,6 +5,7 @@ import type {
   ValidAction,
   UnitStack,
   CardInstance,
+  LogItem,
 } from "@bsg/shared";
 import { registerPendingChoice } from "./pending-choice-registry.js";
 
@@ -44,7 +45,7 @@ export interface BaseAbilityHandler {
     state: GameState,
     playerIndex: number,
     targetInstanceId: string | undefined,
-    log: string[],
+    log: LogItem[],
     bases: Record<string, BaseCardDef>,
   ): void;
 
@@ -438,10 +439,12 @@ export function getBaseAbilityActions(
   const actions: ValidAction[] = [];
   for (const targetId of targets) {
     const targetDef = findChallengeUnitDef(state, targetId);
+    const ownerIdx = findOwnerIndex(state, targetId);
+    const ownerTag = ownerIdx !== null && ownerIdx !== playerIndex ? "(opponent's) " : "";
     const targetLabel = targetDef ? cardName(targetDef) : "unit";
     actions.push({
       type: "playAbility",
-      description: `${baseDef.title}: ${baseDef.abilityText.split(".")[0]} → ${targetLabel}`,
+      description: `${baseDef.title}: ${baseDef.abilityText.split(".")[0]} → ${ownerTag}${targetLabel}`,
       cardDefId: baseDef.id,
       selectableInstanceIds: [baseStack.topCard.instanceId],
       targetInstanceId: targetId,
@@ -456,7 +459,7 @@ export function resolveBaseAbilityEffect(
   state: GameState,
   playerIndex: number,
   targetInstanceId: string | undefined,
-  log: string[],
+  log: LogItem[],
   bases: Record<string, BaseCardDef>,
 ): void {
   const handler = registry.get(abilityId);
@@ -498,7 +501,7 @@ function interceptCloud9InfluenceLoss(
   state: GameState,
   playerIndex: number,
   amount: number,
-  log: string[],
+  log: LogItem[],
 ): number {
   if (amount <= 0) return amount;
   const player = state.players[playerIndex];
@@ -527,7 +530,7 @@ export function interceptInfluenceLoss(
   state: GameState,
   playerIndex: number,
   amount: number,
-  log: string[],
+  log: LogItem[],
   bases: Record<string, BaseCardDef>,
 ): number {
   if (amount <= 0) return amount;
@@ -577,7 +580,7 @@ export function hasColonialHeavy798(
 export function exhaustColonialHeavy798(
   state: GameState,
   playerIndex: number,
-  log: string[],
+  log: LogItem[],
   bases: Record<string, BaseCardDef>,
 ): void {
   const player = state.players[playerIndex];
@@ -589,7 +592,7 @@ export function exhaustColonialHeavy798(
   }
 }
 
-// --- Internal helper ---
+// --- Internal helpers ---
 
 function findChallengeUnitDef(state: GameState, instanceId: string): CardDef | null {
   for (const player of state.players) {
@@ -604,6 +607,15 @@ function findChallengeUnitDef(state: GameState, instanceId: string): CardDef | n
     }
   }
   return null;
+}
+
+function findOwnerIndex(state: GameState, instanceId: string): number | null {
+  const idx = state.players.findIndex((p) =>
+    [...p.zones.alert, ...p.zones.reserve].some((stack) =>
+      stack.cards.some((c) => c.instanceId === instanceId),
+    ),
+  );
+  return idx === -1 ? null : idx;
 }
 
 // ============================================================

@@ -5,7 +5,7 @@
  * Each handler matches a text pattern and applies its effect.
  * Handlers are checked in registration order (first match wins).
  */
-import type { GameState, CardDef, BaseCardDef } from "@bsg/shared";
+import type { GameState, CardDef, BaseCardDef, LogItem } from "@bsg/shared";
 
 // ============================================================
 // Helpers interface — injected by game-engine.ts via DI
@@ -13,7 +13,7 @@ import type { GameState, CardDef, BaseCardDef } from "@bsg/shared";
 
 export interface CylonThreatHelpers {
   getCardDef(defId: string): CardDef;
-  commitUnit(player: GameState["players"][0], instanceId: string): void;
+  commitUnit(player: GameState["players"][0], instanceId: string, log?: LogItem[]): void;
   findUnitInAnyZone(
     player: GameState["players"][0],
     instanceId: string,
@@ -22,7 +22,7 @@ export interface CylonThreatHelpers {
     state: GameState,
     playerIndex: number,
     amount: number,
-    log: string[],
+    log: LogItem[],
     bases: Record<string, BaseCardDef>,
   ): void;
   bases: Record<string, BaseCardDef>;
@@ -36,7 +36,7 @@ export interface CylonThreatHandler {
   /** Return true if this handler matches the given lowercase text. */
   matches(text: string): boolean;
   /** Apply the effect to the game state. */
-  apply(state: GameState, def: CardDef, log: string[]): void;
+  apply(state: GameState, def: CardDef, log: LogItem[]): void;
 }
 
 // ============================================================
@@ -62,7 +62,7 @@ export function applyRegisteredCylonThreat(
   state: GameState,
   def: CardDef,
   text: string,
-  log: string[],
+  log: LogItem[],
 ): boolean {
   for (const handler of handlers) {
     if (handler.matches(text)) {
@@ -240,7 +240,7 @@ registerCylonThreat({
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
           if (d.type === "personnel") {
-            h.commitUnit(p, stack.cards[0].instanceId);
+            h.commitUnit(p, stack.cards[0].instanceId, log);
             const found = h.findUnitInAnyZone(p, stack.cards[0].instanceId);
             if (found) found.stack.exhausted = true;
             break;
@@ -261,7 +261,7 @@ registerCylonThreat({
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
           if (d.type === "personnel") {
-            h.commitUnit(p, stack.cards[0].instanceId);
+            h.commitUnit(p, stack.cards[0].instanceId, log);
             break;
           }
         }
@@ -280,7 +280,7 @@ registerCylonThreat({
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
           if (d.traits?.includes("Cylon")) {
-            h.commitUnit(p, stack.cards[0].instanceId);
+            h.commitUnit(p, stack.cards[0].instanceId, log);
             break;
           }
         }
@@ -299,7 +299,7 @@ registerCylonThreat({
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
           if (d.type === "ship") {
-            h.commitUnit(p, stack.cards[0].instanceId);
+            h.commitUnit(p, stack.cards[0].instanceId, log);
             break;
           }
         }
@@ -316,7 +316,7 @@ registerCylonThreat({
     for (const p of state.players) {
       for (const stack of [...p.zones.alert]) {
         if (stack.cards[0]?.faceUp) {
-          h.commitUnit(p, stack.cards[0].instanceId);
+          h.commitUnit(p, stack.cards[0].instanceId, log);
           break;
         }
       }

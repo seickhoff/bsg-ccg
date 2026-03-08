@@ -713,6 +713,53 @@ body {
   font-size: 0.65rem;
 }
 
+.resource-inline-badge--power {
+  background: #000;
+  clip-path: polygon(50% 0%, 100% 0%, 100% 65%, 50% 100%, 0% 65%, 0% 0%);
+  padding: 4px 8px 10px;
+  text-align: center;
+  line-height: 1.1;
+  margin-left: 8px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 1px #aaa) drop-shadow(0 0 1px #aaa);
+  border-radius: 0;
+}
+
+/* --- Header Resource Summary Badges --- */
+
+.header-res-badges {
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+.header-res-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  border-radius: 3px;
+  padding: 2px 5px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.header-res-badge--persuasion {
+  background: rgba(156, 39, 176, 0.85);
+}
+
+.header-res-badge--logistics {
+  background: rgba(33, 150, 243, 0.85);
+}
+
+.header-res-badge--security {
+  background: rgba(244, 67, 54, 0.85);
+}
+
+.header-res-badge--empty {
+  opacity: 0.35;
+}
+
 /* --- Resource Stack Picker --- */
 
 .resource-picker-card-header {
@@ -1047,6 +1094,27 @@ body {
   margin-top: 0.2rem;
 }
 
+/* Challenge history summary in action modal */
+.challenge-history-summary {
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.4rem;
+  background: rgba(66, 133, 244, 0.12);
+  border: 1px solid rgba(66, 133, 244, 0.35);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  color: #ddd;
+  line-height: 1.4;
+}
+
+.challenge-history-entry {
+  margin-bottom: 0.1rem;
+}
+
+.challenge-history-sub {
+  padding-left: 12px;
+  color: #bbb;
+}
+
 /* --- Challenge Info --- */
 
 /* --- Hand Area --- */
@@ -1220,6 +1288,25 @@ body {
   padding: 0.1rem 0;
   border-bottom: 1px solid #111;
 }
+.log-d1 {
+  padding-left: 16px;
+}
+.log-d2 {
+  padding-left: 32px;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+.log-power {
+  color: #8cf;
+}
+.log-flow {
+  color: #aaa;
+  font-style: italic;
+}
+.log-phase {
+  color: #f0c040;
+  font-weight: bold;
+}
 
 .ai-acting {
   color: #f0c040 !important;
@@ -1267,7 +1354,7 @@ body {
   padding: 1.25rem 1.25rem 1rem;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 0.75rem;
 }
 
@@ -1289,6 +1376,7 @@ body {
 
 .notif-section {
   margin-bottom: 0.35rem;
+  text-align: left;
 }
 
 .notif-section-label {
@@ -1308,11 +1396,15 @@ body {
   font-size: 0.85rem;
   color: #e0e0e0;
   line-height: 1.35;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
 }
 
 .notif-item::before {
-  content: "\2022 ";
+  content: "\2022";
   color: #757575;
+  flex-shrink: 0;
 }
 
 .action-modal-thumbs {
@@ -1344,6 +1436,7 @@ body {
 }
 
 .action-modal-continue {
+  align-self: center;
   background: #f0c040;
   color: #111;
   border: none;
@@ -1501,12 +1594,12 @@ body {
 
 .player-action-overlay .action-modal {
   position: fixed;
-  top: 25vh;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   pointer-events: auto;
   box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
-  max-height: 50vh;
+  max-height: calc(100vh - 2rem);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1636,6 +1729,16 @@ body {
 
 .action-modal-btn--with-thumb {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.action-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   min-width: 0;
 }
 

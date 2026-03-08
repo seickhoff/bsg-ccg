@@ -22,6 +22,16 @@ import "./style.css";
 // View state: splash → connecting → deckBuilder → playing
 // ============================================================
 
+// Prevent uncaught errors from crashing the page
+window.addEventListener("error", (event) => {
+  console.error("Uncaught error:", event.error);
+  event.preventDefault();
+});
+window.addEventListener("unhandledrejection", (event) => {
+  console.error("Unhandled promise rejection:", event.reason);
+  event.preventDefault();
+});
+
 const app = document.getElementById("app")!;
 
 let ws: WebSocket | null = null;
@@ -153,8 +163,10 @@ function connect(): void {
     sendMessage({ type: "joinGame", roomId: currentRoomId ?? undefined, mode: "vs-ai" });
   });
 
-  ws.addEventListener("close", () => {
-    console.log("Disconnected");
+  ws.addEventListener("close", (event) => {
+    console.log(
+      `Disconnected (code: ${event.code}, reason: ${event.reason || "none"}, clean: ${event.wasClean})`,
+    );
     if (intentionalDisconnect) {
       intentionalDisconnect = false;
       return;
@@ -206,7 +218,11 @@ function connect(): void {
         break;
 
       case "gameState":
-        renderGame(app, msg.state, msg.validActions, msg.log, msg.aiActing, msg.notification);
+        try {
+          renderGame(app, msg.state, msg.validActions, msg.log, msg.aiActing, msg.notification);
+        } catch (err) {
+          console.error("Render error:", err);
+        }
         break;
 
       case "error":

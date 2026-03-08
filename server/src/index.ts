@@ -42,7 +42,7 @@ console.log(
 // --- Server setup ---
 
 const PORT = Number(process.env.PORT) || 3001;
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({ port: PORT, perMessageDeflate: false });
 
 // --- WebSocket heartbeat (keeps connections alive through proxies) ---
 
@@ -399,7 +399,7 @@ async function processAITurns(room: GameRoom): Promise<void> {
 
     // Build notification from new log entries
     const newEntries = room.gameState.log.slice(logLenBefore);
-    const notificationText = newEntries.join("\n");
+    const notificationText = newEntries.map((e) => (typeof e === "string" ? e : e.msg)).join("\n");
 
     if (room.gameState.phase !== "setup" && notificationText && hasHumanViewer(room)) {
       // Show modal and wait for human to click Continue
@@ -451,265 +451,306 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    switch (msg.type) {
-      case "joinGame": {
-        // If client explicitly wants a new game (has mode or joinCode), leave old room first
-        if (wsRoomMap.has(ws) && (msg.mode || msg.joinCode)) {
-          const oldRoom = wsRoomMap.get(ws)!;
-          const oldIdx = wsPlayerIndex.get(ws);
-          if (oldIdx !== undefined && oldIdx >= 0) {
-            oldRoom.players[oldIdx].ws = null;
-          } else {
-            const specIdx = oldRoom.spectators.indexOf(ws);
-            if (specIdx !== -1) oldRoom.spectators.splice(specIdx, 1);
-          }
-          wsRoomMap.delete(ws);
-          wsPlayerIndex.delete(ws);
-          console.log(`Player left ${oldRoom.id} to start new game`);
-        }
-
-        // Already in a room via this WebSocket? (reconnection — no mode/joinCode)
-        if (wsRoomMap.has(ws)) {
-          const room = wsRoomMap.get(ws)!;
-          const pIdx = wsPlayerIndex.get(ws) ?? -1;
-          sendToPlayer(ws, { type: "joined", roomId: room.id });
-          sendToPlayer(ws, { type: "cardRegistry", registry });
-          if (room.gameState) {
-            broadcastGameState(room);
-          } else if (pIdx >= 0 && room.players[pIdx].type === "human") {
-            sendToPlayer(ws, { type: "deckRequired" });
-          }
-          return;
-        }
-
-        // --- Joining an existing PvP room by join code ---
-        if (msg.joinCode) {
-          const code = msg.joinCode.toUpperCase();
-          const existing = roomsByJoinCode.get(code);
-          if (!existing) {
-            sendToPlayer(ws, { type: "error", message: `Room not found: ${code}` });
-            return;
-          }
-          if (existing.mode !== "vs-player") {
-            sendToPlayer(ws, { type: "error", message: "That room is not a PvP game" });
-            return;
-          }
-          // Find an open human slot
-          const openIdx = existing.players.findIndex((s) => s.type === "human" && !s.ws);
-          if (openIdx === -1) {
-            sendToPlayer(ws, { type: "error", message: "Room is full" });
-            return;
-          }
-          assignWsToRoom(ws, existing, openIdx);
-          console.log(`Player 2 joined PvP room ${existing.id} (code ${code})`);
-          sendToPlayer(ws, { type: "joined", roomId: existing.id });
-          sendToPlayer(ws, { type: "cardRegistry", registry });
-          if (existing.gameState) {
-            broadcastGameState(existing);
-          } else {
-            sendToPlayer(ws, { type: "deckRequired" });
-          }
-          return;
-        }
-
-        // --- Reconnection by roomId ---
-        if (msg.roomId) {
-          const existing = roomsById.get(msg.roomId);
-          if (existing) {
-            // Find which slot this player was in
-            let reconnectedIdx = -1;
-            for (let i = 0; i < 2; i++) {
-              if (existing.players[i].type === "human" && !existing.players[i].ws) {
-                reconnectedIdx = i;
-                break;
-              }
-            }
-            // Could also be a spectator reconnecting
-            if (reconnectedIdx === -1 && existing.mode === "ai-vs-ai") {
-              reconnectedIdx = -1; // spectator
-            }
-
-            if (reconnectedIdx >= 0) {
-              assignWsToRoom(ws, existing, reconnectedIdx);
+    try {
+      switch (msg.type) {
+        case "joinGame": {
+          // If client explicitly wants a new game (has mode or joinCode), leave old room first
+          if (wsRoomMap.has(ws) && (msg.mode || msg.joinCode)) {
+            const oldRoom = wsRoomMap.get(ws)!;
+            const oldIdx = wsPlayerIndex.get(ws);
+            if (oldIdx !== undefined && oldIdx >= 0) {
+              oldRoom.players[oldIdx].ws = null;
             } else {
-              // Spectator reconnect
-              assignWsToRoom(ws, existing, -1);
+              const specIdx = oldRoom.spectators.indexOf(ws);
+              if (specIdx !== -1) oldRoom.spectators.splice(specIdx, 1);
             }
+            wsRoomMap.delete(ws);
+            wsPlayerIndex.delete(ws);
+            console.log(`Player left ${oldRoom.id} to start new game`);
+          }
 
-            console.log(`Player reconnected to ${existing.id}`);
-            sendToPlayer(ws, { type: "joined", roomId: existing.id });
+          // Already in a room via this WebSocket? (reconnection — no mode/joinCode)
+          if (wsRoomMap.has(ws)) {
+            const room = wsRoomMap.get(ws)!;
+            const pIdx = wsPlayerIndex.get(ws) ?? -1;
+            sendToPlayer(ws, { type: "joined", roomId: room.id });
             sendToPlayer(ws, { type: "cardRegistry", registry });
-            if (existing.gameState) {
-              broadcastGameState(existing);
-            } else if (reconnectedIdx >= 0 && existing.players[reconnectedIdx].type === "human") {
+            if (room.gameState) {
+              broadcastGameState(room);
+            } else if (pIdx >= 0 && room.players[pIdx].type === "human") {
               sendToPlayer(ws, { type: "deckRequired" });
             }
             return;
           }
-          console.log(`Room ${msg.roomId} not found, creating new room`);
+
+          // --- Joining an existing PvP room by join code ---
+          if (msg.joinCode) {
+            const code = msg.joinCode.toUpperCase();
+            const existing = roomsByJoinCode.get(code);
+            if (!existing) {
+              sendToPlayer(ws, { type: "error", message: `Room not found: ${code}` });
+              return;
+            }
+            if (existing.mode !== "vs-player") {
+              sendToPlayer(ws, { type: "error", message: "That room is not a PvP game" });
+              return;
+            }
+            // Find an open human slot
+            const openIdx = existing.players.findIndex((s) => s.type === "human" && !s.ws);
+            if (openIdx === -1) {
+              sendToPlayer(ws, { type: "error", message: "Room is full" });
+              return;
+            }
+            assignWsToRoom(ws, existing, openIdx);
+            console.log(`Player 2 joined PvP room ${existing.id} (code ${code})`);
+            sendToPlayer(ws, { type: "joined", roomId: existing.id });
+            sendToPlayer(ws, { type: "cardRegistry", registry });
+            if (existing.gameState) {
+              broadcastGameState(existing);
+            } else {
+              sendToPlayer(ws, { type: "deckRequired" });
+            }
+            return;
+          }
+
+          // --- Reconnection by roomId ---
+          if (msg.roomId) {
+            const existing = roomsById.get(msg.roomId);
+            if (existing) {
+              // Find which slot this player was in
+              let reconnectedIdx = -1;
+              for (let i = 0; i < 2; i++) {
+                if (existing.players[i].type === "human" && !existing.players[i].ws) {
+                  reconnectedIdx = i;
+                  break;
+                }
+              }
+              // Could also be a spectator reconnecting
+              if (reconnectedIdx === -1 && existing.mode === "ai-vs-ai") {
+                reconnectedIdx = -1; // spectator
+              }
+
+              if (reconnectedIdx >= 0) {
+                assignWsToRoom(ws, existing, reconnectedIdx);
+              } else {
+                // Spectator reconnect
+                assignWsToRoom(ws, existing, -1);
+              }
+
+              console.log(`Player reconnected to ${existing.id}`);
+              sendToPlayer(ws, { type: "joined", roomId: existing.id });
+              sendToPlayer(ws, { type: "cardRegistry", registry });
+              if (existing.gameState) {
+                broadcastGameState(existing);
+              } else if (reconnectedIdx >= 0 && existing.players[reconnectedIdx].type === "human") {
+                sendToPlayer(ws, { type: "deckRequired" });
+              }
+              return;
+            }
+            console.log(`Room ${msg.roomId} not found, creating new room`);
+          }
+
+          // --- Create new room ---
+          const mode: GameMode = msg.mode ?? "vs-ai";
+          const room = createRoom(mode);
+
+          if (mode === "ai-vs-ai") {
+            // Human is a spectator, not a player
+            assignWsToRoom(ws, room, -1);
+          } else {
+            // Human is player 0
+            assignWsToRoom(ws, room, 0);
+          }
+
+          console.log(`Player joined ${room.id} (mode: ${mode}, code: ${room.joinCode})`);
+
+          sendToPlayer(ws, { type: "joined", roomId: room.id });
+          sendToPlayer(ws, { type: "cardRegistry", registry });
+
+          if (mode === "ai-vs-ai") {
+            // Generate both AI decks and start immediately
+            room.players[0].deck = buildAIDeck(registry);
+            room.players[1].deck = buildAIDeck(registry);
+            console.log(
+              `AI decks ready in ${room.id} — P1: ${room.players[0].deck.baseId}, P2: ${room.players[1].deck.baseId}`,
+            );
+            startGame(room);
+          } else if (mode === "vs-player") {
+            // Send join code so player 1 can share it; client will start deck builder from there
+            sendToPlayer(ws, { type: "gameSetup", mode, joinCode: room.joinCode });
+          } else {
+            // vs-ai: just show deck builder
+            sendToPlayer(ws, { type: "deckRequired" });
+          }
+          break;
         }
 
-        // --- Create new room ---
-        const mode: GameMode = msg.mode ?? "vs-ai";
-        const room = createRoom(mode);
+        case "submitDeck": {
+          const room = wsRoomMap.get(ws);
+          const pIdx = wsPlayerIndex.get(ws);
+          if (!room || pIdx === undefined || pIdx < 0) {
+            sendToPlayer(ws, { type: "error", message: "Not in a room as a player" });
+            return;
+          }
 
-        if (mode === "ai-vs-ai") {
-          // Human is a spectator, not a player
-          assignWsToRoom(ws, room, -1);
-        } else {
-          // Human is player 0
-          assignWsToRoom(ws, room, 0);
+          // Validate the submitted deck
+          const submission: DeckSubmission = {
+            baseId: msg.baseId,
+            deckCardIds: msg.deckCardIds,
+          };
+          const result = validateDeck(submission, registry);
+          if (!result.valid) {
+            sendToPlayer(ws, {
+              type: "error",
+              message: `Invalid deck: ${result.errors.join("; ")}`,
+            });
+            return;
+          }
+
+          room.players[pIdx].deck = submission;
+          console.log(`Player ${pIdx} submitted deck in ${room.id} (base: ${submission.baseId})`);
+
+          // For vs-ai: generate AI deck for the other slot
+          if (room.mode === "vs-ai") {
+            const aiIdx = pIdx === 0 ? 1 : 0;
+            room.players[aiIdx].deck = buildAIDeck(registry);
+            console.log(`AI deck ready in ${room.id} — AI: ${room.players[aiIdx].deck.baseId}`);
+          }
+
+          // Check if all decks are ready
+          if (allDecksReady(room)) {
+            startGame(room);
+          } else {
+            // PvP: waiting for opponent's deck
+            sendToPlayer(ws, { type: "waitingForOpponent" });
+          }
+          break;
         }
 
-        console.log(`Player joined ${room.id} (mode: ${mode}, code: ${room.joinCode})`);
-
-        sendToPlayer(ws, { type: "joined", roomId: room.id });
-        sendToPlayer(ws, { type: "cardRegistry", registry });
-
-        if (mode === "ai-vs-ai") {
-          // Generate both AI decks and start immediately
-          room.players[0].deck = buildAIDeck(registry);
-          room.players[1].deck = buildAIDeck(registry);
-          console.log(
-            `AI decks ready in ${room.id} — P1: ${room.players[0].deck.baseId}, P2: ${room.players[1].deck.baseId}`,
-          );
-          startGame(room);
-        } else if (mode === "vs-player") {
-          // Send join code so player 1 can share it; client will start deck builder from there
-          sendToPlayer(ws, { type: "gameSetup", mode, joinCode: room.joinCode });
-        } else {
-          // vs-ai: just show deck builder
-          sendToPlayer(ws, { type: "deckRequired" });
-        }
-        break;
-      }
-
-      case "submitDeck": {
-        const room = wsRoomMap.get(ws);
-        const pIdx = wsPlayerIndex.get(ws);
-        if (!room || pIdx === undefined || pIdx < 0) {
-          sendToPlayer(ws, { type: "error", message: "Not in a room as a player" });
-          return;
+        case "continue": {
+          const room = wsRoomMap.get(ws);
+          if (room?.continueResolve) {
+            room.continueResolve();
+          }
+          break;
         }
 
-        // Validate the submitted deck
-        const submission: DeckSubmission = {
-          baseId: msg.baseId,
-          deckCardIds: msg.deckCardIds,
-        };
-        const result = validateDeck(submission, registry);
-        if (!result.valid) {
-          sendToPlayer(ws, {
-            type: "error",
-            message: `Invalid deck: ${result.errors.join("; ")}`,
-          });
-          return;
-        }
+        case "resetGame": {
+          const room = wsRoomMap.get(ws);
+          if (!room) {
+            sendToPlayer(ws, { type: "error", message: "Not in a room" });
+            return;
+          }
+          // Bump generation first so any in-flight processAITurns detects staleness
+          room.gameGeneration++;
+          // Resolve pending continueResolve so the old AI loop unblocks and can exit
+          if (room.continueResolve) room.continueResolve();
+          room.gameState = null;
+          room.players[0].deck = null;
+          room.players[1].deck = null;
+          room.aiProcessing = false;
+          room.pendingNotification = null;
+          console.log(`Game reset in ${room.id}`);
 
-        room.players[pIdx].deck = submission;
-        console.log(`Player ${pIdx} submitted deck in ${room.id} (base: ${submission.baseId})`);
-
-        // For vs-ai: generate AI deck for the other slot
-        if (room.mode === "vs-ai") {
-          const aiIdx = pIdx === 0 ? 1 : 0;
-          room.players[aiIdx].deck = buildAIDeck(registry);
-          console.log(`AI deck ready in ${room.id} — AI: ${room.players[aiIdx].deck.baseId}`);
-        }
-
-        // Check if all decks are ready
-        if (allDecksReady(room)) {
-          startGame(room);
-        } else {
-          // PvP: waiting for opponent's deck
-          sendToPlayer(ws, { type: "waitingForOpponent" });
-        }
-        break;
-      }
-
-      case "continue": {
-        const room = wsRoomMap.get(ws);
-        if (room?.continueResolve) {
-          room.continueResolve();
-        }
-        break;
-      }
-
-      case "resetGame": {
-        const room = wsRoomMap.get(ws);
-        if (!room) {
-          sendToPlayer(ws, { type: "error", message: "Not in a room" });
-          return;
-        }
-        // Bump generation first so any in-flight processAITurns detects staleness
-        room.gameGeneration++;
-        // Resolve pending continueResolve so the old AI loop unblocks and can exit
-        if (room.continueResolve) room.continueResolve();
-        room.gameState = null;
-        room.players[0].deck = null;
-        room.players[1].deck = null;
-        room.aiProcessing = false;
-        room.pendingNotification = null;
-        console.log(`Game reset in ${room.id}`);
-
-        if (room.mode === "ai-vs-ai") {
-          // Re-generate AI decks and restart
-          room.players[0].deck = buildAIDeck(registry);
-          room.players[1].deck = buildAIDeck(registry);
-          startGame(room);
-        } else {
-          // Tell all human players to rebuild decks
-          for (const slot of room.players) {
-            if (slot.type === "human" && slot.ws) {
-              sendToPlayer(slot.ws, { type: "deckRequired" });
+          if (room.mode === "ai-vs-ai") {
+            // Re-generate AI decks and restart
+            room.players[0].deck = buildAIDeck(registry);
+            room.players[1].deck = buildAIDeck(registry);
+            startGame(room);
+          } else {
+            // Tell all human players to rebuild decks
+            for (const slot of room.players) {
+              if (slot.type === "human" && slot.ws) {
+                sendToPlayer(slot.ws, { type: "deckRequired" });
+              }
             }
           }
-        }
-        break;
-      }
-
-      case "action": {
-        const room = wsRoomMap.get(ws);
-        const pIdx = wsPlayerIndex.get(ws);
-        if (!room?.gameState || pIdx === undefined || pIdx < 0) {
-          sendToPlayer(ws, { type: "error", message: "Not in a game as a player" });
-          return;
-        }
-        if (room.aiProcessing) {
-          sendToPlayer(ws, { type: "error", message: "Opponent is still acting" });
-          return;
+          break;
         }
 
-        try {
-          const result = applyAction(room.gameState, pIdx, msg.action, bases);
-          room.gameState = result.state;
-          broadcastGameState(room);
+        case "action": {
+          const room = wsRoomMap.get(ws);
+          const pIdx = wsPlayerIndex.get(ws);
+          if (!room?.gameState || pIdx === undefined || pIdx < 0) {
+            sendToPlayer(ws, { type: "error", message: "Not in a game as a player" });
+            return;
+          }
+          if (room.aiProcessing) {
+            sendToPlayer(ws, { type: "error", message: "Opponent is still acting" });
+            return;
+          }
 
-          // Process AI turns after human acts
-          const gen = room.gameGeneration;
-          processAITurns(room).catch((err) => {
-            console.error(`AI processing error in ${room.id}:`, err);
-            if (room.gameGeneration === gen) {
-              room.aiProcessing = false;
-              room.pendingNotification = null;
-              if (room.gameState) {
-                room.gameState.log.push(
-                  `[Engine error: ${err instanceof Error ? err.message : String(err)}]`,
+          try {
+            // Capture challenge state before action for resolution detection
+            const hadChallenge = !!room.gameState.challenge;
+            const logLenBefore = room.gameState.log.length;
+            const challengeCardDefIds: string[] = [];
+            if (hadChallenge) {
+              const ch = room.gameState.challenge!;
+              challengeCardDefIds.push(
+                ...defIdFromInstanceId(room.gameState, ch.challengerInstanceId),
+              );
+              if (ch.defenderInstanceId) {
+                challengeCardDefIds.push(
+                  ...defIdFromInstanceId(room.gameState, ch.defenderInstanceId),
                 );
               }
-              try {
-                broadcastGameState(room);
-              } catch (broadcastErr) {
-                console.error(`broadcastGameState also failed in ${room.id}:`, broadcastErr);
-              }
             }
-          });
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : "Unknown error";
-          console.error(`Action error: ${errMsg}`);
-          sendToPlayer(ws, { type: "error", message: errMsg });
+
+            const result = applyAction(room.gameState, pIdx, msg.action, bases);
+            room.gameState = result.state;
+
+            const challengeResolved = hadChallenge && !room.gameState.challenge;
+
+            const aiErrorHandler = (err: unknown) => {
+              console.error(`AI processing error in ${room.id}:`, err);
+              if (room.gameGeneration === gen) {
+                room.aiProcessing = false;
+                room.pendingNotification = null;
+                if (room.gameState) {
+                  room.gameState.log.push(
+                    `[Engine error: ${err instanceof Error ? err.message : String(err)}]`,
+                  );
+                }
+                try {
+                  broadcastGameState(room);
+                } catch (broadcastErr) {
+                  console.error(`broadcastGameState also failed in ${room.id}:`, broadcastErr);
+                }
+              }
+            };
+
+            const gen = room.gameGeneration;
+
+            if (challengeResolved && hasHumanViewer(room)) {
+              // Show challenge resolution modal and wait for Continue
+              const newEntries = room.gameState.log.slice(logLenBefore);
+              const text = newEntries.map((e) => (typeof e === "string" ? e : e.msg)).join("\n");
+              room.pendingNotification = { text, cardDefIds: challengeCardDefIds };
+              broadcastGameState(room);
+              waitForContinue(room).then(() => {
+                if (room.gameGeneration !== gen) return;
+                room.pendingNotification = null;
+                broadcastGameState(room);
+                processAITurns(room).catch(aiErrorHandler);
+              });
+            } else {
+              broadcastGameState(room);
+              // Process AI turns after human acts
+              processAITurns(room).catch(aiErrorHandler);
+            }
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : "Unknown error";
+            console.error(`Action error: ${errMsg}`);
+            sendToPlayer(ws, { type: "error", message: errMsg });
+          }
+          break;
         }
-        break;
       }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`Unhandled error in message handler (type: ${msg.type}):`, errMsg);
+      sendToPlayer(ws, { type: "error", message: `Server error: ${errMsg}` });
     }
   });
 

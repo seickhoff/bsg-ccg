@@ -5,12 +5,15 @@ import type {
   CardInstance,
   ResourceStack,
   UnitStack,
+  PlayerZones,
   CardDef,
   BaseCardDef,
   CardRegistry,
   OpponentView,
   CylonThreatCard,
   ActionNotification,
+  LogItem,
+  ChallengeState,
 } from "@bsg/shared";
 import { setPreviewRegistry, showCardPreview, showCardPreviewNav } from "./card-preview.js";
 import { ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, DRAG_THRESHOLD } from "./constants.js";
@@ -26,7 +29,7 @@ let onAction: ((action: GameAction) => void) | null = null;
 let onContinue: (() => void) | null = null;
 let onResetGame: (() => void) | null = null;
 let playerName = "YOU";
-let currentLog: string[] = [];
+let currentLog: LogItem[] = [];
 let currentPlayerIndex = 0;
 let savedModalPosition: { top: number; left: number } | null = null;
 let boardZoomPercent = parseInt(localStorage.getItem("boardZoomPercent") ?? "0", 10); // 0–100 in 5% steps
@@ -84,6 +87,14 @@ function getCardPower(defId: string): number {
   return def.power ?? 0;
 }
 
+/** Find a unit stack by its top card's instanceId across a player's zones. */
+function findUnitStack(zones: PlayerZones, instanceId: string): UnitStack | null {
+  for (const stack of [...zones.alert, ...zones.reserve]) {
+    if (stack.cards[0]?.instanceId === instanceId) return stack;
+  }
+  return null;
+}
+
 function getCardCylonThreat(defId: string): number {
   const def = cardDefs[defId];
   if (!def) return 0;
@@ -134,6 +145,18 @@ function costBadgeHtml(cost: CardDef["cost"]): string {
     .join(" ");
 }
 
+function powerBadgeHtml(instanceId: string, zones: PlayerZones): string {
+  const stack = findUnitStack(zones, instanceId);
+  if (!stack) return "";
+  const def = getCardDef(stack.cards[0]?.defId ?? "");
+  const basePower = def?.power ?? 0;
+  const buff = stack.powerBuff ?? 0;
+  const total = basePower + buff;
+  const buffStr = buff > 0 ? `+${buff}` : buff < 0 ? `${buff}` : "";
+  const label = buff !== 0 ? `${basePower}${buffStr}=${total}` : `${total}`;
+  return `<span class="resource-inline-badge resource-inline-badge--power">${label}</span>`;
+}
+
 function resourceBadgeHtml(defId: string): string {
   const card = cardDefs[defId];
   if (!card) return "";
@@ -178,11 +201,27 @@ const NOISE_LINES = new Set([
 ]);
 
 function formatNotificationHtml(text: string, playerIndex: number): string {
-  const lines = text.split("\n").map((line) => {
+  const rawLines = text.split("\n").map((line) => {
     // Strip timestamp prefix [HH:MM:SS]
     const stripped = line.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
     return formatLogForDisplay(stripped, playerIndex);
   });
+
+  // Merge "(Paid ...)" lines into the following action line as cost tags
+  const lines: string[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    if (/^\(Paid /.test(rawLines[i]) && i + 1 < rawLines.length && rawLines[i + 1].trim()) {
+      // Parse cost from "(Paid 2 logistics, 1 security)" format
+      const costObj: Record<string, number> = {};
+      const costMatches = rawLines[i].matchAll(/(\d+)\s+(persuasion|logistics|security)/g);
+      for (const m of costMatches) costObj[m[2]] = parseInt(m[1]);
+      const badge = Object.keys(costObj).length > 0 ? ` ${costBadgeHtml(costObj)}` : "";
+      lines.push(`\x00${escapeHtml(rawLines[i + 1])}${badge}`); // \x00 = pre-escaped marker
+      i++; // skip the next line since we merged it
+    } else {
+      lines.push(rawLines[i]);
+    }
+  }
 
   type Section = { label: string; items: string[] };
   const sections: (string | Section)[] = []; // string = turn header, Section = grouped items
@@ -229,6 +268,12 @@ function formatNotificationHtml(text: string, playerIndex: number): string {
       ensureSection("Cylon Phase").items.push(cleaned);
     } else if (/All players draw/.test(line)) {
       ensureSection("Ready").items.push(line);
+    } else if (
+      /Challenger wins|Defender wins|Challenger total:|Defender total:|Challenger .+: power|Defender .+: power|is defeated|committed\.|Challenge ends\.|Undefended!|── Resolution ──|reveals .+\(mystic value|passes in the challenge|Discourage Pursuit|Dr\. Cottle|exhausted instead/i.test(
+        line,
+      )
+    ) {
+      ensureSection("Challenge Result").items.push(line);
     } else {
       ensureSection("Execution").items.push(line);
     }
@@ -245,7 +290,9 @@ function formatNotificationHtml(text: string, playerIndex: number): string {
       parts.push(`<div class="notif-section-label">${escapeHtml(s.label)}</div>`);
       parts.push(`<div class="notif-items">`);
       for (const item of s.items) {
-        parts.push(`<div class="notif-item">${escapeHtml(item)}</div>`);
+        // Lines starting with \x00 are already escaped with badge HTML
+        const html = item.startsWith("\x00") ? item.slice(1) : escapeHtml(item);
+        parts.push(`<div class="notif-item">${html}</div>`);
       }
       parts.push(`</div></div>`);
     }
@@ -257,7 +304,7 @@ export function renderGame(
   container: HTMLElement,
   state: PlayerGameView,
   validActions: ValidAction[],
-  log: string[],
+  log: LogItem[],
   aiActing?: boolean,
   notification?: ActionNotification,
 ): void {
@@ -303,7 +350,7 @@ export function renderGame(
       <div class="boards">
         <div class="opponent-board">
           <div class="board-label">OPPONENT</div>
-          ${renderOpponentZones(state.opponent)}
+          ${renderOpponentZones(state.opponent, state.challenge)}
         </div>
 
         <div class="divider"></div>
@@ -357,7 +404,7 @@ export function renderGame(
 
 function showActionModal(
   notification: ActionNotification,
-  _log: string[],
+  _log: LogItem[],
   playerIndex: number,
 ): void {
   // Remove any existing modals (both notification and player-action)
@@ -410,12 +457,72 @@ function showActionModal(
   });
 }
 
-function formatLogEntry(raw: string, playerIndex: number): string {
-  const tsMatch = raw.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
+function formatLogEntry(raw: LogItem, playerIndex: number): string {
+  const isObj = typeof raw !== "string";
+  const rawMsg = isObj ? raw.msg : raw;
+  const depth = isObj ? (raw.d ?? 0) : 0;
+  const cat = isObj ? (raw.cat ?? "") : "";
+
+  const tsMatch = rawMsg.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
   const ts = tsMatch ? tsMatch[1] : "";
-  const text = tsMatch ? raw.slice(tsMatch[0].length) : raw;
+  const text = tsMatch ? rawMsg.slice(tsMatch[0].length) : rawMsg;
   const formatted = escapeHtml(formatLogForDisplay(text, playerIndex));
-  return `<div class="log-entry"><span class="log-ts">${ts}</span>${formatted}</div>`;
+
+  const classes = ["log-entry"];
+  if (depth > 0) classes.push(`log-d${depth}`);
+  if (cat) classes.push(`log-${cat}`);
+
+  return `<div class="${classes.join(" ")}"><span class="log-ts">${ts}</span>${formatted}</div>`;
+}
+
+const CHALLENGE_KEYWORDS = [
+  "defends with",
+  "declines to defend",
+  "flash plays",
+  "during challenge",
+];
+
+function extractChallengeLogEntries(): { text: string; isSub: boolean }[] {
+  const results: { text: string; isSub: boolean }[] = [];
+  for (let i = currentLog.length - 1; i >= 0; i--) {
+    const entry = currentLog[i];
+    const stripTs = (s: string) => s.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
+    if (typeof entry === "string") {
+      const raw = stripTs(entry);
+      if (CHALLENGE_KEYWORDS.some((kw) => raw.includes(kw))) {
+        results.push({ text: formatLogForDisplay(raw, currentPlayerIndex), isSub: true });
+      }
+    } else {
+      if (entry.d === 0 && entry.cat === "flow" && entry.msg.includes("challenges")) {
+        results.push({
+          text: formatLogForDisplay(stripTs(entry.msg), currentPlayerIndex),
+          isSub: false,
+        });
+        break;
+      }
+      if (entry.d === 1) {
+        results.push({
+          text: formatLogForDisplay(stripTs(entry.msg), currentPlayerIndex),
+          isSub: true,
+        });
+      }
+    }
+  }
+  return results.reverse();
+}
+
+function buildChallengeSummaryHtml(): string {
+  const entries = extractChallengeLogEntries();
+  if (entries.length === 0) return "";
+  const lines = entries
+    .map((e) => {
+      const cls = e.isSub
+        ? "challenge-history-entry challenge-history-sub"
+        : "challenge-history-entry";
+      return `<div class="${cls}">${escapeHtml(e.text)}</div>`;
+    })
+    .join("");
+  return `<div class="challenge-history-summary">${lines}</div>`;
 }
 
 function showLogModal(): void {
@@ -607,7 +714,8 @@ function showPlayerActionModal(
       ? "CYLON ATTACK — Send a unit to fight or stand down"
       : "CYLON ATTACK — No units available";
   } else if (state.phase === "execution") {
-    headerText = `${playerName} — Execution phase`;
+    const resSummary = buildResourceSummaryHtml(state.you.zones.resourceStacks);
+    headerText = `${playerName} — Execution phase${resSummary}`;
   }
 
   // During execution phase, hide disabled actions and group by card type
@@ -656,7 +764,12 @@ function showPlayerActionModal(
       for (const { action: a, origIdx } of groups.get(key)!) {
         const thumbHtml = getActionThumbHtml(a);
         const def = a.cardDefId ? cardDefs[a.cardDefId] : null;
-        const badge = def ? costBadgeHtml(def.cost) : "";
+        let badge = "";
+        if (a.type === "challenge" && a.selectableInstanceIds?.length === 1) {
+          badge = powerBadgeHtml(a.selectableInstanceIds[0], state.you.zones);
+        } else if (def) {
+          badge = costBadgeHtml(def.cost);
+        }
         const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
         if (thumbHtml) {
           parts.push(
@@ -708,6 +821,8 @@ function showPlayerActionModal(
     `;
   }
 
+  const challengeSummaryHtml = state.challenge ? buildChallengeSummaryHtml() : "";
+
   const overlay = document.createElement("div");
   overlay.className = "player-action-overlay";
   overlay.innerHTML = `
@@ -716,6 +831,7 @@ function showPlayerActionModal(
         ${headerText}
       </div>
       <div class="action-modal-top">
+        ${challengeSummaryHtml}
         ${cylonSummaryHtml}
         <div class="player-action-buttons">${buttonsHtml}</div>
       </div>
@@ -739,15 +855,8 @@ function showPlayerActionModal(
   const modalBody = overlay.querySelector(".action-modal-top") as HTMLElement;
   let dragged = false;
 
-  function applyVerticalPosition(newTop: number) {
-    const handleH = dragHandle.offsetHeight;
-    const maxTop = window.innerHeight - handleH;
-    const clampedTop = Math.max(0, Math.min(newTop, maxTop));
-    modal.style.top = clampedTop + "px";
-    modal.style.maxHeight = window.innerHeight - clampedTop + "px";
-  }
-
-  function applyFullPosition(newTop: number, newLeft: number) {
+  /** Move modal, shrinking if dragged past bottom edge. */
+  function dragTo(newTop: number, newLeft: number) {
     const handleH = dragHandle.offsetHeight;
     const modalW = modal.offsetWidth;
     const maxTop = window.innerHeight - handleH;
@@ -757,7 +866,19 @@ function showPlayerActionModal(
     modal.style.top = clampedTop + "px";
     modal.style.left = clampedLeft + "px";
     modal.style.transform = "none";
+    // Shrink if bottom would exceed viewport, restore when dragged back up
     modal.style.maxHeight = window.innerHeight - clampedTop + "px";
+  }
+
+  /** Toggle collapse: header stays put, body expands downward with maxHeight capped to screen. */
+  function toggleCollapse() {
+    const hidden = modalBody.style.display === "none";
+    modalBody.style.display = hidden ? "" : "none";
+    if (hidden) {
+      // Expanding — cap maxHeight so content doesn't overflow past screen bottom
+      const top = modal.getBoundingClientRect().top;
+      modal.style.maxHeight = window.innerHeight - top + "px";
+    }
   }
 
   function savePosition() {
@@ -785,7 +906,7 @@ function showPlayerActionModal(
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragged = true;
-      if (dragged) applyFullPosition(startTop + dy, startLeft + dx);
+      if (dragged) dragTo(startTop + dy, startLeft + dx);
     };
     const onMouseUp = () => {
       dragHandle.style.cursor = "grab";
@@ -794,8 +915,7 @@ function showPlayerActionModal(
       if (dragged) {
         savePosition();
       } else {
-        const hidden = modalBody.style.display === "none";
-        modalBody.style.display = hidden ? "" : "none";
+        toggleCollapse();
       }
     };
     dragHandle.style.cursor = "grabbing";
@@ -808,10 +928,12 @@ function showPlayerActionModal(
     e.preventDefault();
     dragged = false;
     const startY = e.touches[0].clientY;
-    const startTop = modal.getBoundingClientRect().top;
+    const rect = modal.getBoundingClientRect();
+    const startTop = rect.top;
+    const startLeft = rect.left;
     const onTouchMove = (ev: TouchEvent) => {
       if (Math.abs(ev.touches[0].clientY - startY) > DRAG_THRESHOLD) dragged = true;
-      if (dragged) applyVerticalPosition(startTop + (ev.touches[0].clientY - startY));
+      if (dragged) dragTo(startTop + (ev.touches[0].clientY - startY), startLeft);
     };
     const onTouchEnd = () => {
       document.removeEventListener("touchmove", onTouchMove);
@@ -819,8 +941,7 @@ function showPlayerActionModal(
       if (dragged) {
         savePosition();
       } else {
-        const hidden = modalBody.style.display === "none";
-        modalBody.style.display = hidden ? "" : "none";
+        toggleCollapse();
       }
     };
     document.addEventListener("touchmove", onTouchMove, { passive: true });
@@ -870,7 +991,10 @@ function showPromptModal(
       const badgeHtml = b.badge
         ? ` <span class="resource-inline-badge resource-inline-badge--${b.badge.resName}">${b.badge.total}${b.badge.letter}</span>`
         : "";
-      const btnHtml = `<button class="${btnClass}" data-btn-index="${i}">${escapeHtml(b.label)}${badgeHtml}</button>`;
+      const labelHtml = badgeHtml
+        ? `<span class="action-btn-label">${escapeHtml(b.label)}</span>${badgeHtml}`
+        : escapeHtml(b.label);
+      const btnHtml = `<button class="${btnClass}" data-btn-index="${i}">${labelHtml}</button>`;
       if (b.cardDefId) {
         const card = cardDefs[b.cardDefId];
         const base = baseDefs[b.cardDefId];
@@ -968,7 +1092,7 @@ function formatPhase(phase: string, readyStep: number): string {
   }
 }
 
-function renderOpponentZones(opp: OpponentView): string {
+function renderOpponentZones(opp: OpponentView, challenge: ChallengeState | null): string {
   return `
     <div class="zone resource-zone">
       <div class="zone-label">Resource</div>
@@ -980,14 +1104,14 @@ function renderOpponentZones(opp: OpponentView): string {
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false)).join("")}
+        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge)).join("")}
         ${opp.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false)).join("")}
+        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge)).join("")}
         ${opp.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -999,14 +1123,14 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true)).join("")}
+        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge)).join("")}
         ${state.you.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true)).join("")}
+        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge)).join("")}
         ${state.you.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1042,6 +1166,20 @@ function renderPersistentMission(card: CardInstance): string {
       ${image ? `<img src="${image}" alt="${name}" class="card-image" />` : `<div class="card-text-fallback mission"><div class="card-name">${name}</div><div class="card-type">Persistent</div></div>`}
     </div>
   `;
+}
+
+function buildResourceSummaryHtml(stacks: ResourceStack[]): string {
+  const badges = stacks
+    .map((stack) => {
+      const res = getResourceName(stack.topCard.defId);
+      if (!res) return "";
+      const value = 1 + stack.supplyCards.length;
+      const letter = res.charAt(0).toUpperCase();
+      const dimClass = stack.exhausted ? " header-res-badge--empty" : "";
+      return `<span class="header-res-badge header-res-badge--${res}${dimClass}">${value}${letter}</span>`;
+    })
+    .join("");
+  return badges ? `<span class="header-res-badges">${badges}</span>` : "";
 }
 
 function getResourceName(defId: string): string {
@@ -1122,13 +1260,25 @@ function renderResourceStack(stack: ResourceStack, isYours: boolean, stackIndex?
   `;
 }
 
-function renderUnitStack(stack: UnitStack, isYours: boolean): string {
+function renderUnitStack(
+  stack: UnitStack,
+  isYours: boolean,
+  challenge: ChallengeState | null = null,
+): string {
   const topCard = stack.cards[0];
   if (!topCard) return "";
   const def = getCardDef(topCard.defId);
   const name = def ? getCardName(topCard.defId) : topCard.defId;
   const basePower = def?.power ?? 0;
-  const buff = stack.powerBuff ?? 0;
+  const stackBuff = stack.powerBuff ?? 0;
+  // Include temporary challenge power buff if this unit is the challenger or defender
+  let challengeBuff = 0;
+  if (challenge && topCard.instanceId === challenge.challengerInstanceId) {
+    challengeBuff = challenge.challengerPowerBuff ?? 0;
+  } else if (challenge && topCard.instanceId === challenge.defenderInstanceId) {
+    challengeBuff = challenge.defenderPowerBuff ?? 0;
+  }
+  const buff = stackBuff + challengeBuff;
   const totalPower = basePower + buff;
   const buffClass = buff > 0 ? " power-buffed" : "";
   const powerDisplay =
@@ -1527,6 +1677,12 @@ function handleActionClick(
       break;
     }
 
+    case "sniperAccept": {
+      const accepted = action.description.startsWith("Accept");
+      onAction({ type: "sniperAccept", accept: accepted });
+      break;
+    }
+
     case "defend": {
       if (action.description === "Decline to defend") {
         onAction({ type: "defend", defenderInstanceId: null });
@@ -1604,27 +1760,36 @@ function handleActionClick(
     case "playAbility": {
       const sources = action.selectableInstanceIds ?? [];
       if (sources.length === 1) {
-        // Check if the ability needs a target
-        const desc = action.description;
-        if (desc.includes("Target unit") || desc.includes("target")) {
-          // Need to select a target — get all alert units
-          const targetUnits = getAllAlertUnitIds(state);
-          enterSelectModeInstance(
-            container,
-            "Select target for ability",
-            targetUnits,
-            (targetId) => {
-              onAction!({
-                type: "playAbility",
-                sourceInstanceId: sources[0],
-                targetInstanceId: targetId,
-              });
-            },
-            validActions,
-            state,
-          );
+        // If the server already provided a target, use it directly
+        if (action.targetInstanceId) {
+          onAction({
+            type: "playAbility",
+            sourceInstanceId: sources[0],
+            targetInstanceId: action.targetInstanceId,
+          });
         } else {
-          onAction({ type: "playAbility", sourceInstanceId: sources[0] });
+          // Check if the ability needs a target
+          const desc = action.description;
+          if (desc.includes("Target unit") || desc.includes("target")) {
+            // Need to select a target — get all alert units
+            const targetUnits = getAllAlertUnitIds(state);
+            enterSelectModeInstance(
+              container,
+              "Select target for ability",
+              targetUnits,
+              (targetId) => {
+                onAction!({
+                  type: "playAbility",
+                  sourceInstanceId: sources[0],
+                  targetInstanceId: targetId,
+                });
+              },
+              validActions,
+              state,
+            );
+          } else {
+            onAction({ type: "playAbility", sourceInstanceId: sources[0] });
+          }
         }
       } else {
         enterSelectModeInstance(
@@ -1715,30 +1880,35 @@ function handleActionClick(
 
     case "challengeCylon": {
       const units = action.selectableInstanceIds ?? [];
-      enterSelectModeInstance(
-        container,
-        "Select unit to challenge Cylon threat",
-        units,
-        (unitId) => {
-          const threats = action.selectableThreatIndices ?? [];
-          if (threats.length === 1) {
+      const threats = action.selectableThreatIndices ?? [];
+      const threatIdx = threats[0] ?? 0;
+      const unitButtons = units.map((unitId) => {
+        const stack = findUnitStack(state.you.zones, unitId);
+        const defId = stack?.cards[0]?.defId ?? "";
+        const name = defId ? getCardName(defId) : unitId;
+        const power = stack ? (getCardDef(defId)?.power ?? 0) + (stack.powerBuff ?? 0) : 0;
+        return {
+          label: `${name} (${power})`,
+          cardDefId: defId,
+          onClick: () => {
             onAction!({
               type: "challengeCylon",
               challengerInstanceId: unitId,
-              threatIndex: threats[0],
+              threatIndex: threatIdx,
             });
-          } else {
-            // Would need to select which threat — for now pick first
-            onAction!({
-              type: "challengeCylon",
-              challengerInstanceId: unitId,
-              threatIndex: threats[0] ?? 0,
-            });
-          }
+          },
+        };
+      });
+      showPromptModal("Select unit to challenge Cylon threat", [
+        ...unitButtons,
+        {
+          label: "Cancel",
+          cancel: true,
+          onClick: () => {
+            restoreActionsBar(container, validActions, state);
+          },
         },
-        validActions,
-        state,
-      );
+      ]);
       break;
     }
 
@@ -1934,7 +2104,7 @@ function showResourceDeployChoice(
     const totalResource = 1 + stack.supplyCards.length;
     const resLetter = resName ? resName.charAt(0).toUpperCase() : "?";
     return {
-      label: `Supply to ${stackName}`,
+      label: stackName,
       cardDefId: stack.topCard.defId,
       badge: { resName, total: totalResource, letter: resLetter },
       onClick: () => {
@@ -1980,34 +2150,6 @@ function hasResourceChoice(
 }
 
 /** Compute the optimal stack selection (minimize waste) for a given cost. */
-function computeOptimalStacks(
-  cost: { persuasion?: number; logistics?: number; security?: number } | null,
-  stacks: ResourceStack[],
-): number[] {
-  if (!cost) return [];
-  const selected: number[] = [];
-  for (const [resType, amount] of Object.entries(cost) as [string, number][]) {
-    // Gather un-exhausted stacks of this type, sorted smallest first
-    const candidates = stacks
-      .map((s, i) => ({
-        index: i,
-        resType: getResourceName(s.topCard.defId),
-        count: 1 + s.supplyCards.length,
-        exhausted: s.exhausted,
-      }))
-      .filter((c) => !c.exhausted && c.resType === resType)
-      .sort((a, b) => a.count - b.count);
-
-    let remaining = amount;
-    for (const c of candidates) {
-      if (remaining <= 0) break;
-      selected.push(c.index);
-      remaining -= c.count;
-    }
-  }
-  return selected;
-}
-
 /** Interactive resource stack picker modal for choosing which stacks to spend. */
 function showResourceStackPicker(
   cardIndex: number,
@@ -2024,8 +2166,8 @@ function showResourceStackPicker(
   const cardLabel = card ? getCardName(card.defId) : "card";
   const cardImage = cardDefs[cardDefId]?.image ?? baseDefs[cardDefId]?.image ?? "";
 
-  // Pre-select optimal stacks
-  const selectedSet = new Set(computeOptimalStacks(cost, state.you.zones.resourceStacks));
+  // Start with nothing selected — user manually picks stacks
+  const selectedSet = new Set<number>();
 
   // Group stacks by resource type (only types present in the cost)
   const costTypes = Object.entries(cost).filter(([, amt]) => amt > 0) as [string, number][];
@@ -2104,11 +2246,10 @@ function showResourceStackPicker(
   overlay.className = "player-action-overlay";
   overlay.innerHTML = `
     <div class="action-modal">
+      <div class="action-modal-drag-handle" style="cursor:grab;user-select:none;padding:8px 1rem;background:#222;border-bottom:1px solid #444;border-radius:8px 8px 0 0;color:#e0e0e0;font-size:0.9rem;">
+        Spend resources
+      </div>
       <div class="action-modal-top">
-        <div class="action-modal-header-row">
-          <div class="action-modal-text">Spend resources</div>
-          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
-        </div>
         ${cardHeaderHtml}
         ${sectionsHtml}
         <div class="resource-picker-summary" data-picker-summary></div>
@@ -2122,19 +2263,88 @@ function showResourceStackPicker(
 
   document.body.appendChild(overlay);
 
-  // Toggle / collapse
   const modal = overlay.querySelector(".action-modal") as HTMLElement;
-  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
-  const headerFab = document.getElementById("actions-fab");
-  toggle.addEventListener("click", () => {
-    modal.style.display = "none";
-    if (headerFab) {
-      headerFab.style.display = "";
-      headerFab.onclick = () => {
-        modal.style.display = "";
-        headerFab.style.display = "none";
-      };
+  const dragHandle = overlay.querySelector(".action-modal-drag-handle") as HTMLElement;
+  const modalBody = overlay.querySelector(".action-modal-top") as HTMLElement;
+  let dragged = false;
+
+  /** Move modal, shrinking if dragged past bottom edge. */
+  function pickerDragTo(newTop: number, newLeft: number) {
+    const handleH = dragHandle.offsetHeight;
+    const modalW = modal.offsetWidth;
+    const maxTop = window.innerHeight - handleH;
+    const maxLeft = window.innerWidth - modalW;
+    const clampedTop = Math.max(0, Math.min(newTop, maxTop));
+    const clampedLeft = Math.max(0, Math.min(newLeft, maxLeft));
+    modal.style.top = clampedTop + "px";
+    modal.style.left = clampedLeft + "px";
+    modal.style.transform = "none";
+    modal.style.maxHeight = window.innerHeight - clampedTop + "px";
+  }
+
+  /** Toggle collapse: header stays put, body expands downward with maxHeight capped to screen. */
+  function pickerToggleCollapse() {
+    const hidden = modalBody.style.display === "none";
+    modalBody.style.display = hidden ? "" : "none";
+    if (hidden) {
+      const top = modal.getBoundingClientRect().top;
+      modal.style.maxHeight = window.innerHeight - top + "px";
     }
+  }
+
+  // Desktop: drag in any direction (mouse)
+  dragHandle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    dragged = false;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const rect = modal.getBoundingClientRect();
+    const startTop = rect.top;
+    const startLeft = rect.left;
+    if (modal.style.transform !== "none") {
+      modal.style.left = startLeft + "px";
+      modal.style.transform = "none";
+    }
+    const onMouseMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragged = true;
+      if (dragged) pickerDragTo(startTop + dy, startLeft + dx);
+    };
+    const onMouseUp = () => {
+      dragHandle.style.cursor = "grab";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      if (!dragged) {
+        pickerToggleCollapse();
+      }
+    };
+    dragHandle.style.cursor = "grabbing";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+
+  // Mobile: vertical drag only (touch)
+  dragHandle.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    dragged = false;
+    const startY = e.touches[0].clientY;
+    const rect = modal.getBoundingClientRect();
+    const startTop = rect.top;
+    const startLeft = rect.left;
+    const onTouchMove = (ev: TouchEvent) => {
+      if (Math.abs(ev.touches[0].clientY - startY) > DRAG_THRESHOLD) dragged = true;
+      if (dragged) pickerDragTo(startTop + (ev.touches[0].clientY - startY), startLeft);
+    };
+    const onTouchEnd = () => {
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+      if (!dragged) {
+        pickerToggleCollapse();
+      }
+    };
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", onTouchEnd);
   });
 
   // Thumbnail → card preview
@@ -2243,7 +2453,7 @@ function promptSupplyChoice(
     const totalResource = 1 + stack.supplyCards.length;
     const resLetter = resName ? resName.charAt(0).toUpperCase() : "?";
     return {
-      label: `Supply to ${stackName}`,
+      label: stackName,
       cardDefId: stack.topCard.defId,
       badge: { resName, total: totalResource, letter: resLetter },
       onClick: () => {
@@ -2252,7 +2462,7 @@ function promptSupplyChoice(
     };
   });
 
-  showPromptModal(`Deploy ${name} as supply:`, [
+  showPromptModal(`Supply ${name} to:`, [
     ...stackButtons,
     {
       label: "Cancel",

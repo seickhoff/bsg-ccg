@@ -20,6 +20,7 @@ import type {
   CardInstance,
   Keyword,
   ValidAction,
+  LogItem,
   Trait,
 } from "@bsg/shared";
 import { registerPendingChoice } from "./pending-choice-registry.js";
@@ -49,7 +50,7 @@ export interface MissionAbilityHandler {
     state: GameState,
     playerIndex: number,
     targetId: string | undefined,
-    log: string[],
+    log: LogItem[],
   ): void;
 
   // --- Ongoing passive modifiers (persistent + link) ---
@@ -80,32 +81,32 @@ export interface MissionAbilityHandler {
       playerIndex: number,
       sourceId: string,
       targetId: string | undefined,
-      log: string[],
+      log: LogItem[],
     ): void;
   };
 
   // --- Trigger hooks ---
-  onEventPlay?(state: GameState, playerIndex: number, log: string[]): void;
-  onReadyPhaseStart?(state: GameState, playerIndex: number, log: string[]): void;
+  onEventPlay?(state: GameState, playerIndex: number, log: LogItem[]): void;
+  onReadyPhaseStart?(state: GameState, playerIndex: number, log: LogItem[]): void;
   onMysticReveal?(state: GameState, playerIndex: number, value: number, cardDef: CardDef): number;
   interceptDefeat?(
     state: GameState,
     playerIndex: number,
     unitType: "personnel" | "ship",
     unitInstanceId: string,
-    log: string[],
+    log: LogItem[],
   ): boolean;
   onLinkedUnitLeavePlay?(
     state: GameState,
     playerIndex: number,
     unitInstanceId: string,
-    log: string[],
+    log: LogItem[],
   ): void;
   onCylonThreatDefeat?(
     state: GameState,
     playerIndex: number,
     unitInstanceId: string,
-    log: string[],
+    log: LogItem[],
   ): void;
   onChallengeWin?(
     state: GameState,
@@ -113,10 +114,10 @@ export interface MissionAbilityHandler {
     winnerStack: UnitStack,
     loserStack: UnitStack,
     powerDiff: number,
-    log: string[],
+    log: LogItem[],
     isDefender: boolean,
   ): void;
-  onDraw?(state: GameState, playerIndex: number, drawCount: number, log: string[]): void;
+  onDraw?(state: GameState, playerIndex: number, drawCount: number, log: LogItem[]): void;
 
   // --- Special game rule modifiers ---
   preventOverlay?(state: GameState, playerIndex: number, unitDef: CardDef): boolean;
@@ -133,25 +134,25 @@ export interface MissionGameHelpers {
   defeatUnit(
     player: PlayerState,
     instanceId: string,
-    log: string[],
+    log: LogItem[],
     state: GameState,
     playerIndex: number,
   ): void;
-  commitUnit(player: PlayerState, instanceId: string): void;
+  commitUnit(player: PlayerState, instanceId: string, log?: LogItem[]): void;
   drawCards(
     player: PlayerState,
     count: number,
-    log: string[],
+    log: LogItem[],
     label: string,
     state?: GameState,
     playerIndex?: number,
   ): void;
-  applyPowerBuff(state: GameState, instanceId: string, amount: number, log: string[]): void;
+  applyPowerBuff(state: GameState, instanceId: string, amount: number, log: LogItem[]): void;
   applyInfluenceLoss(
     state: GameState,
     playerIndex: number,
     amount: number,
-    log: string[],
+    log: LogItem[],
     bases: Record<string, BaseCardDef>,
   ): void;
   bases: Record<string, BaseCardDef>;
@@ -231,21 +232,29 @@ function findUnitOwner(
   return null;
 }
 
-function commitUnitLocal(player: PlayerState, instanceId: string): boolean {
+function commitUnitLocal(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInZone(player.zones.alert, instanceId);
   if (found) {
     player.zones.alert.splice(found.index, 1);
     player.zones.reserve.push(found.stack);
+    if (log) {
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`${def ? helpers.cardName(def) : "Unit"} committed.`);
+    }
     return true;
   }
   return false;
 }
 
-function readyUnitLocal(player: PlayerState, instanceId: string): boolean {
+function readyUnitLocal(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInZone(player.zones.reserve, instanceId);
   if (found && !found.stack.exhausted) {
     player.zones.reserve.splice(found.index, 1);
     player.zones.alert.push(found.stack);
+    if (log) {
+      const def = getCardDef(found.stack.cards[0].defId);
+      log.push(`${def ? helpers.cardName(def) : "Unit"} readied.`);
+    }
     return true;
   }
   return false;
@@ -1603,7 +1612,7 @@ register("interim-quorum", {
       const found = findUnitInZone(player.zones.alert, politicianId);
       if (found) {
         found.stack.exhausted = true;
-        commitUnitLocal(player, politicianId);
+        commitUnitLocal(player, politicianId, log);
       }
       if (targetId) {
         helpers.applyPowerBuff(state, targetId, 3, log);
@@ -1699,12 +1708,7 @@ register("combat-air-patrol", {
   onResolve(state, playerIndex, targetId, log) {
     const player = state.players[playerIndex];
     if (targetId) {
-      commitUnitLocal(player, targetId);
-      const owner = findUnitInAnyZone(player, targetId);
-      if (owner) {
-        const def = getCardDef(owner.stack.cards[0].defId);
-        log.push(`Combat Air Patrol: committed ${helpers.cardName(def)}.`);
-      }
+      commitUnitLocal(player, targetId, log);
     } else {
       // AI fallback: commit first Pilot
       for (const stack of player.zones.alert) {
@@ -1712,8 +1716,7 @@ register("combat-air-patrol", {
         if (!top?.faceUp) continue;
         const def = getCardDef(top.defId);
         if (def?.traits?.includes("Pilot" as Trait)) {
-          commitUnitLocal(player, top.instanceId);
-          log.push(`Combat Air Patrol: committed ${helpers.cardName(def)}.`);
+          commitUnitLocal(player, top.instanceId, log);
           break;
         }
       }
@@ -1828,7 +1831,7 @@ register("are-you-alive", {
       return targets.length > 0 ? targets : [];
     },
     resolve(state, playerIndex, sourceId, targetId, log) {
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       if (targetId) {
         helpers.applyPowerBuff(state, targetId, -2, log);
         log.push("Are You Alive?: target unit gets -2 power.");
@@ -1858,10 +1861,9 @@ register("in-love-with-machine", {
       return targets.length > 0 ? targets : [];
     },
     resolve(state, playerIndex, sourceId, targetId, log) {
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       if (targetId) {
-        readyUnitLocal(state.players[playerIndex], targetId);
-        log.push("In Love With A Machine: readied Cylon unit.");
+        readyUnitLocal(state.players[playerIndex], targetId, log);
       }
     },
   },
@@ -1887,10 +1889,9 @@ register("plan-b", {
       return targets.length > 0 ? targets : [];
     },
     resolve(state, playerIndex, sourceId, targetId, log) {
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       if (targetId) {
-        readyUnitLocal(state.players[playerIndex], targetId);
-        log.push("Plan B: readied target mission.");
+        readyUnitLocal(state.players[playerIndex], targetId, log);
       }
     },
   },
@@ -1907,7 +1908,7 @@ register("prophetic-visions", {
       return null; // targets opponent's deck (auto in 2-player)
     },
     resolve(state, playerIndex, sourceId, _targetId, log) {
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       const opIdx = 1 - playerIndex;
       const opponent = state.players[opIdx];
       if (opponent.deck.length < 2) {
@@ -1943,7 +1944,7 @@ register("rudimentary-still", {
       return hasStack ? null : [];
     },
     resolve(state, playerIndex, sourceId, _targetId, log) {
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       const player = state.players[playerIndex];
       // Exhaust a resource stack
       for (const stack of player.zones.resourceStacks) {
@@ -2111,7 +2112,7 @@ register("viral-warfare", {
       return null; // opponent (auto in 2-player)
     },
     resolve(state, playerIndex, sourceId, _targetId, log) {
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       const opIdx = 1 - playerIndex;
       const opponent = state.players[opIdx];
       if (opponent.hand.length > 0) {
@@ -2195,7 +2196,7 @@ register("clear-your-heads", {
       return targets.length > 0 ? targets : [];
     },
     resolve(state, playerIndex, sourceId, targetId, log) {
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       if (targetId) {
         // Exhaust the target mission
         for (const p of state.players) {
@@ -2234,7 +2235,7 @@ register("trust-the-lords", {
       const unitStack = findUnitInAnyZone(state.players[playerIndex], sourceId);
       const sourceDef = unitStack ? getCardDef(unitStack.stack.cards[0]?.defId) : undefined;
       const mv = sourceDef?.mysticValue ?? 0;
-      commitUnitLocal(state.players[playerIndex], sourceId);
+      commitUnitLocal(state.players[playerIndex], sourceId, log);
       if (targetId) {
         helpers.applyPowerBuff(state, targetId, mv, log);
         log.push(`Trust The Lords: target unit gets +${mv} power (skip mystic reveal).`);
@@ -2269,7 +2270,7 @@ export function resolveMissionAbility(
   state: GameState,
   playerIndex: number,
   targetId: string | undefined,
-  log: string[],
+  log: LogItem[],
 ): void {
   const handler = registry.get(abilityId);
   if (!handler?.onResolve) {
@@ -2341,6 +2342,43 @@ export function computeMissionPowerModifier(
   }
 
   return total;
+}
+
+/** Itemized mission power modifiers for a unit (for log breakdown). */
+export function computeMissionPowerBreakdown(
+  state: GameState,
+  unitStack: UnitStack,
+  ownerIndex: number,
+  context: PowerContext,
+): { source: string; amount: number }[] {
+  const items: { source: string; amount: number }[] = [];
+
+  // Persistent missions
+  for (const player of state.players) {
+    for (const mc of player.zones.persistentMissions ?? []) {
+      if (!mc.faceUp) continue;
+      const def = getCardDef(mc.defId);
+      if (!def?.abilityId) continue;
+      const handler = registry.get(def.abilityId);
+      if (handler?.getPowerModifier) {
+        const mod = handler.getPowerModifier(state, unitStack, ownerIndex, context);
+        if (mod !== 0) items.push({ source: helpers.cardName(def), amount: mod });
+      }
+    }
+  }
+
+  // Linked missions on this unit
+  for (const mc of unitStack.linkedMissions ?? []) {
+    const def = getCardDef(mc.defId);
+    if (!def?.abilityId) continue;
+    const handler = registry.get(def.abilityId);
+    if (handler?.getPowerModifier) {
+      const mod = handler.getPowerModifier(state, unitStack, ownerIndex, context);
+      if (mod !== 0) items.push({ source: helpers.cardName(def) + " (linked)", amount: mod });
+    }
+  }
+
+  return items;
 }
 
 export function computeMissionFleetDefenseModifier(state: GameState): number {
@@ -2487,7 +2525,7 @@ export function resolveMissionActivation(
   playerIndex: number,
   sourceId: string,
   targetId: string | undefined,
-  log: string[],
+  log: LogItem[],
 ): void {
   const handler = registry.get(abilityId);
   handler?.activation?.resolve(state, playerIndex, sourceId, targetId, log);
@@ -2495,7 +2533,11 @@ export function resolveMissionActivation(
 
 // --- Trigger dispatchers ---
 
-export function fireMissionOnEventPlay(state: GameState, playerIndex: number, log: string[]): void {
+export function fireMissionOnEventPlay(
+  state: GameState,
+  playerIndex: number,
+  log: LogItem[],
+): void {
   // Check all persistent missions for onEventPlay
   for (const [, handler] of registry) {
     if (handler.onEventPlay) {
@@ -2504,7 +2546,7 @@ export function fireMissionOnEventPlay(state: GameState, playerIndex: number, lo
   }
 }
 
-export function fireMissionOnReadyPhaseStart(state: GameState, log: string[]): void {
+export function fireMissionOnReadyPhaseStart(state: GameState, log: LogItem[]): void {
   for (let pi = 0; pi < state.players.length; pi++) {
     for (const [, handler] of registry) {
       if (handler.onReadyPhaseStart) {
@@ -2534,7 +2576,7 @@ export function interceptMissionDefeat(
   playerIndex: number,
   unitType: "personnel" | "ship",
   unitInstanceId: string,
-  log: string[],
+  log: LogItem[],
 ): boolean {
   // Check persistent missions first
   for (const [, handler] of registry) {
@@ -2551,7 +2593,7 @@ export function cleanupLinkedMissions(
   state: GameState,
   playerIndex: number,
   unitStack: UnitStack,
-  log: string[],
+  log: LogItem[],
 ): void {
   const linked = unitStack.linkedMissions ?? [];
   if (linked.length === 0) return;
@@ -2579,7 +2621,7 @@ export function fireMissionOnCylonDefeat(
   state: GameState,
   playerIndex: number,
   unitInstanceId: string,
-  log: string[],
+  log: LogItem[],
 ): void {
   const player = state.players[playerIndex];
   // Check linked missions on the winning unit
@@ -2604,7 +2646,7 @@ export function fireMissionOnChallengeWin(
   winnerStack: UnitStack,
   loserStack: UnitStack,
   powerDiff: number,
-  log: string[],
+  log: LogItem[],
   isDefender: boolean,
 ): void {
   for (const mc of winnerStack.linkedMissions ?? []) {
@@ -2629,7 +2671,7 @@ export function fireMissionOnDraw(
   state: GameState,
   playerIndex: number,
   drawCount: number,
-  log: string[],
+  log: LogItem[],
 ): void {
   for (const [, handler] of registry) {
     if (handler.onDraw) {

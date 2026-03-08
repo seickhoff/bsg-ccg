@@ -96,10 +96,20 @@ export function makeAIDecision(
     return decideTrigger(validActions, state, playerIndex, registry);
   }
 
-  // --- Challenge: Sniper — AI as challenger picks opponent's defender ---
+  // --- Challenge: Sniper step A — AI as defender decides accept/decline ---
   if (
     state.challenge?.waitingForDefender &&
     state.challenge.defenderSelector === "challenger" &&
+    !state.challenge.sniperDefendAccepted &&
+    state.challenge.defenderPlayerIndex === playerIndex
+  ) {
+    return decideSniperAccept(validActions, state, playerIndex, registry);
+  }
+
+  // --- Challenge: Sniper step B — AI as challenger picks opponent's defender ---
+  if (
+    state.challenge?.waitingForDefender &&
+    state.challenge.sniperDefendAccepted &&
     state.challenge.challengerPlayerIndex === playerIndex
   ) {
     return decideSniperDefenderChoice(validActions, state, playerIndex, registry);
@@ -274,21 +284,52 @@ function decideDefend(
   return { type: "defend", defenderInstanceId: null };
 }
 
-// --- Sniper: AI as challenger picks which opponent unit defends ---
-function decideSniperDefenderChoice(
-  actions: ValidAction[],
+// --- Sniper step A: AI as defender decides whether to accept defense ---
+function decideSniperAccept(
+  _actions: ValidAction[],
   state: GameState,
   playerIndex: number,
   registry: CardRegistry,
 ): GameAction {
-  if (!state.challenge) return { type: "defend", defenderInstanceId: null };
+  if (!state.challenge) return { type: "sniperAccept", accept: false };
 
   const challengerDef = findUnitDef(
     state.challenge.challengerInstanceId,
-    state.players[playerIndex],
+    state.players[state.challenge.challengerPlayerIndex],
     registry,
   );
   const challengerPower = challengerDef?.power ?? 0;
+
+  // Check if we have any unit that could reasonably survive
+  const myPlayer = state.players[playerIndex];
+  let strongestPower = 0;
+  for (const stack of myPlayer.zones.alert) {
+    const topCard = stack.cards[0];
+    if (topCard && topCard.faceUp && !stack.exhausted) {
+      const def = registry.cards[topCard.defId];
+      if (def && (def.type === "personnel" || def.type === "ship")) {
+        const power = def.power ?? 0;
+        if (power > strongestPower) strongestPower = power;
+      }
+    }
+  }
+
+  // Accept defense if our strongest unit can compete; otherwise decline
+  // (opponent picks our weakest, so decline if even our strongest is outmatched)
+  if (strongestPower >= challengerPower - 1) {
+    return { type: "sniperAccept", accept: true };
+  }
+  return { type: "sniperAccept", accept: false };
+}
+
+// --- Sniper step B: AI as challenger picks which opponent unit defends ---
+function decideSniperDefenderChoice(
+  actions: ValidAction[],
+  state: GameState,
+  _playerIndex: number,
+  registry: CardRegistry,
+): GameAction {
+  if (!state.challenge) return { type: "defend", defenderInstanceId: null };
 
   // Collect eligible opponent units from valid actions
   const defendActions = actions.filter(
@@ -309,12 +350,12 @@ function decideSniperDefenderChoice(
     }
   }
 
-  // Force the weakest unit to defend if we can likely beat it
-  if (weakest && challengerPower > weakest.power) {
+  // Pick the weakest unit (defender already accepted, must choose one)
+  if (weakest) {
     return { type: "defend", defenderInstanceId: weakest.instanceId };
   }
 
-  // Otherwise choose undefended (opponent loses influence)
+  // Fallback (shouldn't happen — defender accepted means units exist)
   return { type: "defend", defenderInstanceId: null };
 }
 
@@ -393,6 +434,11 @@ function decideChallengeEffects(
       if (bestDef?.abilityId) {
         const ctx = state.challenge?.isCylonChallenge ? "cylon-challenge" : "challenge";
         targetId = pickEventTarget(bestDef, state, playerIndex, registry, ctx);
+        // If the event needs a target but we couldn't find a good one, skip it
+        const targets = getEventTargets(bestDef.abilityId, state, playerIndex, ctx);
+        if (targets && targets.length > 0 && !targetId) {
+          return { type: "challengePass" };
+        }
       }
       return {
         type: "playEventInChallenge",
@@ -618,6 +664,9 @@ function pickBestCardToPlay(
     // For events with targets, pick the best target
     if (def?.type === "event" && def.abilityId) {
       bestTargetId = pickEventTarget(def, state, playerIndex, registry, "execution");
+      // If the event needs a target but we couldn't find a good one, skip it
+      const targets = getEventTargets(def.abilityId, state, playerIndex, "execution");
+      if (targets && targets.length > 0 && !bestTargetId) return null;
     }
     const bestDef = card ? registry.cards[card.defId] : null;
     return {
@@ -888,13 +937,14 @@ function pickEventTarget(
     if (bestId) return bestId;
   }
 
-  // For debuffs, pick opponent's strongest alert unit
+  // For debuffs, pick opponent's strongest unit (alert or reserve)
   if (isDebuff) {
     const opp = state.players[1 - playerIndex];
     let bestId: string | undefined;
     let bestPow = -1;
+    const oppZones = [...opp.zones.alert, ...opp.zones.reserve];
     for (const id of targets) {
-      for (const stack of opp.zones.alert) {
+      for (const stack of oppZones) {
         if (stack.cards[0]?.instanceId === id) {
           const d = registry.cards[stack.cards[0].defId];
           const pow = d?.power ?? 0;
@@ -907,6 +957,9 @@ function pickEventTarget(
     }
     if (bestId) return bestId;
   }
+
+  // For debuffs with no opponent target found, don't target own units
+  if (isDebuff) return undefined;
 
   // Fallback: first target
   return targets[0];
