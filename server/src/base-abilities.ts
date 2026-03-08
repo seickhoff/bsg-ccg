@@ -243,34 +243,62 @@ registerBaseAbility("battlestar-galactica", {
   },
 });
 
-// --- Assault Base Star: +2 to Cylon unit in challenge ---
+// --- Assault Base Star: +2 to Cylon unit ---
+// Card text: "Exhaust: Target Cylon unit gets +2 power."
+// No challenge restriction — usable in execution phase or during challenges.
 registerBaseAbility("assault-base-star", {
-  usableIn: ["challenge", "cylon-challenge"],
-  getTargets(state) {
-    if (!state.challenge) return [];
+  usableIn: ["execution", "challenge", "cylon-challenge"],
+  getTargets(state, playerIndex) {
     const targets: string[] = [];
-    // Check challenger
-    const challengerDef = findChallengeUnitDef(state, state.challenge.challengerInstanceId);
-    if (challengerDef?.traits?.includes("Cylon")) {
-      targets.push(state.challenge.challengerInstanceId);
-    }
-    // Check defender (if it exists and is a real unit, not a Cylon threat)
-    if (state.challenge.defenderInstanceId && !state.challenge.isCylonChallenge) {
-      const defenderDef = findChallengeUnitDef(state, state.challenge.defenderInstanceId);
-      if (defenderDef?.traits?.includes("Cylon")) {
-        targets.push(state.challenge.defenderInstanceId);
+
+    if (state.challenge) {
+      // During a challenge: target Cylon units involved in the challenge
+      const challengerDef = findChallengeUnitDef(state, state.challenge.challengerInstanceId);
+      if (challengerDef?.traits?.includes("Cylon")) {
+        targets.push(state.challenge.challengerInstanceId);
+      }
+      if (state.challenge.defenderInstanceId && !state.challenge.isCylonChallenge) {
+        const defenderDef = findChallengeUnitDef(state, state.challenge.defenderInstanceId);
+        if (defenderDef?.traits?.includes("Cylon")) {
+          targets.push(state.challenge.defenderInstanceId);
+        }
+      }
+    } else {
+      // During execution: target any face-up Cylon unit the player controls
+      const player = state.players[playerIndex];
+      for (const unit of findUnitsInZone(
+        player.zones.alert,
+        (def) =>
+          (def.type === "personnel" || def.type === "ship") &&
+          (def.traits?.includes("Cylon") ?? false),
+      )) {
+        targets.push(unit.instanceId);
       }
     }
+
     return targets;
   },
-  resolve(state, _playerIndex, targetInstanceId, log) {
-    if (!state.challenge || !targetInstanceId) return;
-    if (targetInstanceId === state.challenge.challengerInstanceId) {
-      state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 2;
-      log.push("Assault Base Star: Cylon challenger gets +2 power.");
-    } else if (targetInstanceId === state.challenge.defenderInstanceId) {
-      state.challenge.defenderPowerBuff = (state.challenge.defenderPowerBuff ?? 0) + 2;
-      log.push("Assault Base Star: Cylon defender gets +2 power.");
+  resolve(state, playerIndex, targetInstanceId, log) {
+    if (!targetInstanceId) return;
+
+    if (state.challenge) {
+      // During challenge: apply buff to challenge state
+      if (targetInstanceId === state.challenge.challengerInstanceId) {
+        state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 2;
+        log.push("Assault Base Star: Cylon challenger gets +2 power.");
+      } else if (targetInstanceId === state.challenge.defenderInstanceId) {
+        state.challenge.defenderPowerBuff = (state.challenge.defenderPowerBuff ?? 0) + 2;
+        log.push("Assault Base Star: Cylon defender gets +2 power.");
+      }
+    } else {
+      // During execution: apply persistent power buff to unit stack
+      const player = state.players[playerIndex];
+      const found = findUnitInAnyZone(player, targetInstanceId);
+      if (found) {
+        found.stack.powerBuff = (found.stack.powerBuff ?? 0) + 2;
+        const def = getCardDef(found.stack.cards[0].defId);
+        log.push(`Assault Base Star: ${def ? cardName(def) : "Cylon unit"} gets +2 power.`);
+      }
     }
   },
 });

@@ -35,6 +35,11 @@ window.addEventListener("unhandledrejection", (event) => {
 const app = document.getElementById("app")!;
 
 let ws: WebSocket | null = null;
+// Expose for debug/testing from browser console
+(window as any).__bsg_ws = () => ws;
+(window as any).__bsg_send = (msg: any) => {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+};
 let currentRegistry: CardRegistry | null = null;
 let currentRoomId: string | null = sessionStorage.getItem("bsg-roomId");
 let intentionalDisconnect = false;

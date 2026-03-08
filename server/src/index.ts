@@ -14,6 +14,7 @@ import type {
 import { validateDeck } from "@bsg/shared";
 import {
   createGame,
+  createDebugGame,
   applyAction,
   getValidActions,
   getPlayerView,
@@ -664,6 +665,57 @@ wss.on("connection", (ws) => {
                 sendToPlayer(slot.ws, { type: "deckRequired" });
               }
             }
+          }
+          break;
+        }
+
+        case "debugSetup": {
+          if (process.env.NODE_ENV === "production") {
+            sendToPlayer(ws, { type: "error", message: "Debug mode disabled in production" });
+            return;
+          }
+
+          // Leave old room if any
+          if (wsRoomMap.has(ws)) {
+            const oldRoom = wsRoomMap.get(ws)!;
+            const oldIdx = wsPlayerIndex.get(ws);
+            if (oldIdx !== undefined && oldIdx >= 0) {
+              oldRoom.players[oldIdx].ws = null;
+            } else {
+              const specIdx = oldRoom.spectators.indexOf(ws);
+              if (specIdx !== -1) oldRoom.spectators.splice(specIdx, 1);
+            }
+            wsRoomMap.delete(ws);
+            wsPlayerIndex.delete(ws);
+          }
+
+          const debugRoom = createRoom("vs-ai");
+          assignWsToRoom(ws, debugRoom, 0);
+
+          sendToPlayer(ws, { type: "joined", roomId: debugRoom.id });
+          sendToPlayer(ws, { type: "cardRegistry", registry });
+
+          try {
+            debugRoom.gameState = createDebugGame(msg.scenario, registry);
+            // Set up AI deck slot so AI can respond
+            debugRoom.players[1].deck = buildAIDeck(registry);
+            debugRoom.players[0].deck = { baseId: msg.scenario.player0.baseId, deckCardIds: [] };
+
+            console.log(`[DEBUG] Scenario loaded in ${debugRoom.id}`);
+            broadcastGameState(debugRoom);
+
+            // Process AI turns if it's AI's turn
+            const gen = debugRoom.gameGeneration;
+            processAITurns(debugRoom).catch((err) => {
+              console.error(`AI processing error in ${debugRoom.id}:`, err);
+              if (debugRoom.gameGeneration === gen) {
+                debugRoom.aiProcessing = false;
+                broadcastGameState(debugRoom);
+              }
+            });
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            sendToPlayer(ws, { type: "error", message: `Debug setup failed: ${errMsg}` });
           }
           break;
         }

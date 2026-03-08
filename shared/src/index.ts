@@ -379,12 +379,32 @@ export interface ActionNotification {
   cardDefIds: string[];
 }
 
+// --- Debug / Test Scenario ---
+
+export interface DebugPlayerSetup {
+  baseId: string;
+  hand?: string[]; // card defIds to place in hand
+  alert?: string[]; // card defIds to place in alert zone (each as a single-card UnitStack)
+  reserve?: string[]; // card defIds to place in reserve zone
+  deck?: string[]; // card defIds to place in deck (top-first order)
+  influence?: number; // override starting influence
+}
+
+export interface DebugScenario {
+  player0: DebugPlayerSetup;
+  player1: DebugPlayerSetup;
+  phase?: GamePhase; // default: "execution"
+  turn?: number; // default: 3
+  activePlayerIndex?: number; // default: 0
+}
+
 export type ClientMessage =
   | { type: "joinGame"; roomId?: string; mode?: GameMode; joinCode?: string }
   | { type: "submitDeck"; baseId: string; deckCardIds: string[] }
   | { type: "action"; action: GameAction }
   | { type: "continue" }
-  | { type: "resetGame" };
+  | { type: "resetGame" }
+  | { type: "debugSetup"; scenario: DebugScenario };
 
 export type ServerMessage =
   | { type: "cardRegistry"; registry: CardRegistry }

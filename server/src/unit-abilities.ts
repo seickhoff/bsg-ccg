@@ -81,6 +81,9 @@ export interface UnitAbilityHandler {
     context: PowerContext,
   ): number;
 
+  /** If true, getPowerModifier only applies to the unit that owns this ability (not as an aura). */
+  selfOnly?: boolean;
+
   /** Passive fleet defense modifier */
   fleetDefenseModifier?: number;
 
@@ -1451,6 +1454,7 @@ register("helo-anticylon", {
 
 // Starbuck Hotshot Pilot: "This personnel gets +1 power for each other Pilot you control."
 register("starbuck-hotshot", {
+  selfOnly: true,
   getPowerModifier(state, unitStack, ownerIndex) {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
@@ -1460,6 +1464,7 @@ register("starbuck-hotshot", {
 
 // William Adama The Old Man: "While you control another alert personnel, +2 power."
 register("adama-oldman", {
+  selfOnly: true,
   getPowerModifier(state, unitStack, ownerIndex) {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
@@ -1684,6 +1689,7 @@ register("astral-queen-defend", {
 
 // Raptor 816: "While defending, this ship gets +1 power."
 register("raptor816-defend", {
+  selfOnly: true,
   getPowerModifier(_state, _unitStack, _ownerIndex, context) {
     return context.isDefender ? 1 : 0;
   },
@@ -1691,6 +1697,7 @@ register("raptor816-defend", {
 
 // Captured Raider, Kara's Pet: "While you control an alert Starbuck, this ship gets +1 power."
 register("captured-raider-starbuck", {
+  selfOnly: true,
   getPowerModifier(state, _unitStack, ownerIndex) {
     return hasAlertUnitWithTitle(state.players[ownerIndex], "Starbuck") ? 1 : 0;
   },
@@ -1740,6 +1747,7 @@ register("colonial-one-politician", {
 
 // Colonial Viper 1104: "During the Cylon phase, this ship gets +2 power."
 register("viper1104-cylon", {
+  selfOnly: true,
   getPowerModifier(state) {
     return state.phase === "cylon" ? 2 : 0;
   },
@@ -1747,6 +1755,7 @@ register("viper1104-cylon", {
 
 // Colonial Viper 4267: "While defending, this ship gets +1 power."
 register("viper4267-defend", {
+  selfOnly: true,
   getPowerModifier(_state, _unitStack, _ownerIndex, context) {
     return context.isDefender ? 1 : 0;
   },
@@ -1909,7 +1918,21 @@ register("viper0205-buff", {
   },
   resolve(state, _pi, _sid, targetId, log) {
     if (!targetId) return;
-    applyChallengePowerBuff(state, targetId, 2, log);
+    if (state.challenge) {
+      applyChallengePowerBuff(state, targetId, 2, log);
+    } else {
+      // Outside challenge: apply power buff directly to unit stack
+      for (const player of state.players) {
+        for (const stack of player.zones.alert) {
+          if (stack.cards[0]?.instanceId === targetId) {
+            stack.powerBuff = (stack.powerBuff ?? 0) + 2;
+            const def = getCardDef(stack.cards[0].defId);
+            log.push(`${def ? cardName(def) : "Unit"} gets +2 power.`);
+            return;
+          }
+        }
+      }
+    }
   },
 });
 
@@ -2353,9 +2376,9 @@ export function computePassivePowerModifier(
         const tcDef = getCardDef(tc.defId);
         if (!tcDef?.abilityId) continue;
 
-        // Only check passives that affect OTHER units
+        // Only check passives that affect OTHER units (skip selfOnly modifiers)
         const handler = registry.get(tcDef.abilityId);
-        if (!handler?.getPowerModifier) continue;
+        if (!handler?.getPowerModifier || handler.selfOnly) continue;
 
         // These handlers return 0 if the unit doesn't match their criteria
         const mod = handler.getPowerModifier(state, unitStack, ownerIndex, context);
@@ -2400,7 +2423,7 @@ export function computePassivePowerBreakdown(
         const tcDef = getCardDef(tc.defId);
         if (!tcDef?.abilityId) continue;
         const handler = registry.get(tcDef.abilityId);
-        if (!handler?.getPowerModifier) continue;
+        if (!handler?.getPowerModifier || handler.selfOnly) continue;
         const mod = handler.getPowerModifier(state, unitStack, ownerIndex, context);
         if (mod !== 0) items.push({ source: cardName(tcDef), amount: mod });
       }

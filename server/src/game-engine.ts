@@ -15,6 +15,9 @@ import type {
   ReadyStep,
   OpponentView,
   LogItem,
+  DebugScenario,
+  DebugPlayerSetup,
+  CardRegistry,
 } from "@bsg/shared";
 import { hasKeyword } from "@bsg/shared";
 import {
@@ -491,6 +494,96 @@ export function createGame(
     readyStep: 1 as ReadyStep,
     firstPlayerIndex: p1.influence <= p2.influence ? 0 : 1,
     activePlayerIndex: p1.influence <= p2.influence ? 0 : 1,
+    fleetDefenseLevel,
+    challenge: null,
+    cylonThreats: [],
+    log: stampLog(log),
+    winner: null,
+  };
+
+  return state;
+}
+
+// ============================================================
+// Debug / Test Scenario Setup
+// ============================================================
+
+export function createDebugGame(scenario: DebugScenario, registry: CardRegistry): GameState {
+  instanceCounter = 0;
+
+  const makeDebugPlayer = (setup: DebugPlayerSetup, fallbackDeckIds: string[]): PlayerState => {
+    const baseDef = registry.bases[setup.baseId];
+    if (!baseDef) throw new Error(`Unknown base: ${setup.baseId}`);
+
+    const baseInstance = makeCardInstance(baseDef.id);
+
+    const hand = (setup.hand ?? []).map((id: string) => makeCardInstance(id));
+    const alert: UnitStack[] = (setup.alert ?? []).map((id: string) => ({
+      cards: [makeCardInstance(id)],
+      exhausted: false,
+    }));
+    const reserve: UnitStack[] = (setup.reserve ?? []).map((id: string) => ({
+      cards: [makeCardInstance(id)],
+      exhausted: false,
+    }));
+
+    // Deck: use provided list, or fall back to generated deck minus cards already placed
+    const placedIds = [...(setup.hand ?? []), ...(setup.alert ?? []), ...(setup.reserve ?? [])];
+    let deckDefIds: string[];
+    if (setup.deck) {
+      deckDefIds = setup.deck;
+    } else {
+      // Remove placed cards from fallback deck (remove first occurrence of each)
+      deckDefIds = [...fallbackDeckIds];
+      for (const id of placedIds) {
+        const idx = deckDefIds.indexOf(id);
+        if (idx !== -1) deckDefIds.splice(idx, 1);
+      }
+    }
+    const deck = deckDefIds.map((id: string) => makeCardInstance(id));
+
+    return {
+      baseDefId: baseDef.id,
+      zones: {
+        alert,
+        reserve,
+        resourceStacks: [{ topCard: baseInstance, supplyCards: [], exhausted: false }],
+      },
+      hand,
+      deck,
+      discard: [],
+      influence: setup.influence ?? baseDef.startingInfluence,
+      hasMulliganed: true,
+      hasPlayedResource: false,
+      hasResolvedMission: false,
+      consecutivePasses: 0,
+    };
+  };
+
+  // Build fallback decks from all cards in registry (simple pool)
+  const allCardIds = Object.keys(registry.cards);
+  const p0 = makeDebugPlayer(scenario.player0, allCardIds);
+  const p1 = makeDebugPlayer(scenario.player1, allCardIds);
+
+  const base0 = registry.bases[scenario.player0.baseId];
+  const base1 = registry.bases[scenario.player1.baseId];
+  const fleetDefenseLevel = base0.power + base1.power;
+
+  const phase = scenario.phase ?? "execution";
+  const turn = scenario.turn ?? 3;
+  const activePlayerIndex = scenario.activePlayerIndex ?? 0;
+  const firstPlayerIndex = activePlayerIndex;
+
+  const log: LogItem[] = [];
+  log.push(`[DEBUG] Scenario loaded — phase: ${phase}, turn: ${turn}`);
+
+  const state: GameState = {
+    players: [p0, p1],
+    phase,
+    turn,
+    readyStep: 1 as ReadyStep,
+    firstPlayerIndex,
+    activePlayerIndex,
     fleetDefenseLevel,
     challenge: null,
     cylonThreats: [],
