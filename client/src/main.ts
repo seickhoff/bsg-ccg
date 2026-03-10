@@ -4,6 +4,7 @@ import type {
   GameAction,
   CardRegistry,
   DeckSubmission,
+  LogItem,
 } from "@bsg/shared";
 import {
   renderWaiting,
@@ -43,6 +44,9 @@ let ws: WebSocket | null = null;
 let currentRegistry: CardRegistry | null = null;
 let currentRoomId: string | null = sessionStorage.getItem("bsg-roomId");
 let intentionalDisconnect = false;
+let reconnectAttempts = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let fullLog: LogItem[] = [];
 
 function escapeHtml(str: string): string {
   return str
@@ -68,8 +72,14 @@ function newGame(): void {
     .querySelectorAll(".action-modal-overlay, .player-action-overlay, .log-modal-overlay")
     .forEach((el) => el.remove());
   // Clear old room and start fresh
+  fullLog = [];
   sessionStorage.removeItem("bsg-roomId");
   currentRoomId = null;
+  reconnectAttempts = 0;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   // Close WebSocket intentionally — don't auto-reconnect
   if (ws) {
     intentionalDisconnect = true;
@@ -165,6 +175,11 @@ function connect(): void {
 
   ws.addEventListener("open", () => {
     console.log("Connected to server");
+    reconnectAttempts = 0;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     sendMessage({ type: "joinGame", roomId: currentRoomId ?? undefined, mode: "vs-ai" });
   });
 
@@ -174,15 +189,15 @@ function connect(): void {
     );
     if (intentionalDisconnect) {
       intentionalDisconnect = false;
+      reconnectAttempts = 0;
       return;
     }
-    app.innerHTML = `
-      <div class="waiting">
-        <h1>BSG CCG</h1>
-        <p>Disconnected — reconnecting...</p>
-      </div>
-    `;
-    setTimeout(connect, 2000);
+    // Fast retries first (500ms), then back off, cap at 5s
+    const delay = Math.min(500 * Math.pow(1.5, reconnectAttempts), 5000);
+    reconnectAttempts++;
+
+    // Silent reconnect — game UI stays untouched
+    reconnectTimer = setTimeout(connect, delay);
   });
 
   ws.addEventListener("error", (event) => {
@@ -210,6 +225,7 @@ function connect(): void {
         break;
 
       case "deckRequired":
+        fullLog = [];
         document
           .querySelectorAll(".action-modal-overlay, .player-action-overlay, .log-modal-overlay")
           .forEach((el) => el.remove());
@@ -224,7 +240,8 @@ function connect(): void {
 
       case "gameState":
         try {
-          renderGame(app, msg.state, msg.validActions, msg.log, msg.aiActing, msg.notification);
+          fullLog.push(...msg.log);
+          renderGame(app, msg.state, msg.validActions, fullLog, msg.aiActing, msg.notification);
         } catch (err) {
           console.error("Render error:", err);
         }
@@ -236,6 +253,15 @@ function connect(): void {
     }
   });
 }
+
+// --- Reconnect when tab regains focus (background tabs kill sockets) ---
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && ws && ws.readyState !== WebSocket.OPEN) {
+    console.log("Tab visible again — socket not open, reconnecting");
+    ws.close();
+    connect();
+  }
+});
 
 // --- Initial render ---
 

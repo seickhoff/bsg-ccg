@@ -83,6 +83,8 @@ interface GameRoom {
   continueResolve: (() => void) | null;
   /** Incremented on each game start/reset so stale processAITurns loops can detect they're outdated. */
   gameGeneration: number;
+  /** Track how many log entries have been broadcast so we only send new ones */
+  lastBroadcastLogLen: number;
 }
 
 const ROOM_CLEANUP_MS = 5 * 60 * 1000;
@@ -122,6 +124,7 @@ function createRoom(mode: GameMode): GameRoom {
     pendingNotification: null,
     continueResolve: null,
     gameGeneration: 0,
+    lastBroadcastLogLen: 0,
   };
   rooms.push(room);
   roomsById.set(room.id, room);
@@ -181,6 +184,9 @@ function sendToPlayer(ws: WebSocket, msg: ServerMessage): void {
 function broadcastGameState(room: GameRoom): void {
   if (!room.gameState) return;
 
+  const newLogEntries = room.gameState.log.slice(room.lastBroadcastLogLen);
+  room.lastBroadcastLogLen = room.gameState.log.length;
+
   for (let i = 0; i < 2; i++) {
     const slot = room.players[i];
     if (slot.type === "human" && slot.ws) {
@@ -196,7 +202,7 @@ function broadcastGameState(room: GameRoom): void {
         type: "gameState",
         state: view,
         validActions,
-        log: room.gameState.log.slice(-50),
+        log: newLogEntries,
         aiActing: room.aiProcessing || undefined,
         notification: room.pendingNotification || undefined,
       });
@@ -210,7 +216,7 @@ function broadcastGameState(room: GameRoom): void {
       type: "gameState",
       state: view,
       validActions: [],
-      log: room.gameState.log.slice(-50),
+      log: newLogEntries,
       aiActing: room.aiProcessing || undefined,
       notification: room.pendingNotification || undefined,
     });
@@ -228,6 +234,7 @@ function startGame(room: GameRoom): void {
   const base1 = registry.bases[deck1.baseId];
 
   room.gameGeneration++;
+  room.lastBroadcastLogLen = 0;
   room.gameState = createGame(base0, [...deck0.deckCardIds], base1, [...deck1.deckCardIds]);
 
   console.log(`Game started in ${room.id} (${room.mode})`);
@@ -651,6 +658,7 @@ wss.on("connection", (ws) => {
           room.players[1].deck = null;
           room.aiProcessing = false;
           room.pendingNotification = null;
+          room.lastBroadcastLogLen = 0;
           console.log(`Game reset in ${room.id}`);
 
           if (room.mode === "ai-vs-ai") {
