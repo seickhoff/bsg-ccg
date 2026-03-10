@@ -484,6 +484,7 @@ wss.on("connection", (ws) => {
             sendToPlayer(ws, { type: "joined", roomId: room.id });
             sendToPlayer(ws, { type: "cardRegistry", registry });
             if (room.gameState) {
+              room.lastBroadcastLogLen = 0;
               broadcastGameState(room);
             } else if (pIdx >= 0 && room.players[pIdx].type === "human") {
               sendToPlayer(ws, { type: "deckRequired" });
@@ -514,6 +515,7 @@ wss.on("connection", (ws) => {
             sendToPlayer(ws, { type: "joined", roomId: existing.id });
             sendToPlayer(ws, { type: "cardRegistry", registry });
             if (existing.gameState) {
+              existing.lastBroadcastLogLen = 0;
               broadcastGameState(existing);
             } else {
               sendToPlayer(ws, { type: "deckRequired" });
@@ -549,6 +551,7 @@ wss.on("connection", (ws) => {
               sendToPlayer(ws, { type: "joined", roomId: existing.id });
               sendToPlayer(ws, { type: "cardRegistry", registry });
               if (existing.gameState) {
+                existing.lastBroadcastLogLen = 0;
                 broadcastGameState(existing);
               } else if (reconnectedIdx >= 0 && existing.players[reconnectedIdx].type === "human") {
                 sendToPlayer(ws, { type: "deckRequired" });

@@ -217,6 +217,7 @@ function connect(): void {
       case "joined":
         currentRoomId = msg.roomId;
         sessionStorage.setItem("bsg-roomId", msg.roomId);
+        fullLog = [];
         break;
 
       case "cardRegistry":
