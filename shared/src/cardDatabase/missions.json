@@ -1139,7 +1139,7 @@
     "cost": null,
     "traits": ["Cylon"],
     "mysticValue": 2,
-    "cylonThreat": 3,
+    "cylonThreat": 2,
     "resolveText": "Resolve: 1 Cylon personnel.",
     "abilityText": "Cylon units with the Machine trait can't be used to resolve this mission.\n\nCommit and exhaust target personnel you control: Defeat target personnel."
   },
