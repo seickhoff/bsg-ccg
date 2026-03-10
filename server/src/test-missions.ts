@@ -1041,7 +1041,10 @@ header("Accused — Target personnel gains Cylon trait");
   assert(resolved, "Accused resolvable");
   // Zarek should have temporary Cylon trait
   const grants = s.players[1].temporaryTraitGrants?.[zarekId!];
-  assert(grants?.includes("Cylon"), `Zarek gains Cylon trait (grants: ${JSON.stringify(grants)})`);
+  assert(
+    !!grants?.includes("Cylon"),
+    `Zarek gains Cylon trait (grants: ${JSON.stringify(grants)})`,
+  );
   printLog(s);
 }
 

@@ -1520,7 +1520,7 @@ header("Anti-Radiation Dosage — Immune to power changes");
   const { state: s, played } = playEvent(state, 0, "anti-radiation");
   assert(played, "Anti-Radiation Dosage playable");
   const apolloId = s.players[0].zones.alert[0]?.cards[0]?.instanceId;
-  assert(apolloId && s.effectImmunity?.[apolloId] === "power", "Unit immune to power changes");
+  assert(!!(apolloId && s.effectImmunity?.[apolloId] === "power"), "Unit immune to power changes");
   printLog(s);
 }
 
@@ -1553,7 +1553,7 @@ header("Fallout Shelter — Immune to all effects");
   const { state: s, played } = playEvent(state, 0, "fallout shelter");
   assert(played, "Fallout Shelter playable");
   const apolloId = s.players[0].zones.alert[0]?.cards[0]?.instanceId;
-  assert(apolloId && s.effectImmunity?.[apolloId] === "all", "Unit immune to all effects");
+  assert(!!(apolloId && s.effectImmunity?.[apolloId] === "all"), "Unit immune to all effects");
   printLog(s);
 }
 
