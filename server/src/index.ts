@@ -518,7 +518,12 @@ wss.on("connection", (ws) => {
               existing.lastBroadcastLogLen = 0;
               broadcastGameState(existing);
             } else {
-              sendToPlayer(ws, { type: "deckRequired" });
+              // Send deckRequired to ALL human players who haven't submitted yet
+              for (const slot of existing.players) {
+                if (slot.type === "human" && slot.ws && !slot.deck) {
+                  sendToPlayer(slot.ws, { type: "deckRequired" });
+                }
+              }
             }
             return;
           }

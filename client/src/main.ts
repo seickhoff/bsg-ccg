@@ -47,6 +47,7 @@ let intentionalDisconnect = false;
 let reconnectAttempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let fullLog: LogItem[] = [];
+let pendingJoin: ClientMessage | null = null;
 
 function escapeHtml(str: string): string {
   return str
@@ -128,19 +129,41 @@ function renderSplash(): void {
           maxlength="20"
           autocomplete="off"
         />
-        <button id="splash-join" class="splash-btn">Launch</button>
+        <button id="splash-join" class="splash-btn">Play vs AI</button>
+        <button id="splash-pvp" class="splash-btn splash-btn-secondary">Play vs Player</button>
+        <button id="splash-join-code" class="splash-btn splash-btn-secondary">Join Game</button>
+      </div>
+      <div id="join-code-form" class="splash-form" style="display:none; margin-top: 0.5rem;">
+        <input
+          type="text"
+          id="splash-code-input"
+          class="splash-input"
+          placeholder="Enter join code"
+          maxlength="6"
+          autocomplete="off"
+          style="text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700;"
+        />
+        <button id="splash-code-submit" class="splash-btn">Join</button>
       </div>
     </div>
   `;
 
   const nameInput = document.getElementById("splash-name") as HTMLInputElement;
   const joinBtn = document.getElementById("splash-join") as HTMLButtonElement;
+  const pvpBtn = document.getElementById("splash-pvp") as HTMLButtonElement;
+  const joinCodeBtn = document.getElementById("splash-join-code") as HTMLButtonElement;
+  const joinCodeForm = document.getElementById("join-code-form") as HTMLDivElement;
+  const codeInput = document.getElementById("splash-code-input") as HTMLInputElement;
+  const codeSubmitBtn = document.getElementById("splash-code-submit") as HTMLButtonElement;
 
-  function doJoin(): void {
+  function saveName(): string {
     const name = nameInput.value.trim() || "Commander";
     localStorage.setItem("bsg-player-name", name);
     setPlayerName(name);
+    return name;
+  }
 
+  function showConnecting(): void {
     app.innerHTML = `
       <div class="waiting">
         <h1>BSG CCG</h1>
@@ -148,12 +171,49 @@ function renderSplash(): void {
         <p>Connecting to server...</p>
       </div>
     `;
-    connect();
   }
 
-  joinBtn.addEventListener("click", doJoin);
+  // Play vs AI
+  joinBtn.addEventListener("click", () => {
+    saveName();
+    pendingJoin = { type: "joinGame", mode: "vs-ai" };
+    showConnecting();
+    connect();
+  });
+
+  // Host PvP game
+  pvpBtn.addEventListener("click", () => {
+    saveName();
+    pendingJoin = { type: "joinGame", mode: "vs-player" };
+    showConnecting();
+    connect();
+  });
+
+  // Toggle join code input
+  joinCodeBtn.addEventListener("click", () => {
+    const visible = joinCodeForm.style.display !== "none";
+    joinCodeForm.style.display = visible ? "none" : "flex";
+    if (!visible) codeInput.focus();
+  });
+
+  // Submit join code
+  function submitCode(): void {
+    const code = codeInput.value.trim().toUpperCase();
+    if (!code) return;
+    saveName();
+    pendingJoin = { type: "joinGame", joinCode: code };
+    showConnecting();
+    connect();
+  }
+  codeSubmitBtn.addEventListener("click", submitCode);
+  codeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitCode();
+  });
+
   nameInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") doJoin();
+    if (e.key === "Enter") {
+      joinBtn.click();
+    }
   });
 
   nameInput.focus();
@@ -180,7 +240,17 @@ function connect(): void {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
-    sendMessage({ type: "joinGame", roomId: currentRoomId ?? undefined, mode: "vs-ai" });
+    if (pendingJoin) {
+      // User explicitly chose a mode/code — always use it
+      sendMessage(pendingJoin);
+      pendingJoin = null;
+    } else if (currentRoomId) {
+      // Reconnecting to existing room (tab refresh / background reconnect)
+      sendMessage({ type: "joinGame", roomId: currentRoomId });
+    } else {
+      // Fallback: vs-ai
+      sendMessage({ type: "joinGame", mode: "vs-ai" });
+    }
   });
 
   ws.addEventListener("close", (event) => {
@@ -235,6 +305,20 @@ function connect(): void {
         }
         break;
 
+      case "gameSetup":
+        if (msg.joinCode) {
+          app.innerHTML = `
+            <div class="waiting">
+              <h1>BSG CCG</h1>
+              <p>Share this code with your opponent:</p>
+              <div class="join-code-display">${escapeHtml(msg.joinCode)}</div>
+              <div class="spinner"></div>
+              <p>Waiting for opponent to join...</p>
+            </div>
+          `;
+        }
+        break;
+
       case "waitingForOpponent":
         renderWaiting(app);
         break;
@@ -250,6 +334,13 @@ function connect(): void {
 
       case "error":
         console.error("Server error:", msg.message);
+        // Show error on screen if we're on a waiting/connecting screen
+        if (app.querySelector(".waiting")) {
+          const p = app.querySelector(".waiting p:last-child");
+          if (p) p.textContent = msg.message;
+          const spinner = app.querySelector(".spinner");
+          if (spinner) spinner.remove();
+        }
         break;
     }
   });
