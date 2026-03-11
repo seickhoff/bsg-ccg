@@ -230,8 +230,9 @@ registerBaseAbility("ragnar-anchorage", {
 // --- Battlestar Galactica: +2 to challenging unit ---
 registerBaseAbility("battlestar-galactica", {
   usableIn: ["challenge"],
-  getTargets(state) {
+  getTargets(state, playerIndex) {
     if (!state.challenge) return [];
+    if (state.challenge.challengerPlayerIndex !== playerIndex) return [];
     return [state.challenge.challengerInstanceId];
   },
   resolve(state, _playerIndex, targetInstanceId, log) {

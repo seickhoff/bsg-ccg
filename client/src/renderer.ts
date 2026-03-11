@@ -200,7 +200,45 @@ const NOISE_LINES = new Set([
   "Extra execution phase begins (False Peace).",
 ]);
 
-function formatNotificationHtml(text: string, playerIndex: number): string {
+/** Replace known card names in escaped HTML with clickable preview links.
+ *  Accepts an optional defId list to scope the search; otherwise uses all known cards. */
+function linkifyCardNames(html: string, defIdList?: string[]): string {
+  const nameToDefId = new Map<string, string>();
+  if (defIdList) {
+    for (const defId of defIdList) {
+      const name = getCardName(defId);
+      if (name && name !== defId) nameToDefId.set(name, defId);
+    }
+  } else {
+    // Build from all known card/base defs
+    for (const defId of Object.keys(cardDefs)) {
+      const name = getCardName(defId);
+      if (name && name !== defId) nameToDefId.set(name, defId);
+    }
+    for (const defId of Object.keys(baseDefs)) {
+      const name = getCardName(defId);
+      if (name && name !== defId) nameToDefId.set(name, defId);
+    }
+  }
+  if (nameToDefId.size === 0) return html;
+  // Sort by length descending so longer names match first (e.g. "Apollo, Commander Air Group" before "Apollo")
+  const names = [...nameToDefId.keys()].sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const defId = nameToDefId.get(name)!;
+    const escaped = escapeHtml(name);
+    html = html.replace(
+      new RegExp(escaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+      `<span class="notif-card-link" data-def-id="${defId}">${escaped}</span>`,
+    );
+  }
+  return html;
+}
+
+function formatNotificationHtml(
+  text: string,
+  playerIndex: number,
+  cardDefIdList?: string[],
+): string {
   const rawLines = text.split("\n").map((line) => {
     // Strip timestamp prefix [HH:MM:SS]
     const stripped = line.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
@@ -292,7 +330,9 @@ function formatNotificationHtml(text: string, playerIndex: number): string {
       for (const item of s.items) {
         // Lines starting with \x00 are already escaped with badge HTML
         const html = item.startsWith("\x00") ? item.slice(1) : escapeHtml(item);
-        parts.push(`<div class="notif-item">${html}</div>`);
+        parts.push(
+          `<div class="notif-item"><span>${linkifyCardNames(html, cardDefIdList)}</span></div>`,
+        );
       }
       parts.push(`</div></div>`);
     }
@@ -425,7 +465,11 @@ function showActionModal(
     .join("");
 
   // Format notification as structured summary
-  const summaryHtml = formatNotificationHtml(notification.text, playerIndex);
+  const summaryHtml = formatNotificationHtml(
+    notification.text,
+    playerIndex,
+    notification.cardDefIds,
+  );
 
   const overlay = document.createElement("div");
   overlay.className = "action-modal-overlay";
@@ -446,6 +490,15 @@ function showActionModal(
     thumb.addEventListener("click", (e) => {
       e.stopPropagation();
       const defId = (thumb as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
+
+  // Wire inline card name links → card preview
+  overlay.querySelectorAll(".notif-card-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const defId = (link as HTMLElement).dataset.defId;
       if (defId) showCardPreview(defId);
     });
   });
@@ -519,7 +572,7 @@ function buildChallengeSummaryHtml(): string {
       const cls = e.isSub
         ? "challenge-history-entry challenge-history-sub"
         : "challenge-history-entry";
-      return `<div class="${cls}">${escapeHtml(e.text)}</div>`;
+      return `<div class="${cls}">${linkifyCardNames(escapeHtml(e.text))}</div>`;
     })
     .join("");
   return `<div class="challenge-history-summary">${lines}</div>`;
@@ -969,6 +1022,15 @@ function showPlayerActionModal(
       if (defId) showCardPreview(defId);
     });
   });
+
+  // Wire inline card name links → card preview
+  overlay.querySelectorAll(".notif-card-link").forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const defId = (link as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
 }
 
 /** Generic prompt modal for sub-actions (resource deploy, select mode, etc.).
@@ -1053,6 +1115,138 @@ function showPromptModal(
       e.stopPropagation();
       const defId = (thumb as HTMLElement).dataset.defId;
       if (defId) showCardPreview(defId);
+    });
+  });
+}
+
+/** Selection modal: shows selectable rows with thumbnails, optional grouping, and a confirm button.
+ *  Used by enterSelectMode / enterSelectModeInstance instead of highlighting cards on the board. */
+function showSelectModal(
+  prompt: string,
+  items: {
+    label: string;
+    onClick: () => void;
+    cancel?: boolean;
+    cardDefId?: string;
+    selectValue?: string;
+    selectGroup?: string;
+  }[],
+  onConfirm: (selectedValue: string) => void,
+): void {
+  dismissPlayerActionModal();
+
+  let selectedValue: string | null = null;
+
+  // Separate selectable items from action buttons (like Cancel)
+  const selectables = items.filter((b) => b.selectValue != null);
+  const actions = items.filter((b) => b.selectValue == null);
+
+  // Group selectable items by selectGroup
+  const groups = new Map<string, typeof selectables>();
+  for (const item of selectables) {
+    const g = item.selectGroup ?? "";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g)!.push(item);
+  }
+
+  // Build selectable rows HTML
+  let rowsHtml = "";
+  for (const [groupLabel, groupItems] of groups) {
+    if (groupLabel && groups.size > 1) {
+      rowsHtml += `<div class="select-group-label">${escapeHtml(groupLabel)}</div>`;
+    }
+    for (const item of groupItems) {
+      const card = item.cardDefId ? cardDefs[item.cardDefId] : null;
+      const base = item.cardDefId ? baseDefs[item.cardDefId] : null;
+      const image = card?.image ?? base?.image;
+      const isBase = !!base;
+      const thumbHtml = image
+        ? `<img src="${image}" alt="" class="select-row-thumb${isBase ? " card-clip-landscape" : ""}" data-def-id="${item.cardDefId}" />`
+        : "";
+      rowsHtml += `<div class="select-row" data-select-value="${escapeHtml(item.selectValue!)}">${thumbHtml}<span class="select-row-label">${escapeHtml(item.label)}</span><span class="select-row-radio"></span></div>`;
+    }
+  }
+
+  // Build action buttons (Cancel etc)
+  const actionsHtml = actions
+    .map(
+      (b, i) =>
+        `<button class="action-modal-btn${b.cancel ? " cancel-modal-btn" : ""}" data-action-index="${i}">${escapeHtml(b.label)}</button>`,
+    )
+    .join("");
+
+  const overlay = document.createElement("div");
+  overlay.className = "player-action-overlay";
+  overlay.innerHTML = `
+    <div class="action-modal">
+      <div class="action-modal-top">
+        <div class="action-modal-header-row">
+          <div class="action-modal-text">${escapeHtml(prompt)}</div>
+          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
+        </div>
+        <div class="select-rows-container">${rowsHtml}</div>
+        <div class="player-action-buttons">
+          <button class="action-modal-btn select-confirm-btn" disabled>Confirm</button>
+          ${actionsHtml}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const modal = overlay.querySelector(".action-modal") as HTMLElement;
+  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
+  const headerFab = document.getElementById("actions-fab");
+  const confirmBtn = overlay.querySelector(".select-confirm-btn") as HTMLButtonElement;
+
+  toggle.addEventListener("click", () => {
+    modal.style.display = "none";
+    if (headerFab) {
+      headerFab.style.display = "";
+      headerFab.onclick = () => {
+        modal.style.display = "";
+        headerFab.style.display = "none";
+      };
+    }
+  });
+
+  // Row selection
+  overlay.querySelectorAll(".select-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const val = (row as HTMLElement).dataset.selectValue;
+      if (!val) return;
+      // Deselect previous
+      overlay
+        .querySelectorAll(".select-row--selected")
+        .forEach((r) => r.classList.remove("select-row--selected"));
+      row.classList.add("select-row--selected");
+      selectedValue = val;
+      confirmBtn.disabled = false;
+    });
+  });
+
+  // Thumbnail clicks → full card preview (don't select row)
+  overlay.querySelectorAll(".select-row-thumb").forEach((thumb) => {
+    thumb.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const defId = (thumb as HTMLElement).dataset.defId;
+      if (defId) showCardPreview(defId);
+    });
+  });
+
+  // Confirm button
+  confirmBtn.addEventListener("click", () => {
+    if (selectedValue != null) {
+      onConfirm(selectedValue);
+    }
+  });
+
+  // Action buttons (Cancel etc)
+  overlay.querySelectorAll("[data-action-index]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt((btn as HTMLElement).dataset.actionIndex ?? "-1");
+      if (actions[idx]) actions[idx].onClick();
     });
   });
 }
@@ -1291,9 +1485,21 @@ function renderUnitStack(
   const image = cardDefs[topCard.defId]?.image;
 
   if (image) {
+    const displayImage = stack.exhausted ? "images/cards/bsgbetback-portrait.jpg" : image;
+    const displayAlt = stack.exhausted ? "Exhausted" : escapeHtml(name);
     return `
       <div class="unit-card-img ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
-        <img src="${image}" alt="${escapeHtml(name)}" class="unit-card-thumb" loading="lazy" />
+        <img src="${displayImage}" alt="${displayAlt}" class="unit-card-thumb" loading="lazy" />
+        <div class="unit-power-badge${buffClass}">${totalPower}</div>
+        ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
+      </div>
+    `;
+  }
+
+  if (stack.exhausted) {
+    return `
+      <div class="unit-card-img ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
+        <img src="images/cards/bsgbetback-portrait.jpg" alt="Exhausted" class="unit-card-thumb" loading="lazy" />
         <div class="unit-power-badge${buffClass}">${totalPower}</div>
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
       </div>
@@ -1302,7 +1508,7 @@ function renderUnitStack(
 
   const cylonThreat = getCardCylonThreat(topCard.defId);
   return `
-    <div class="card unit-card ${typeClass} ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
+    <div class="card unit-card ${typeClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
       <div class="card-name">${escapeHtml(name)}</div>
       <div class="card-stats">
         <span class="card-power${buffClass}">${powerDisplay}</span>
@@ -1610,42 +1816,28 @@ function handleActionClick(
         break;
       }
 
-      // Fallback: multi-card selection (legacy)
-      const handCards = container.querySelectorAll(".hand-card");
-      handCards.forEach((el) => {
-        const idx = parseInt((el as HTMLElement).dataset.cardIndex ?? "-1");
-        if (indices.includes(idx)) {
-          el.classList.add("selectable");
-          el.addEventListener("click", function handler() {
-            el.removeEventListener("click", handler);
-            handCards.forEach((el2) => el2.classList.remove("selectable"));
+      // Multi-card selection via select modal
+      enterSelectMode(
+        container,
+        "Select a card to deploy as a resource",
+        indices,
+        (idx) => {
+          const card = state.you.hand[idx];
+          if (!card) return;
+          const def = cardDefs[card.defId];
+          const hasResource = !!def?.resource;
 
-            const card = state.you.hand[idx];
-            if (!card) return;
-            const def = cardDefs[card.defId];
-            const hasResource = !!def?.resource;
-
-            if (hasResource && stackIndices.length > 0) {
-              showResourceDeployChoice(container, idx, stackIndices, state, validActions);
-            } else if (hasResource) {
-              onAction!({ type: "playToResource", cardIndex: idx, asSupply: false });
-            } else if (stackIndices.length > 0) {
-              promptSupplyChoice(idx, stackIndices, state, validActions, container);
-            }
-          });
-        }
-      });
-
-      showPromptModal("Select a card to deploy as a resource", [
-        {
-          label: "Cancel",
-          cancel: true,
-          onClick: () => {
-            handCards.forEach((el) => el.classList.remove("selectable"));
-            restoreActionsBar(container, validActions, state);
-          },
+          if (hasResource && stackIndices.length > 0) {
+            showResourceDeployChoice(container, idx, stackIndices, state, validActions);
+          } else if (hasResource) {
+            onAction!({ type: "playToResource", cardIndex: idx, asSupply: false });
+          } else if (stackIndices.length > 0) {
+            promptSupplyChoice(idx, stackIndices, state, validActions, container);
+          }
         },
-      ]);
+        validActions,
+        state,
+      );
       break;
     }
 
@@ -1882,7 +2074,14 @@ function handleActionClick(
       const units = action.selectableInstanceIds ?? [];
       const threats = action.selectableThreatIndices ?? [];
       const threatIdx = threats[0] ?? 0;
-      const unitButtons = units.map((unitId) => {
+
+      const selectItems: {
+        label: string;
+        onClick: () => void;
+        cancel?: boolean;
+        cardDefId?: string;
+        selectValue?: string;
+      }[] = units.map((unitId) => {
         const stack = findUnitStack(state.you.zones, unitId);
         const defId = stack?.cards[0]?.defId ?? "";
         const name = defId ? getCardName(defId) : unitId;
@@ -1890,25 +2089,26 @@ function handleActionClick(
         return {
           label: `${name} (${power})`,
           cardDefId: defId,
-          onClick: () => {
-            onAction!({
-              type: "challengeCylon",
-              challengerInstanceId: unitId,
-              threatIndex: threatIdx,
-            });
-          },
+          selectValue: unitId,
+          onClick: () => {},
         };
       });
-      showPromptModal("Select unit to challenge Cylon threat", [
-        ...unitButtons,
-        {
-          label: "Cancel",
-          cancel: true,
-          onClick: () => {
-            restoreActionsBar(container, validActions, state);
-          },
+
+      selectItems.push({
+        label: "Cancel",
+        cancel: true,
+        onClick: () => {
+          restoreActionsBar(container, validActions, state);
         },
-      ]);
+      });
+
+      showSelectModal("Select unit to challenge Cylon threat", selectItems, (unitId) => {
+        onAction!({
+          type: "challengeCylon",
+          challengerInstanceId: unitId,
+          threatIndex: threatIdx,
+        });
+      });
       break;
     }
 
@@ -1999,30 +2199,43 @@ function enterSelectMode(
   validActions?: ValidAction[],
   state?: PlayerGameView,
 ): void {
-  // Highlight selectable hand cards
-  const handCards = container.querySelectorAll(".hand-card");
-  handCards.forEach((el) => {
-    const idx = parseInt((el as HTMLElement).dataset.cardIndex ?? "-1");
-    if (selectableIndices.includes(idx)) {
-      el.classList.add("selectable");
-      el.addEventListener("click", () => {
-        callback(idx);
+  // Build selectable rows for hand cards
+  const buttons: {
+    label: string;
+    onClick: () => void;
+    cancel?: boolean;
+    cardDefId?: string;
+    selectValue?: string;
+    selectGroup?: string;
+  }[] = [];
+
+  if (state) {
+    for (const idx of selectableIndices) {
+      const card = state.you.hand[idx];
+      if (!card) continue;
+      const name = getCardName(card.defId);
+      buttons.push({
+        label: name,
+        cardDefId: card.defId,
+        selectValue: String(idx),
+        onClick: () => {},
       });
     }
+  }
+
+  buttons.push({
+    label: "Cancel",
+    cancel: true,
+    onClick: () => {
+      if (validActions && state) {
+        restoreActionsBar(container, validActions, state);
+      }
+    },
   });
 
-  showPromptModal(`${prompt} — tap a highlighted card`, [
-    {
-      label: "Cancel",
-      cancel: true,
-      onClick: () => {
-        handCards.forEach((el) => el.classList.remove("selectable"));
-        if (validActions && state) {
-          restoreActionsBar(container, validActions, state);
-        }
-      },
-    },
-  ]);
+  showSelectModal(prompt, buttons, (value) => {
+    callback(parseInt(value));
+  });
 }
 
 function enterSelectModeInstance(
@@ -2033,30 +2246,90 @@ function enterSelectModeInstance(
   validActions?: ValidAction[],
   state?: PlayerGameView,
 ): void {
-  // Highlight selectable board cards (text cards and image-based unit cards)
-  const allCards = container.querySelectorAll("[data-instance-id]");
-  allCards.forEach((el) => {
-    const id = (el as HTMLElement).dataset.instanceId;
-    if (id && selectableIds.includes(id)) {
-      el.classList.add("selectable");
-      el.addEventListener("click", () => {
-        callback(id);
-      });
+  // Build selectable rows from instance IDs, grouped by owner
+  const buttons: {
+    label: string;
+    onClick: () => void;
+    cancel?: boolean;
+    cardDefId?: string;
+    selectValue?: string;
+    selectGroup?: string;
+  }[] = [];
+
+  // Resolve each selectable instance to card info + owner
+  const yourIds = new Set<string>();
+  const oppIds = new Set<string>();
+
+  if (state) {
+    const collectIds = (zones: PlayerZones, target: Set<string>) => {
+      for (const stack of [...zones.alert, ...zones.reserve]) {
+        for (const card of stack.cards) target.add(card.instanceId);
+        if (stack.linkedMissions) {
+          for (const m of stack.linkedMissions) target.add(m.instanceId);
+        }
+      }
+      if (zones.persistentMissions) {
+        for (const m of zones.persistentMissions) target.add(m.instanceId);
+      }
+    };
+    collectIds(state.you.zones, yourIds);
+    collectIds(state.opponent.zones, oppIds);
+  }
+
+  const hasMultipleOwners =
+    selectableIds.some((id) => yourIds.has(id)) && selectableIds.some((id) => oppIds.has(id));
+
+  for (const instId of selectableIds) {
+    // Find card def from either player's zones
+    let defId = "";
+    if (state) {
+      const stack =
+        findUnitStack(state.you.zones, instId) ?? findUnitStack(state.opponent.zones, instId);
+      if (stack) {
+        defId = stack.cards[0]?.defId ?? "";
+      } else {
+        // Check linked missions and persistent missions
+        const findLinked = (zones: PlayerZones): string => {
+          for (const s of [...zones.alert, ...zones.reserve]) {
+            const linked = s.linkedMissions?.find((m) => m.instanceId === instId);
+            if (linked) return linked.defId;
+          }
+          const pm = zones.persistentMissions?.find((m) => m.instanceId === instId);
+          if (pm) return pm.defId;
+          return "";
+        };
+        defId = findLinked(state.you.zones) || findLinked(state.opponent.zones);
+      }
     }
+
+    const name = defId ? getCardName(defId) : instId;
+    let group = "";
+    if (hasMultipleOwners) {
+      group = yourIds.has(instId) ? "Your cards" : "Opponent cards";
+    }
+
+    buttons.push({
+      label: name,
+      cardDefId: defId || undefined,
+      selectValue: instId,
+      selectGroup: group,
+      onClick: () => {},
+    });
+  }
+
+  buttons.push({
+    label: "Cancel",
+    cancel: true,
+    onClick: () => {
+      if (validActions && state) {
+        restoreActionsBar(container, validActions, state);
+      }
+    },
   });
 
-  showPromptModal(`${prompt} — tap a highlighted card`, [
-    {
-      label: "Cancel",
-      cancel: true,
-      onClick: () => {
-        allCards.forEach((el) => el.classList.remove("selectable"));
-        if (validActions && state) {
-          restoreActionsBar(container, validActions, state);
-        }
-      },
-    },
-  ]);
+  showSelectModal(prompt, buttons, (value) => {
+    callback(value);
+  });
 }
 
 function setupHandScrollIndicators(container: HTMLElement): void {
