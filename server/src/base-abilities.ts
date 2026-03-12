@@ -130,14 +130,23 @@ function cardName(def: CardDef): string {
 // Base Ability Registrations
 // ============================================================
 
-// --- Colonial One: +1 influence ---
+// --- Colonial One: target player +1 influence ---
 registerBaseAbility("colonial-one", {
   usableIn: ["execution", "challenge"],
-  getTargets: () => null,
-  resolve(state, playerIndex, _target, log) {
-    state.players[playerIndex].influence += 1;
+  getTargets(state) {
+    const targets: string[] = [];
+    for (let i = 0; i < state.players.length; i++) {
+      targets.push(`player-${i}`);
+    }
+    return targets;
+  },
+  resolve(state, _playerIndex, targetId, log) {
+    if (!targetId || !targetId.startsWith("player-")) return;
+    const targetPlayerIndex = parseInt(targetId.split("-")[1], 10);
+    if (isNaN(targetPlayerIndex) || !state.players[targetPlayerIndex]) return;
+    state.players[targetPlayerIndex].influence += 1;
     log.push(
-      `Colonial One: Player ${playerIndex + 1} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
+      `Colonial One: Player ${targetPlayerIndex + 1} gains 1 influence. (Now ${state.players[targetPlayerIndex].influence})`,
     );
   },
 });
@@ -467,10 +476,17 @@ export function getBaseAbilityActions(
   // Generate one action per target
   const actions: ValidAction[] = [];
   for (const targetId of targets) {
-    const targetDef = findChallengeUnitDef(state, targetId);
-    const ownerIdx = findOwnerIndex(state, targetId);
-    const ownerTag = ownerIdx !== null && ownerIdx !== playerIndex ? "(opponent's) " : "";
-    const targetLabel = targetDef ? cardName(targetDef) : "unit";
+    let ownerTag = "";
+    let targetLabel: string;
+    if (targetId.startsWith("player-")) {
+      const idx = parseInt(targetId.split("-")[1], 10);
+      targetLabel = idx === playerIndex ? "yourself" : `Player ${idx + 1}`;
+    } else {
+      const targetDef = findChallengeUnitDef(state, targetId);
+      const ownerIdx = findOwnerIndex(state, targetId);
+      ownerTag = ownerIdx !== null && ownerIdx !== playerIndex ? "(opponent's) " : "";
+      targetLabel = targetDef ? cardName(targetDef) : "unit";
+    }
     actions.push({
       type: "playAbility",
       description: `${baseDef.title}: ${baseDef.abilityText.split(".")[0]} → ${ownerTag}${targetLabel}`,

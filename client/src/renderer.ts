@@ -167,6 +167,25 @@ function resourceBadgeHtml(defId: string): string {
   return `<span class="resource-inline-badge resource-inline-badge--${res}">${letter}</span>`;
 }
 
+function makeChoiceBadgeHtml(defId: string, state: PlayerGameView): string {
+  // If it matches a resource stack, show stack resource type + size
+  const stack = state.you.zones.resourceStacks.find((s) => s.topCard.defId === defId);
+  if (stack) {
+    const resName = getResourceName(stack.topCard.defId);
+    const total = 1 + stack.supplyCards.length;
+    const letter = resName ? resName.charAt(0).toUpperCase() : "?";
+    return `<span class="resource-inline-badge resource-inline-badge--${resName || "supply"}">${total}${letter}</span>`;
+  }
+  // Otherwise show card's deploy cost + power (for hand card choices)
+  const def = cardDefs[defId];
+  if (!def) return "";
+  let badges = costBadgeHtml(def.cost);
+  if (def.power != null) {
+    badges += `${badges ? " " : ""}<span class="resource-inline-badge resource-inline-badge--power">${def.power}</span>`;
+  }
+  return badges;
+}
+
 // ============================================================
 // Main Render
 // ============================================================
@@ -771,6 +790,16 @@ function showPlayerActionModal(
     headerText = `${playerName} — Execution phase${resSummary}`;
   }
 
+  // Override header for pending choices (all-makeChoice actions)
+  if (validActions.length > 0 && validActions.every((a) => a.type === "makeChoice")) {
+    const firstDefId = validActions[0].cardDefId;
+    const isStackChoice =
+      firstDefId && state.you.zones.resourceStacks.some((s) => s.topCard.defId === firstDefId);
+    headerText = isStackChoice
+      ? `${playerName} — Select a resource stack`
+      : `${playerName} — Select a supply card`;
+  }
+
   // During execution phase, hide disabled actions and group by card type
   const isExecution = state.phase === "execution" && !state.challenge;
   const displayActions = isExecution ? validActions.filter((a) => !a.disabled) : validActions;
@@ -820,6 +849,8 @@ function showPlayerActionModal(
         let badge = "";
         if (a.type === "challenge" && a.selectableInstanceIds?.length === 1) {
           badge = powerBadgeHtml(a.selectableInstanceIds[0], state.you.zones);
+        } else if (a.type === "makeChoice" && a.cardDefId) {
+          badge = makeChoiceBadgeHtml(a.cardDefId, state);
         } else if (def) {
           badge = costBadgeHtml(def.cost);
         }
@@ -843,9 +874,13 @@ function showPlayerActionModal(
         const i = validActions.indexOf(a);
         const disabledClass = a.disabled ? " action-modal-btn--disabled" : "";
         const thumbHtml = getActionThumbHtml(a);
-        // Add resource badge for deploy-to-resource actions
-        const badge =
-          a.type === "playToResource" && a.cardDefId ? resourceBadgeHtml(a.cardDefId) : "";
+        // Add resource badge for deploy-to-resource actions or resource stack choices
+        let badge = "";
+        if (a.type === "playToResource" && a.cardDefId) {
+          badge = resourceBadgeHtml(a.cardDefId);
+        } else if (a.type === "makeChoice" && a.cardDefId) {
+          badge = makeChoiceBadgeHtml(a.cardDefId, state);
+        }
         const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
         if (thumbHtml) {
           return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${labelHtml}</button>${thumbHtml}</div>`;
@@ -1483,6 +1518,11 @@ function renderUnitStack(
   const exhaustedClass = stack.exhausted ? "exhausted" : "";
   const stackSize = stack.cards.length;
   const image = cardDefs[topCard.defId]?.image;
+  const linkedMissions = stack.linkedMissions ?? [];
+  const linkedBadge =
+    linkedMissions.length > 0
+      ? `<div class="linked-mission-badge" data-linked-def-ids="${linkedMissions.map((m) => m.defId).join(",")}" title="${linkedMissions.map((m) => getCardName(m.defId)).join(", ")}">${linkedMissions.length}LM</div>`
+      : "";
 
   if (image) {
     const displayImage = stack.exhausted ? "images/cards/bsgbetback-portrait.jpg" : image;
@@ -1490,8 +1530,9 @@ function renderUnitStack(
     return `
       <div class="unit-card-img ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
         <img src="${displayImage}" alt="${displayAlt}" class="unit-card-thumb" loading="lazy" />
-        <div class="unit-power-badge${buffClass}">${totalPower}</div>
+        <div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
+        ${linkedBadge}
       </div>
     `;
   }
@@ -1500,8 +1541,9 @@ function renderUnitStack(
     return `
       <div class="unit-card-img ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
         <img src="images/cards/bsgbetback-portrait.jpg" alt="Exhausted" class="unit-card-thumb" loading="lazy" />
-        <div class="unit-power-badge${buffClass}">${totalPower}</div>
+        <div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
+        ${linkedBadge}
       </div>
     `;
   }
@@ -1515,6 +1557,7 @@ function renderUnitStack(
         ${cylonThreat > 0 ? `<span class="card-threat">${cylonThreat}</span>` : ""}
       </div>
       ${stackSize > 1 ? `<div class="card-stack-count">x${stackSize}</div>` : ""}
+      ${linkedBadge}
     </div>
   `;
 }
@@ -1614,6 +1657,19 @@ function attachEventListeners(
       if (el.classList.contains("selectable")) return;
       const defId = (el as HTMLElement).dataset.defId;
       if (defId) showCardPreview(defId);
+    });
+  });
+
+  // Linked mission badge tap-to-preview
+  container.querySelectorAll(".linked-mission-badge[data-linked-def-ids]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ids = (el as HTMLElement).dataset.linkedDefIds?.split(",") ?? [];
+      if (ids.length === 1) {
+        showCardPreview(ids[0]);
+      } else if (ids.length > 1) {
+        showCardPreviewNav(ids, 0);
+      }
     });
   });
 

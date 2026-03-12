@@ -133,6 +133,28 @@ __bsg_send({
 // Resolve → draw 2 cards to hand
 ```
 
+### Hunt For Tylium — "Supply card to chosen resource stack" (1 ship)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: ["BSG1-098", "BSG1-099"],
+      alert: ["BSG1-074", "BSG1-147"],
+      assets: ["BSG1-140"],
+      deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
+    },
+    player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Resolve → pick hand card → pick resource stack to supply
+```
+
 ### Press Junket — "Gain 2 influence" (1 ship)
 
 ```js
@@ -962,4 +984,452 @@ __bsg_send({
   },
 });
 // Resolve → attach to Hunting Raider → use ability: commit to force discard
+```
+
+---
+
+## Expedite Keyword
+
+### Sneak Attack — Expedite with excess persuasion
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      baseSupplyCards: 2,
+      hand: ["BSG1-102", "BSG1-043"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      hand: ["BSG1-098", "BSG1-099"],
+      alert: ["BSG1-147"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Colonial One (persuasion) + 2 supply cards = 3 persuasion
+// Play Billy Keikeya (BSG1-102, cost 2 persuasion) → 1 excess persuasion
+// Expedite triggers → Sneak Attack (BSG1-043, cost 1 persuasion) plays for free
+// Effect: "Commit all Fighters" — opponent's Viper (BSG1-147) should commit
+```
+
+---
+
+## Player Choice Tests (Items 1-5: Truly Missing Prompts)
+
+### 1. Downed Pilot — "Commit ship OR sacrifice personnel" (opponent chooses)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      baseSupplyCards: 1,
+      hand: ["BSG1-024"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-147", "BSG1-148", "BSG1-098"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Downed Pilot (cost 2 persuasion) → opponent must choose:
+// "Commit Viper 113", "Commit Viper 229", or "Sacrifice Apollo"
+// Should see a pendingChoice prompt — NOT auto-resolved
+```
+
+### 2. Still No Contact — "Commit personnel OR sacrifice personnel" (opponent chooses)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      baseSupplyCards: 1,
+      hand: ["BSG1-045"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-109", "BSG1-098"],
+      reserve: ["BSG1-140"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Still No Contact (cost 2 security) → opponent must choose:
+// "Commit Crashdown", "Commit Apollo", "Sacrifice Crashdown", "Sacrifice Apollo", "Sacrifice Zarek"
+// Alert personnel can be committed OR sacrificed; reserve can only be sacrificed
+```
+
+### 3. Them Or Us — "Sacrifice a ship" (player chooses which)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      hand: ["BSG1-050"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-098", "BSG1-147", "BSG1-148"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Them Or Us (cost 1 security) → target opponent's personnel (Apollo)
+// Then opponent must choose which ship to sacrifice: Viper 113 or Viper 229
+```
+
+### 4. Picking Sides — Already works for human players (AI-only fallback)
+
+### 5. Critical Component — "Exhaust a supply stack" (player chooses which)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG2-053", "BSG1-109", "BSG1-147"],
+      assets: ["BSG1-140", "BSG1-098"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-102"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Resolve Critical Component (1 Officer + 1 ship) → must choose which resource stack to exhaust
+// Has base + 2 assets = 3 stacks to choose from
+```
+
+---
+
+## Player Choice Tests (Items 6-17: Single-Option Prompt)
+
+### 6. Covering Fire — "Commit a unit" (even with 1 option)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: ["BSG2-010"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-147"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Covering Fire (cost 1 logistics) → opponent has 1 unit (Viper 113)
+// Should still prompt opponent to choose, not auto-commit
+```
+
+### 7. Distraction — "Commit a personnel" (even with 1 option)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      baseSupplyCards: 1,
+      hand: ["BSG1-023"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-098"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Distraction (cost 2 security) → opponent has 1 personnel (Apollo)
+// Should prompt opponent to choose, not auto-commit
+```
+
+### 8. Military Coup — "Exhaust a personnel" (even with 1 option)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      hand: ["BSG1-033"],
+      alert: ["BSG1-109"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-098"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Military Coup (cost 1 security) → you have 1 personnel (Crashdown)
+// Should prompt you to choose which personnel to exhaust, not auto-exhaust
+```
+
+### 9. Decoys — "Commit units (0 or more)" (even with 1 option)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      baseSupplyCards: 1,
+      hand: ["BSG1-021"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-147"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Decoys (cost 2 security) → opponent has 1 unit (Viper 113)
+// Should prompt: "Commit Viper 113" or "Done" — not auto-commit
+```
+
+### 10. Grounded — "Commit a ship OR commit all personnel" (even with 1 ship)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      baseSupplyCards: 2,
+      hand: ["BSG1-029"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-147", "BSG1-098"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Grounded (cost 3 persuasion) → opponent has 1 ship + 1 personnel
+// Choose "Commit a ship" → should still prompt which ship (even if only 1)
+```
+
+### 11. Hangar Deck Fire — "Sacrifice a ship OR supply card" (even with 1 ship)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      hand: ["BSG1-030"],
+      assets: ["BSG1-098"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-147"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Hangar Deck Fire (cost 2 logistics + 1 security)
+// Each player chooses: sacrifice a ship or a supply card
+// Even with 1 ship, should prompt the choice
+```
+
+### 12. Network Hacking — "Commit a Cylon OR all ships" (even with 1 Cylon)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      baseSupplyCards: 2,
+      hand: ["BSG1-034"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-130", "BSG1-147"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Network Hacking (cost 3 security) → opponent has 1 Cylon (Number Six) + 1 ship
+// Choose "Commit a Cylon" → should prompt which Cylon (even if only 1)
+```
+
+### 13. Setback — "Exhaust a unit" (even with 1 option)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      baseSupplyCards: 1,
+      hand: ["BSG1-041"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-098"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Setback (cost 2 security) → target opponent has 1 unit (Apollo)
+// Should prompt opponent to choose which unit to exhaust, not auto-exhaust
+```
+
+### 14. Suicide Bomber — "Sacrifice a Cylon personnel" (even with 1 option)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      baseSupplyCards: 1,
+      hand: ["BSG1-048"],
+      alert: ["BSG1-130"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-098"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Suicide Bomber (cost 2 security) → you have 1 Cylon personnel (Number Six)
+// Should prompt you to choose which Cylon to sacrifice, not auto-sacrifice
+```
+
+### 15. Painful Recovery — "Put a Cylon on top of deck" (even with 1 option)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      hand: ["BSG1-037"],
+      alert: ["BSG1-130"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-098"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Painful Recovery (cost 1 security) → you have 1 Cylon (Number Six)
+// Should prompt you to choose which Cylon to put on deck, not auto-pick
+```
+
+### 16. Crackdown — "Discard a card" (even with 1 card in hand)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      hand: ["BSG1-017"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      hand: ["BSG1-098"],
+      alert: ["BSG1-147"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Play Crackdown (cost 1 security) → opponent has 1 card in hand
+// Should prompt opponent to choose which card to discard, not auto-discard
+```
+
+### 17. Galen Tyrol, Crew Chief — "Ready a ship" (when entering play)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-006",
+      baseSupplyCards: 3,
+      hand: ["BSG2-109"],
+      reserve: ["BSG1-147"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-102"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// Flattop (logistics) + 3 supply cards = 4 logistics
+// Play Galen Tyrol, Crew Chief (cost 4 logistics)
+// Has 1 ship in reserve (Viper 113) → should prompt to ready it, not auto-ready
 ```

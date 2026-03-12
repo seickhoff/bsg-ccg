@@ -1642,21 +1642,30 @@ register("critical-component", {
       const missions = player.zones.persistentMissions ?? [];
       const mission = missions.find((m) => getCardDef(m.defId)?.abilityId === "critical-component");
       if (mission) mission.faceUp = false; // exhaust
-      // Exhaust a resource stack with supply cards
-      for (const stack of player.zones.resourceStacks) {
+      // Find eligible resource stacks (non-exhausted, has supply cards)
+      const eligible: { card: CardInstance; stackIndex: number }[] = [];
+      for (let i = 0; i < player.zones.resourceStacks.length; i++) {
+        const stack = player.zones.resourceStacks[i];
         if (!stack.exhausted && stack.supplyCards.length > 0) {
-          stack.exhausted = true;
-          break;
+          eligible.push({ card: stack.topCard, stackIndex: i });
         }
       }
-      // Grant extra action and cost reduction
-      player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
-      player.costReduction = {
-        persuasion: 2,
-        logistics: 2,
-        security: 2,
-      };
-      log.push("Critical Component: extra action granted, next card costs 2 less.");
+      if (eligible.length === 0) return;
+      if (eligible.length === 1) {
+        // Only one option — exhaust it directly
+        player.zones.resourceStacks[eligible[0].stackIndex].exhausted = true;
+        player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+        player.costReduction = { persuasion: 2, logistics: 2, security: 2 };
+        log.push("Critical Component: extra action granted, next card costs 2 less.");
+      } else {
+        // Multiple options — prompt player
+        state.pendingChoice = {
+          type: "critical-component-stack",
+          playerIndex,
+          cards: eligible.map((e) => e.card),
+          context: { stackIndices: eligible.map((e) => e.stackIndex) },
+        };
+      }
     },
   },
 });
@@ -3059,26 +3068,25 @@ registerPendingChoice("hunt-for-tylium-hand", {
       if (def) {
         actions.push({
           type: "makeChoice",
-          description: `Play ${helpers.cardName(def)} as supply`,
+          description: helpers.cardName(def),
           cardDefId: def.id,
         });
       }
     }
     return actions;
   },
-  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
-    const handIdx = player.hand.findIndex((c) => c.instanceId === chosenCard.instanceId);
-    if (handIdx >= 0) {
-      const [card] = player.hand.splice(handIdx, 1);
-      card.faceUp = false;
-      if (player.zones.resourceStacks.length > 0) {
-        player.zones.resourceStacks[0].supplyCards.push(card);
-      }
-      const def = getCardDef(chosenCard.defId);
-      log.push(`Hunt For Tylium: played ${helpers.cardName(def)} as supply card.`);
-    }
+    const stacks = player.zones.resourceStacks;
+    if (stacks.length === 0) return;
+    // Let player choose which resource stack to supply
+    state.pendingChoice = {
+      type: "hunt-for-tylium-stack",
+      playerIndex: choice.playerIndex,
+      cards: stacks.map((s) => s.topCard),
+      context: { handInstanceId: chosenCard.instanceId },
+    };
   },
   aiDecide(_choice, choiceActions) {
     let bestIdx = 0;
@@ -3095,6 +3103,44 @@ registerPendingChoice("hunt-for-tylium-hand", {
       }
     }
     return bestIdx;
+  },
+});
+
+registerPendingChoice("hunt-for-tylium-stack", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const defId = choice.cards[i].defId;
+      const def = cardRegistry[defId];
+      const baseDef = helpers.bases[defId];
+      const name = def ? helpers.cardName(def) : (baseDef?.title ?? defId);
+      actions.push({
+        type: "makeChoice",
+        description: `Supply to ${name}`,
+        cardDefId: defId,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, _state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const handInstanceId = ctx.handInstanceId as string;
+    const handIdx = player.hand.findIndex((c) => c.instanceId === handInstanceId);
+    if (handIdx < 0) return;
+    const stack = player.zones.resourceStacks[choiceIndex];
+    if (!stack) return;
+    const [card] = player.hand.splice(handIdx, 1);
+    card.faceUp = false;
+    stack.supplyCards.push(card);
+    const cardDef = getCardDef(card.defId);
+    const stackDefId = stack.topCard.defId;
+    const stackDef = cardRegistry[stackDefId];
+    const stackBaseDef = helpers.bases[stackDefId];
+    const stackName = stackDef ? helpers.cardName(stackDef) : (stackBaseDef?.title ?? stackDefId);
+    log.push(`Hunt For Tylium: played ${helpers.cardName(cardDef)} as supply under ${stackName}.`);
+  },
+  aiDecide(_choice, choiceActions) {
+    return Math.floor(Math.random() * choiceActions.length);
   },
 });
 
@@ -3307,5 +3353,38 @@ registerPendingChoice("prophetic-visions-arrange", {
       }
     }
     return worstIdx;
+  },
+});
+
+// --- Critical Component: Player chooses which resource stack to exhaust ---
+registerPendingChoice("critical-component-stack", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (const card of choice.cards) {
+      const baseDef = helpers.bases[card.defId];
+      const cardDef = baseDef ? null : getCardDef(card.defId);
+      const name = baseDef ? baseDef.title : cardDef ? helpers.cardName(cardDef) : "Resource stack";
+      actions.push({
+        type: "makeChoice",
+        description: `Exhaust ${name} stack`,
+        cardDefId: card.defId,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const stackIndices = ((choice.context ?? {}) as Record<string, unknown>)
+      .stackIndices as number[];
+    const stackIdx = stackIndices[choiceIndex];
+    const player = state.players[playerIndex];
+    if (stackIdx != null && player.zones.resourceStacks[stackIdx]) {
+      player.zones.resourceStacks[stackIdx].exhausted = true;
+    }
+    player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+    player.costReduction = { persuasion: 2, logistics: 2, security: 2 };
+    log.push("Critical Component: extra action granted, next card costs 2 less.");
+  },
+  aiDecide() {
+    return 0; // AI picks first eligible stack
   },
 });

@@ -70,10 +70,21 @@ export type PendingChoiceType =
   | "arrow-of-apollo-search"
   | "life-has-a-melody-search"
   | "hunt-for-tylium-hand"
+  | "hunt-for-tylium-stack"
   | "meet-new-boss-hand"
   | "meet-new-boss-field"
   | "article-23"
-  | "prophetic-visions-arrange";
+  | "prophetic-visions-arrange"
+  // challenge keywords
+  | "manipulate-choice"
+  // expedite
+  | "expedite-choice"
+  // opponent choices
+  | "downed-pilot-choice"
+  | "still-no-contact-choice"
+  // player ship/stack selection
+  | "them-or-us-ship"
+  | "critical-component-stack";
 
 export type Trait =
   | "Capital Ship"
@@ -212,6 +223,8 @@ export interface ChallengeState {
   // Re-entrant resolveChallenge checkpoints
   resolutionComplete?: boolean; // winner/loser already determined
   sixSeductressChecked?: boolean; // Six Seductress prompt already offered
+  manipulateChecked?: boolean; // Manipulate choice already offered
+  manipulateChosen?: boolean; // Player chose to use Manipulate (gain influence instead of opponent losing)
   atkMysticRerollChecked?: boolean; // Starbuck reroll already offered for attacker
   defMysticRerollChecked?: boolean; // Starbuck reroll already offered for defender
   tighXoReadied?: string; // instanceId of Tigh readied by challenge trigger
@@ -387,6 +400,8 @@ export interface DebugPlayerSetup {
   alert?: string[]; // card defIds to place in alert zone (each as a single-card UnitStack)
   reserve?: string[]; // card defIds to place in reserve zone
   deck?: string[]; // card defIds to place in deck (top-first order)
+  assets?: string[]; // card defIds to add as extra resource stacks (assets)
+  baseSupplyCards?: number; // number of supply cards to add under the base stack
   influence?: number; // override starting influence
 }
 

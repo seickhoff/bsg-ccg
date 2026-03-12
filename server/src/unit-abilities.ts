@@ -1592,12 +1592,7 @@ register("tyrol-etb", {
       }
     }
     if (ships.length === 0) return;
-    if (ships.length === 1) {
-      // Auto-ready the only ship
-      readyUnit(player, ships[0].instanceId, log);
-      return;
-    }
-    // Multiple ships — let player choose
+    // Let player choose which ship to ready
     log.push("Galen Tyrol: Choose a ship to ready.");
     state.pendingChoice = {
       type: "tyrol-etb-choice",
@@ -3172,6 +3167,31 @@ registerPendingChoice("six-seductress", {
       log.push("Number Six Seductress: declined.");
     }
     if (state.challenge) {
+      const h = getHelpers();
+      h.resumeChallenge(state, log, h.bases);
+    }
+  },
+  aiDecide() {
+    return 0;
+  },
+});
+
+registerPendingChoice("manipulate-choice", {
+  getActions() {
+    return [
+      { type: "makeChoice" as const, description: "Manipulate — gain influence" },
+      { type: "makeChoice" as const, description: "Normal — opponent loses influence" },
+    ];
+  },
+  resolve(_choice, choiceIndex, state, _player, _playerIndex, log) {
+    if (state.challenge) {
+      if (choiceIndex === 0) {
+        state.challenge.manipulateChosen = true;
+        log.push("Manipulate chosen — challenger will gain influence.");
+      } else {
+        state.challenge.manipulateChosen = false;
+        log.push("Manipulate declined — opponent will lose influence.");
+      }
       const h = getHelpers();
       h.resumeChallenge(state, log, h.bases);
     }

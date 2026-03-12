@@ -2431,6 +2431,87 @@ header("Only one mission per execution phase");
   printLog(s1);
 }
 
+// --- Hunt For Tylium — Pick card from hand, then pick resource stack ---
+header("Hunt For Tylium — Supply card to chosen resource stack");
+{
+  // Requires 1 ship to resolve
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-004",
+        hand: ["BSG1-098", "BSG1-099"], // two cards in hand to choose from
+        alert: [
+          "BSG1-074", // Hunt For Tylium (mission)
+          "BSG1-147", // Viper (ship — satisfies resolve requirement)
+        ],
+        deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
+      },
+      player1: {
+        baseId: "BSG1-007",
+        alert: ["BSG1-102"],
+        influence: 10,
+        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      },
+      phase: "execution",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+
+  // Add a second resource stack (asset) so player must choose
+  state.players[0].zones.resourceStacks.push({
+    topCard: { defId: "BSG1-140", instanceId: "asset-tylium", faceUp: true },
+    supplyCards: [],
+    exhausted: false,
+  });
+
+  const handBefore = state.players[0].hand.length;
+  const stacksBefore = state.players[0].zones.resourceStacks.length;
+  assert(stacksBefore === 2, `Player has 2 resource stacks`);
+
+  // Resolve the mission — triggers pending choice for hand card
+  const { state: s1, resolved } = resolveMissionAction(state, 0, "hunt for tylium");
+  assert(resolved, "Hunt For Tylium resolvable");
+  assert(!!s1.pendingChoice, "Pending choice for hand card");
+  assert(s1.pendingChoice?.type === "hunt-for-tylium-hand", "Choice type is hunt-for-tylium-hand");
+
+  // Show available hand card choices
+  const handActions = getValidActions(s1, 0, bases);
+  console.log("  Hand card choices:");
+  handActions.forEach((a, i) => console.log(`    [${i}] ${a.description}`));
+
+  // Pick first card from hand
+  const pickCard = applyAction(s1, 0, { type: "makeChoice", choiceIndex: 0 }, bases);
+  const s2 = pickCard.state;
+  assert(!!s2.pendingChoice, "Pending choice for resource stack");
+  assert(
+    s2.pendingChoice?.type === "hunt-for-tylium-stack",
+    "Choice type is hunt-for-tylium-stack",
+  );
+
+  // Show available stack choices
+  const stackActions = getValidActions(s2, 0, bases);
+  console.log("  Resource stack choices:");
+  stackActions.forEach((a, i) => console.log(`    [${i}] ${a.description}`));
+
+  // Pick second stack (the asset)
+  const pickStack = applyAction(s2, 0, { type: "makeChoice", choiceIndex: 1 }, bases);
+  const s3 = pickStack.state;
+
+  assert(!s3.pendingChoice, "No more pending choices");
+  assert(s3.players[0].hand.length === handBefore - 1, "One card removed from hand");
+  assert(
+    s3.players[0].zones.resourceStacks[1].supplyCards.length === 1,
+    "Supply card added to second resource stack (the asset)",
+  );
+  assert(
+    s3.players[0].zones.resourceStacks[0].supplyCards.length === 0,
+    "First resource stack has no supply cards",
+  );
+  printLog(s3);
+}
+
 // ============================================================
 // Summary
 // ============================================================

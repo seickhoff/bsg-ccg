@@ -100,6 +100,7 @@ import {
   setPendingChoiceHelpers,
   dispatchGetPendingChoiceActions,
   dispatchResolvePendingChoice,
+  registerPendingChoice,
 } from "./pending-choice-registry.js";
 import { setCylonThreatHelpers, applyRegisteredCylonThreat } from "./cylon-threat-handlers.js";
 // Card registry — populated at startup via setCardRegistry()
@@ -547,7 +548,20 @@ export function createDebugGame(scenario: DebugScenario, registry: CardRegistry)
       zones: {
         alert,
         reserve,
-        resourceStacks: [{ topCard: baseInstance, supplyCards: [], exhausted: false }],
+        resourceStacks: [
+          {
+            topCard: baseInstance,
+            supplyCards: Array.from({ length: setup.baseSupplyCards ?? 0 }, () =>
+              makeCardInstance(setup.baseId),
+            ),
+            exhausted: false,
+          },
+          ...(setup.assets ?? []).map((id: string) => ({
+            topCard: makeCardInstance(id),
+            supplyCards: [] as CardInstance[],
+            exhausted: false,
+          })),
+        ],
       },
       hand,
       deck,
@@ -1501,59 +1515,6 @@ export function applyAction(
           : payResourceCost(player, effectiveCost, bases, log);
       player.hand.splice(action.cardIndex, 1);
 
-      // Expedite: check if any card in hand has Expedite and can be paid with excess
-      const totalExcess =
-        excessResources.persuasion + excessResources.logistics + excessResources.security;
-      if (totalExcess > 0) {
-        for (let ei = player.hand.length - 1; ei >= 0; ei--) {
-          const expCard = player.hand[ei];
-          const expDef = getCardDef(expCard.defId);
-          if (!hasKeyword(expDef, "Expedite") || !expDef.cost) continue;
-          // Check if excess covers the Expedite card's cost
-          let canExpedite = true;
-          for (const [rt, amt] of Object.entries(expDef.cost) as [ResourceType, number][]) {
-            if ((excessResources[rt] ?? 0) < amt) {
-              canExpedite = false;
-              break;
-            }
-          }
-          if (!canExpedite) continue;
-          // Play the Expedite card for free using excess
-          player.hand.splice(ei, 1);
-          log.push(`Expedite! ${pLabel} plays ${cardName(expDef)} using excess resources.`);
-          if (isUnit(expDef) || isMission(expDef)) {
-            const expOverlay =
-              isUnit(expDef) &&
-              isSingular(expDef) &&
-              !checkMissionOverlayPrevention(s, playerIndex, expDef)
-                ? findOverlayTarget(player, expDef)
-                : null;
-            if (expOverlay) {
-              expOverlay.stack.cards.unshift(expCard);
-              expOverlay.stack.exhausted = false;
-              log.push(`${pLabel} overlays ${cardName(expDef)} (Expedite).`);
-            } else {
-              player.zones.reserve.push({ cards: [expCard], exhausted: false });
-            }
-            if (isUnit(expDef)) {
-              fireOnEnterPlay(s, playerIndex, expDef, expCard.instanceId, log);
-              if (expDef.type === "ship")
-                fireOnShipEnterPlay(s, playerIndex, expCard.instanceId, log);
-            }
-          } else if (expDef.type === "event") {
-            resolveEventEffect(s, playerIndex, expDef, log, undefined);
-            if (!s.skipEventDiscard) player.discard.push(expCard);
-            s.skipEventDiscard = undefined;
-            fireMissionOnEventPlay(s, playerIndex, log);
-          }
-          // Deduct from excess
-          for (const [rt, amt] of Object.entries(expDef.cost) as [ResourceType, number][]) {
-            excessResources[rt] -= amt;
-          }
-          break; // Only one Expedite per play
-        }
-      }
-
       if (isUnit(def) || isMission(def)) {
         // Singular units overlay onto existing stacks with the same title
         // We'll See You Again: singular cards don't overlay Cylon stacks
@@ -1597,6 +1558,39 @@ export function applyAction(
 
       resetConsecutivePasses(s);
       player.consecutivePasses = 0;
+
+      // Expedite: check if any card in hand has Expedite and can be paid with excess
+      if (!s.pendingChoice) {
+        const totalExcess =
+          excessResources.persuasion + excessResources.logistics + excessResources.security;
+        if (totalExcess > 0) {
+          const eligibleIndices: number[] = [];
+          for (let ei = 0; ei < player.hand.length; ei++) {
+            const expDef = getCardDef(player.hand[ei].defId);
+            if (!hasKeyword(expDef, "Expedite") || !expDef.cost) continue;
+            let canExp = true;
+            for (const [rt, amt] of Object.entries(expDef.cost) as [ResourceType, number][]) {
+              if ((excessResources[rt] ?? 0) < amt) {
+                canExp = false;
+                break;
+              }
+            }
+            if (canExp) eligibleIndices.push(ei);
+          }
+          if (eligibleIndices.length > 0) {
+            s.pendingChoice = {
+              type: "expedite-choice",
+              playerIndex,
+              cards: eligibleIndices.map((i) => player.hand[i]),
+              context: {
+                excessResources: { ...excessResources },
+                eligibleIndices,
+              },
+            };
+          }
+        }
+      }
+
       checkVictory(s, log);
       if (s.phase !== "gameOver") {
         if (s.pendingChoice) {
@@ -2741,6 +2735,28 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
         }
       }
 
+      // Manipulate choice: prompt player before resolving undefended challenge
+      if (!challenge.manipulateChecked) {
+        challenge.manipulateChecked = true;
+        const cDef = getCardDef(challengerStack.stack.cards[0].defId);
+        const hasManipulate =
+          getUndefendedEffect(cDef) === "gain-influence" ||
+          getMissionKeywordGrants(
+            s,
+            challengerStack.stack,
+            challenge.challengerPlayerIndex,
+          ).includes("Manipulate" as any);
+        if (hasManipulate) {
+          s.pendingChoice = {
+            type: "manipulate-choice",
+            playerIndex: challenge.challengerPlayerIndex,
+            cards: [challengerStack.stack.cards[0]],
+            context: {},
+          };
+          return; // wait for player choice
+        }
+      }
+
       const challengerPowerContext = { phase: s.phase, isChallenger: true };
       const sixBuff = challenge.sixSeductressBuff ?? 0;
       const undefendedPower = logPowerBreakdown(
@@ -2753,9 +2769,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
         challengerPowerContext,
         sixBuff ? { extraBuff: sixBuff, extraLabel: "Six Seductress" } : undefined,
       );
-      const challengerDef = getCardDef(challengerStack.stack.cards[0].defId);
-      const effect = getUndefendedEffect(challengerDef);
-      if (effect === "gain-influence") {
+      if (challenge.manipulateChosen) {
         if (s.preventInfluenceGain) {
           log.push("Standoff: influence gain prevented.");
         } else {
@@ -3813,3 +3827,71 @@ function checkVictory(s: GameState, log: LogItem[]): void {
     }
   }
 }
+
+// ============================================================
+// Expedite Pending Choice Handler
+// ============================================================
+
+registerPendingChoice("expedite-choice", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (const card of choice.cards) {
+      const def = getCardDef(card.defId);
+      actions.push({
+        type: "makeChoice" as const,
+        description: `Expedite: play ${cardName(def)}`,
+        cardDefId: def.id,
+      });
+    }
+    actions.push({ type: "makeChoice" as const, description: "Skip Expedite" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
+    // Last option is "Skip"
+    if (choiceIndex >= choice.cards.length) {
+      log.push(`Player ${playerIndex + 1} skips Expedite.`);
+      return;
+    }
+
+    const expCard = choice.cards[choiceIndex];
+    const expDef = getCardDef(expCard.defId);
+    const pLabel = `Player ${playerIndex + 1}`;
+
+    // Remove from hand
+    const handIdx = player.hand.findIndex((c) => c.instanceId === expCard.instanceId);
+    if (handIdx < 0) return;
+    player.hand.splice(handIdx, 1);
+
+    log.push(`Expedite! ${pLabel} plays ${cardName(expDef)} using excess resources.`);
+
+    if (isUnit(expDef) || isMission(expDef)) {
+      const expOverlay =
+        isUnit(expDef) &&
+        isSingular(expDef) &&
+        !checkMissionOverlayPrevention(state, playerIndex, expDef)
+          ? findOverlayTarget(player, expDef)
+          : null;
+      if (expOverlay) {
+        expOverlay.stack.cards.unshift(expCard);
+        expOverlay.stack.exhausted = false;
+        log.push(`${pLabel} overlays ${cardName(expDef)} (Expedite).`);
+      } else {
+        player.zones.reserve.push({ cards: [expCard], exhausted: false });
+      }
+      if (isUnit(expDef)) {
+        fireOnEnterPlay(state, playerIndex, expDef, expCard.instanceId, log);
+        if (expDef.type === "ship")
+          fireOnShipEnterPlay(state, playerIndex, expCard.instanceId, log);
+      }
+    } else if (expDef.type === "event") {
+      resolveEventEffect(state, playerIndex, expDef, log, undefined);
+      if (!state.skipEventDiscard) player.discard.push(expCard);
+      state.skipEventDiscard = undefined;
+      fireMissionOnEventPlay(state, playerIndex, log);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI always plays the first eligible Expedite card
+    return 0;
+  },
+});
