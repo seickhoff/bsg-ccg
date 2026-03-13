@@ -35,8 +35,8 @@ export interface CylonThreatHelpers {
 export interface CylonThreatHandler {
   /** Return true if this handler matches the given lowercase text. */
   matches(text: string): boolean;
-  /** Apply the effect to the game state. */
-  apply(state: GameState, def: CardDef, log: LogItem[]): void;
+  /** Apply the effect to the game state. skipPlayerIndex omits one player (e.g. Blockading Base Star). */
+  apply(state: GameState, def: CardDef, log: LogItem[], skipPlayerIndex?: number): void;
 }
 
 // ============================================================
@@ -63,10 +63,11 @@ export function applyRegisteredCylonThreat(
   def: CardDef,
   text: string,
   log: LogItem[],
+  skipPlayerIndex?: number,
 ): boolean {
   for (const handler of handlers) {
     if (handler.matches(text)) {
-      handler.apply(state, def, log);
+      handler.apply(state, def, log, skipPlayerIndex);
       return true;
     }
   }
@@ -80,8 +81,10 @@ export function applyRegisteredCylonThreat(
 // --- Discard ---
 registerCylonThreat({
   matches: (text) => text.includes("each player discards a card"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       if (p.hand.length > 0) {
         let worstIdx = 0;
         let worstVal = Infinity;
@@ -103,8 +106,9 @@ registerCylonThreat({
 // --- Influence loss ---
 registerCylonThreat({
   matches: (text) => text.includes("each player loses 1 influence"),
-  apply: (state, _def, log) => {
+  apply: (state, _def, log, skip) => {
     for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
       h.applyInfluenceLoss(state, pi, 1, log, h.bases);
     }
     log.push("  → Each player loses 1 influence.");
@@ -115,8 +119,10 @@ registerCylonThreat({
 registerCylonThreat({
   matches: (text) =>
     text.includes("each player puts the top card of his or her deck into his or her discard pile"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       if (p.deck.length > 0) {
         const card = p.deck.shift()!;
         p.discard.push(card);
@@ -129,8 +135,10 @@ registerCylonThreat({
 // --- Exhaust base ---
 registerCylonThreat({
   matches: (text) => text.includes("each player exhausts") && text.includes("base"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       const baseStack = p.zones.resourceStacks[0];
       if (baseStack && !baseStack.exhausted) baseStack.exhausted = true;
     }
@@ -142,8 +150,10 @@ registerCylonThreat({
 registerCylonThreat({
   matches: (text) =>
     text.includes("each player exhausts") && text.includes("asset") && text.includes("no supply"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (let si = 1; si < p.zones.resourceStacks.length; si++) {
         if (
           !p.zones.resourceStacks[si].exhausted &&
@@ -161,8 +171,10 @@ registerCylonThreat({
 // --- Exhaust asset ---
 registerCylonThreat({
   matches: (text) => text.includes("each player exhausts") && text.includes("asset"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (let si = 1; si < p.zones.resourceStacks.length; si++) {
         if (!p.zones.resourceStacks[si].exhausted) {
           p.zones.resourceStacks[si].exhausted = true;
@@ -177,8 +189,10 @@ registerCylonThreat({
 // --- Exhaust resource stack ---
 registerCylonThreat({
   matches: (text) => text.includes("each player exhausts") && text.includes("resource stack"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of p.zones.resourceStacks) {
         if (!stack.exhausted) {
           stack.exhausted = true;
@@ -193,8 +207,10 @@ registerCylonThreat({
 // --- Exhaust reserve unit ---
 registerCylonThreat({
   matches: (text) => text.includes("each player exhausts") && text.includes("reserve unit"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of p.zones.reserve) {
         if (!stack.exhausted && stack.cards[0]?.faceUp) {
           stack.exhausted = true;
@@ -209,8 +225,10 @@ registerCylonThreat({
 // --- Exhaust personnel ---
 registerCylonThreat({
   matches: (text) => text.includes("each player exhausts") && text.includes("personnel"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const zone of [p.zones.alert, p.zones.reserve]) {
         let found = false;
         for (const stack of zone) {
@@ -234,8 +252,10 @@ registerCylonThreat({
 registerCylonThreat({
   matches: (text) =>
     text.includes("each player commits") && text.includes("exhausts") && text.includes("personnel"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of p.zones.alert) {
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
@@ -255,8 +275,10 @@ registerCylonThreat({
 // --- Commit personnel ---
 registerCylonThreat({
   matches: (text) => text.includes("each player commits") && text.includes("personnel"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of [...p.zones.alert]) {
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
@@ -274,8 +296,10 @@ registerCylonThreat({
 // --- Commit cylon unit ---
 registerCylonThreat({
   matches: (text) => text.includes("each player commits") && text.includes("cylon unit"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of [...p.zones.alert]) {
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
@@ -293,8 +317,10 @@ registerCylonThreat({
 // --- Commit ship ---
 registerCylonThreat({
   matches: (text) => text.includes("each player commits") && text.includes("ship"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of [...p.zones.alert]) {
         if (stack.cards[0]?.faceUp) {
           const d = h.getCardDef(stack.cards[0].defId);
@@ -312,8 +338,10 @@ registerCylonThreat({
 // --- Commit unit (generic) ---
 registerCylonThreat({
   matches: (text) => text.includes("each player commits") && text.includes("unit"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of [...p.zones.alert]) {
         if (stack.cards[0]?.faceUp) {
           h.commitUnit(p, stack.cards[0].instanceId, log);
@@ -328,8 +356,10 @@ registerCylonThreat({
 // --- Sacrifice reserve ship ---
 registerCylonThreat({
   matches: (text) => text.includes("each player sacrifices") && text.includes("reserve ship"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (let i = 0; i < p.zones.reserve.length; i++) {
         const stack = p.zones.reserve[i];
         if (stack.cards[0]?.faceUp) {
@@ -349,8 +379,10 @@ registerCylonThreat({
 // --- Sacrifice reserve personnel ---
 registerCylonThreat({
   matches: (text) => text.includes("each player sacrifices") && text.includes("reserve personnel"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (let i = 0; i < p.zones.reserve.length; i++) {
         const stack = p.zones.reserve[i];
         if (stack.cards[0]?.faceUp) {
@@ -370,8 +402,10 @@ registerCylonThreat({
 // --- Sacrifice personnel (any zone) ---
 registerCylonThreat({
   matches: (text) => text.includes("each player sacrifices") && text.includes("personnel"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const zone of [p.zones.alert, p.zones.reserve]) {
         let found = false;
         for (let i = 0; i < zone.length; i++) {
@@ -396,8 +430,10 @@ registerCylonThreat({
 // --- Sacrifice unit (generic) ---
 registerCylonThreat({
   matches: (text) => text.includes("each player sacrifices") && text.includes("unit"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const zone of [p.zones.alert, p.zones.reserve]) {
         let found = false;
         for (let i = 0; i < zone.length; i++) {
@@ -431,8 +467,10 @@ registerCylonThreat({
 registerCylonThreat({
   matches: (text) =>
     text.includes("puts a card from") && text.includes("hand on top of") && text.includes("deck"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       if (p.hand.length > 0) {
         let worstIdx = 0;
         let worstVal = Infinity;
@@ -457,8 +495,10 @@ registerCylonThreat({
     text.includes("chooses a personnel card from") &&
     text.includes("discard") &&
     text.includes("hand"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (let i = 0; i < p.discard.length; i++) {
         const d = h.getCardDef(p.discard[i].defId);
         if (d.type === "personnel") {
@@ -475,8 +515,10 @@ registerCylonThreat({
 // --- Readies a ship ---
 registerCylonThreat({
   matches: (text) => text.includes("readies a ship"),
-  apply: (state, _def, log) => {
-    for (const p of state.players) {
+  apply: (state, _def, log, skip) => {
+    for (let pi = 0; pi < state.players.length; pi++) {
+      if (pi === skip) continue;
+      const p = state.players[pi];
       for (const stack of p.zones.reserve) {
         if (stack.cards[0]?.faceUp && !stack.exhausted) {
           const d = h.getCardDef(stack.cards[0].defId);

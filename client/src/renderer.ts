@@ -14,6 +14,7 @@ import type {
   ActionNotification,
   LogItem,
   ChallengeState,
+  Trait,
 } from "@bsg/shared";
 import { setPreviewRegistry, showCardPreview, showCardPreviewNav } from "./card-preview.js";
 import { ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, DRAG_THRESHOLD } from "./constants.js";
@@ -200,12 +201,8 @@ export function renderWaiting(container: HTMLElement): void {
   `;
 }
 
-function formatLogForDisplay(entry: string, yourPlayerIndex: number): string {
-  const youLabel = `Player ${yourPlayerIndex + 1}`;
-  const oppLabel = `Player ${1 - yourPlayerIndex + 1}`;
-  return entry
-    .replace(new RegExp(youLabel, "g"), playerName)
-    .replace(new RegExp(oppLabel, "g"), "Opponent");
+function formatLogForDisplay(entry: string, _yourPlayerIndex: number): string {
+  return entry;
 }
 
 const NOISE_LINES = new Set([
@@ -369,6 +366,7 @@ export function renderGame(
 ): void {
   selectMode = null;
   const isYourTurn = state.activePlayerIndex === state.you.playerIndex;
+  const opponentName = state.playerNames[1 - state.you.playerIndex];
   currentLog = log;
   currentPlayerIndex = state.you.playerIndex;
 
@@ -401,21 +399,21 @@ export function renderGame(
 
       <div class="influence-bar">
         <div class="influence you">${escapeHtml(playerName)}: ${state.you.influence} influence</div>
-        <div class="influence opp">Opponent: ${state.opponent.influence} influence</div>
+        <div class="influence opp">${escapeHtml(opponentName)}: ${state.opponent.influence} influence</div>
       </div>
 
       ${state.winner !== null ? renderWinner(state) : ""}
 
       <div class="boards">
         <div class="opponent-board">
-          <div class="board-label">OPPONENT</div>
-          ${renderOpponentZones(state.opponent, state.challenge)}
+          <div class="board-label">${escapeHtml(opponentName.toUpperCase())}</div>
+          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants)}
         </div>
 
         <div class="divider"></div>
 
         <div class="your-board">
-          <div class="board-label">${escapeHtml(playerName.toUpperCase())} (Player ${state.you.playerIndex + 1})</div>
+          <div class="board-label">${escapeHtml(playerName.toUpperCase())}</div>
           ${renderYourZones(state, validActions)}
         </div>
       </div>
@@ -792,12 +790,11 @@ function showPlayerActionModal(
 
   // Override header for pending choices (all-makeChoice actions)
   if (validActions.length > 0 && validActions.every((a) => a.type === "makeChoice")) {
-    const firstDefId = validActions[0].cardDefId;
-    const isStackChoice =
-      firstDefId && state.you.zones.resourceStacks.some((s) => s.topCard.defId === firstDefId);
-    headerText = isStackChoice
-      ? `${playerName} — Select a resource stack`
-      : `${playerName} — Select a supply card`;
+    if (state.choicePrompt) {
+      headerText = state.choicePrompt;
+    } else {
+      headerText = `${playerName} — Make a choice`;
+    }
   }
 
   // During execution phase, hide disabled actions and group by card type
@@ -892,7 +889,8 @@ function showPlayerActionModal(
 
   // Cylon phase status summary
   let cylonSummaryHtml = "";
-  if (state.phase === "cylon" && state.cylonThreats.length > 0) {
+  const isFleetJump = state.choiceType === "fleet-jump-sacrifice";
+  if (state.phase === "cylon" && (state.cylonThreats.length > 0 || isFleetJump)) {
     const threatLevel = computeThreatLevel(state);
     const threatList = state.cylonThreats
       .map(
@@ -900,13 +898,23 @@ function showPlayerActionModal(
           `<span class="cylon-summary-threat">${escapeHtml(getCardName(t.card.defId))} (${t.power})</span>`,
       )
       .join(", ");
-    cylonSummaryHtml = `
-      <div class="cylon-status-summary">
-        <div class="cylon-summary-line">Threat ${threatLevel} vs Fleet Defense ${state.fleetDefenseLevel} — <strong>Cylons broke through!</strong></div>
-        <div class="cylon-summary-line">${state.cylonThreats.length} threat${state.cylonThreats.length > 1 ? "s" : ""} active: ${threatList}</div>
-        <div class="cylon-summary-hint">Defeat threats with your units, or stand down and lose 1 influence.</div>
-      </div>
-    `;
+    if (isFleetJump) {
+      cylonSummaryHtml = `
+        <div class="cylon-status-summary" style="border-color:#c9a227;background:rgba(201,162,39,0.08);">
+          <div class="cylon-summary-line" style="color:#e8d44d;">⚡ <strong>Fleet Jump!</strong> All threats are Cylon — the fleet jumps away.</div>
+          <div class="cylon-summary-line">${state.cylonThreats.length > 0 ? `Threats: ${threatList}` : "Threats cleared."}</div>
+          <div class="cylon-summary-hint">Each player must sacrifice an asset or supply card.</div>
+        </div>
+      `;
+    } else {
+      cylonSummaryHtml = `
+        <div class="cylon-status-summary">
+          <div class="cylon-summary-line">Threat ${threatLevel} vs Fleet Defense ${state.fleetDefenseLevel} — <strong>Cylons broke through!</strong></div>
+          <div class="cylon-summary-line">${state.cylonThreats.length} threat${state.cylonThreats.length > 1 ? "s" : ""} active: ${threatList}</div>
+          <div class="cylon-summary-hint">Defeat threats with your units, or stand down and lose 1 influence.</div>
+        </div>
+      `;
+    }
   }
 
   const challengeSummaryHtml = state.challenge ? buildChallengeSummaryHtml() : "";
@@ -1321,7 +1329,11 @@ function formatPhase(phase: string, readyStep: number): string {
   }
 }
 
-function renderOpponentZones(opp: OpponentView, challenge: ChallengeState | null): string {
+function renderOpponentZones(
+  opp: OpponentView,
+  challenge: ChallengeState | null,
+  traitGrants?: Record<string, Trait[]>,
+): string {
   return `
     <div class="zone resource-zone">
       <div class="zone-label">Resource</div>
@@ -1333,14 +1345,14 @@ function renderOpponentZones(opp: OpponentView, challenge: ChallengeState | null
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge)).join("")}
+        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants)).join("")}
         ${opp.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge)).join("")}
+        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants)).join("")}
         ${opp.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1352,14 +1364,14 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge)).join("")}
+        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants)).join("")}
         ${state.you.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge)).join("")}
+        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants)).join("")}
         ${state.you.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1493,6 +1505,7 @@ function renderUnitStack(
   stack: UnitStack,
   isYours: boolean,
   challenge: ChallengeState | null = null,
+  traitGrants?: Record<string, Trait[]>,
 ): string {
   const topCard = stack.cards[0];
   if (!topCard) return "";
@@ -1523,6 +1536,10 @@ function renderUnitStack(
     linkedMissions.length > 0
       ? `<div class="linked-mission-badge" data-linked-def-ids="${linkedMissions.map((m) => m.defId).join(",")}" title="${linkedMissions.map((m) => getCardName(m.defId)).join(", ")}">${linkedMissions.length}LM</div>`
       : "";
+  const granted = traitGrants?.[topCard.instanceId];
+  const traitBadge = granted?.length
+    ? `<div class="trait-grant-badge" title="${granted.join(", ")}">${granted.join(", ")}</div>`
+    : "";
 
   if (image) {
     const displayImage = stack.exhausted ? "images/cards/bsgbetback-portrait.jpg" : image;
@@ -1533,6 +1550,7 @@ function renderUnitStack(
         <div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
+        ${traitBadge}
       </div>
     `;
   }
@@ -1544,6 +1562,7 @@ function renderUnitStack(
         <div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
+        ${traitBadge}
       </div>
     `;
   }
@@ -2006,6 +2025,33 @@ function handleActionClick(
     }
 
     case "playAbility": {
+      // Linked mission activations: sourceInstanceId is pre-set, selectableInstanceIds are targets
+      if (action.sourceInstanceId) {
+        const targets = action.selectableInstanceIds ?? [];
+        if (targets.length > 0) {
+          enterSelectModeInstance(
+            container,
+            "Select target for ability",
+            targets,
+            (targetId) => {
+              onAction!({
+                type: "playAbility",
+                sourceInstanceId: action.sourceInstanceId!,
+                targetInstanceId: targetId,
+              });
+            },
+            validActions,
+            state,
+          );
+        } else {
+          onAction({
+            type: "playAbility",
+            sourceInstanceId: action.sourceInstanceId,
+          });
+        }
+        break;
+      }
+
       const sources = action.selectableInstanceIds ?? [];
       if (sources.length === 1) {
         // If the server already provided a target, use it directly

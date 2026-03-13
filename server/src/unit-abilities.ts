@@ -514,7 +514,7 @@ register("boomer-saboteur", {
         state.players[i].influence -= loss;
       }
       log.push(
-        `Player ${i + 1} loses ${loss > 0 ? loss : "0 (prevented)"} influence. (Now ${state.players[i].influence})`,
+        `${state.playerNames[i as 0 | 1]} loses ${loss > 0 ? loss : "0 (prevented)"} influence. (Now ${state.players[i].influence})`,
       );
     }
   },
@@ -525,8 +525,15 @@ register("roslin-draw", {
   activation: { cost: "commit", usableIn: ["execution", "challenge"] },
   getTargets: () => null,
   resolve(state, playerIndex, _sid, _tid, log) {
-    drawCards(state.players[playerIndex], 1, log, `Player ${playerIndex + 1}`, state, playerIndex);
-    log.push(`Player ${playerIndex + 1} draws a card.`);
+    drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      `${state.playerNames[playerIndex as 0 | 1]}`,
+      state,
+      playerIndex,
+    );
+    log.push(`${state.playerNames[playerIndex as 0 | 1]} draws a card.`);
   },
 });
 
@@ -537,7 +544,7 @@ register("roslin-influence", {
   resolve(state, playerIndex, _sid, _tid, log) {
     state.players[playerIndex].influence += 1;
     log.push(
-      `Player ${playerIndex + 1} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
+      `${state.playerNames[playerIndex as 0 | 1]} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
     );
   },
 });
@@ -885,7 +892,7 @@ register("crashdown-recover", {
       player.hand.push(card);
       const def = getCardDef(card.defId);
       log.push(
-        `Player ${playerIndex + 1} recovers ${def ? cardName(def) : "a card"} from discard.`,
+        `${state.playerNames[playerIndex as 0 | 1]} recovers ${def ? cardName(def) : "a card"} from discard.`,
       );
     }
   },
@@ -908,7 +915,7 @@ register("baltar-recover", {
       player.hand.push(card);
       const def = getCardDef(card.defId);
       log.push(
-        `Player ${playerIndex + 1} recovers ${def ? cardName(def) : "personnel"} from discard.`,
+        `${state.playerNames[playerIndex as 0 | 1]} recovers ${def ? cardName(def) : "personnel"} from discard.`,
       );
     }
   },
@@ -931,7 +938,7 @@ register("cottle-recover", {
       player.hand.push(card);
       const def = getCardDef(card.defId);
       log.push(
-        `Player ${playerIndex + 1} recovers ${def ? cardName(def) : "personnel"} from discard.`,
+        `${state.playerNames[playerIndex as 0 | 1]} recovers ${def ? cardName(def) : "personnel"} from discard.`,
       );
     }
   },
@@ -958,6 +965,7 @@ register("boomer-search", {
       type: "boomer-search",
       playerIndex,
       cards: personnel,
+      prompt: "Boomer — choose a personnel card to add to your hand",
     };
   },
 });
@@ -1055,7 +1063,7 @@ register("starbuck-sabotage", {
     const stack = state.players[pIdx]?.zones.resourceStacks[sIdx];
     if (stack) {
       stack.exhausted = true;
-      log.push(`Player ${pIdx + 1}'s resource stack exhausted.`);
+      log.push(`${state.playerNames[pIdx as 0 | 1]}'s resource stack exhausted.`);
     }
   },
 });
@@ -1294,6 +1302,7 @@ register("godfrey-reveal", {
       playerIndex,
       cards: personnel,
       context: { opponentIndex: oppIndex },
+      prompt: "Godfrey — choose a personnel to discard from opponent's hand",
     };
   },
 });
@@ -1536,7 +1545,7 @@ register("billy-etb", {
   resolve(state, playerIndex, _sid, _tid, log) {
     state.players[playerIndex].influence += 1;
     log.push(
-      `Billy Keikeya: Player ${playerIndex + 1} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
+      `Billy Keikeya: ${state.playerNames[playerIndex as 0 | 1]} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
     );
   },
 });
@@ -1545,7 +1554,14 @@ register("billy-etb", {
 register("boomer-etb", {
   trigger: "onEnterPlay",
   resolve(state, playerIndex, _sid, _tid, log) {
-    drawCards(state.players[playerIndex], 1, log, `Player ${playerIndex + 1}`, state, playerIndex);
+    drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      `${state.playerNames[playerIndex as 0 | 1]}`,
+      state,
+      playerIndex,
+    );
     log.push("Boomer: Draw a card.");
   },
 });
@@ -1573,6 +1589,7 @@ register("zarek-etb", {
       type: "zarek-etb",
       playerIndex,
       cards: targets,
+      prompt: "Tom Zarek — choose a personnel to defeat",
     };
   },
 });
@@ -1598,6 +1615,7 @@ register("tyrol-etb", {
       type: "tyrol-etb-choice",
       playerIndex,
       cards: ships,
+      prompt: "Galen Tyrol — choose a ship to ready",
     };
   },
 });
@@ -1608,7 +1626,7 @@ register("helo-defeat", {
   resolve(state, playerIndex, _sid, _tid, log) {
     state.players[playerIndex].influence += 2;
     log.push(
-      `Helo: Player ${playerIndex + 1} gains 2 influence on defeat. (Now ${state.players[playerIndex].influence})`,
+      `Helo: ${state.playerNames[playerIndex as 0 | 1]} gains 2 influence on defeat. (Now ${state.players[playerIndex].influence})`,
     );
   },
 });
@@ -1819,6 +1837,7 @@ register("mining-ship-dig", {
       playerIndex: oppIndex, // opponent makes the choice
       cards: revealed,
       context: { ownerIndex: playerIndex },
+      prompt: "Mining Ship — choose a card to put on the bottom of opponent's deck",
     };
   },
 });
@@ -1841,6 +1860,7 @@ register("space-park-scry", {
       type: "space-park-scry",
       playerIndex,
       cards: [topCard],
+      prompt: "Space Park — keep on top or put on bottom of deck",
     };
   },
 });
@@ -1898,7 +1918,7 @@ register("colonial-one-influence", {
     if (isNaN(targetPlayerIndex) || !state.players[targetPlayerIndex]) return;
     state.players[targetPlayerIndex].influence += 1;
     log.push(
-      `Player ${targetPlayerIndex + 1} gains 1 influence (now ${state.players[targetPlayerIndex].influence}).`,
+      `${state.playerNames[targetPlayerIndex as 0 | 1]} gains 1 influence (now ${state.players[targetPlayerIndex].influence}).`,
     );
   },
 });
@@ -2095,6 +2115,7 @@ register("astral-queen-exhaust2", {
         type: "astral-queen-second",
         playerIndex,
         cards: secondTargets,
+        prompt: "Astral Queen — choose a second personnel to exhaust",
       };
     }
   },
@@ -2172,7 +2193,9 @@ register("scouting-raider-etb", {
       const def = getCardDef(topCard.defId);
       // Log privately — only the controlling player sees the actual card
       // In the shared log, we just note the action happened
-      log.push(`Scouting Raider: Player ${playerIndex + 1} looks at top of opponent's deck.`);
+      log.push(
+        `Scouting Raider: ${state.playerNames[playerIndex as 0 | 1]} looks at top of opponent's deck.`,
+      );
       // The actual card info is only useful in the log for the controlling player
       // Since we can't do private logs easily, we include it (both players see the game log)
       log.push(`  → ${def ? cardName(def) : "unknown card"}`);
@@ -2530,6 +2553,7 @@ export function fireOnChallengeEnd(
               playerIndex: challenge.challengerPlayerIndex,
               cards: [],
               context: { unitId: challenge.challengerInstanceId },
+              prompt: "Gaeta — ready this unit after challenging?",
             };
             return; // wait for player choice
           }
@@ -2547,6 +2571,7 @@ export function fireOnChallengeEnd(
               playerIndex: challenge.challengerPlayerIndex,
               cards: [],
               context: { unitId: challenge.challengerInstanceId },
+              prompt: "Helo — ready this unit after challenging?",
             };
             return; // wait for player choice
           }
@@ -2597,6 +2622,7 @@ export function fireOnShipEnterPlay(
           playerIndex,
           cards: [],
           context: { tyrolInstanceId: tc.instanceId, shipInstanceId },
+          prompt: "Galen Tyrol — commit to ready the entering ship?",
         };
         return;
       }

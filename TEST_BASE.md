@@ -245,22 +245,27 @@ __bsg_send({
     player0: {
       baseId: "BSG2-002",
       hand: [],
-      alert: ["BSG1-157"],
-      deck: ["BSG1-098", "BSG1-099", "BSG1-101", "BSG1-102"],
+      alert: ["BSG1-157", "BSG1-106"],
+      deck: ["BSG1-105", "BSG1-098", "BSG1-099", "BSG1-101"],
     },
     player1: {
       baseId: "BSG1-004",
       alert: ["BSG1-157"],
-      deck: ["BSG1-103", "BSG1-098", "BSG1-099"],
+      deck: ["BSG1-104", "BSG1-103", "BSG1-098", "BSG1-099"],
       influence: 10,
     },
-    phase: "execution",
+    phase: "cylon",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG1-157 = Hunting Raider (Cylon, threat 3) — two in play = threat 6
-// Pass execution to reach Cylon phase — when threats reveal, use Blockading Base Star
+// Alert: BSG1-157 = Hunting Raider (Cylon, threat 3), BSG1-106 = Centurion (Cylon, threat 3)
+// Threat level = 3+3+3 = 9 > fleet defense 6 → attack triggers
+// Deck top (revealed as threats):
+//   P0: BSG1-105 = Boomer Saboteur (threat 4, text: each player loses 1 influence)
+//   P1: BSG1-104 = Boomer Raptor Pilot (threat 1, text: each player discards a card)
+// Both revealed threats have red text → Blockading Base Star prompt appears
+// Choose which threat to block, then which player to protect
 ```
 
 ## 14. Colonial Heavy 798 — "Counts as one Civilian for mission requirements"
@@ -269,7 +274,7 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG2-004", hand: [], alert: ["BSG1-100", "BSG1-115"] },
+    player0: { baseId: "BSG2-004", hand: [], alert: ["BSG1-100", "BSG1-115", "BSG1-056"] },
     player1: { baseId: "BSG1-004", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,

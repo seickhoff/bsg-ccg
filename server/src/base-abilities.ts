@@ -57,8 +57,16 @@ export interface BaseAbilityHandler {
   /** Base can auto-exhaust to reduce influence loss (return reduced amount) */
   influenceLossReduction?: number;
 
-  /** Base can auto-exhaust to prevent the worst cylon threat text */
-  preventThreatText?: boolean;
+  /**
+   * Hook called when Cylon threats are revealed, before red text fires.
+   * Return true if the ability set up a pendingChoice (pauses cylon phase).
+   */
+  onCylonReveal?(
+    state: GameState,
+    playerIndex: number,
+    log: LogItem[],
+    bases: Record<string, BaseCardDef>,
+  ): boolean;
 }
 
 // --- Registry ---
@@ -146,7 +154,7 @@ registerBaseAbility("colonial-one", {
     if (isNaN(targetPlayerIndex) || !state.players[targetPlayerIndex]) return;
     state.players[targetPlayerIndex].influence += 1;
     log.push(
-      `Colonial One: Player ${targetPlayerIndex + 1} gains 1 influence. (Now ${state.players[targetPlayerIndex].influence})`,
+      `Colonial One: ${state.playerNames[targetPlayerIndex as 0 | 1]} gains 1 influence. (Now ${state.players[targetPlayerIndex].influence})`,
     );
   },
 });
@@ -167,7 +175,7 @@ registerBaseAbility("galactica", {
       state.players[oppIndex].influence -= adjusted;
     }
     log.push(
-      `Galactica: Player ${oppIndex + 1} loses influence. (Now ${state.players[oppIndex].influence})`,
+      `Galactica: ${state.playerNames[oppIndex as 0 | 1]} loses influence. (Now ${state.players[oppIndex].influence})`,
     );
   },
 });
@@ -189,10 +197,13 @@ registerBaseAbility("celestra", {
       type: "celestra",
       playerIndex,
       cards: [card1, card2],
+      prompt: "Celestra — choose which card to put on top of your deck",
     };
     const def1 = getCardDef(card1.defId);
     const def2 = getCardDef(card2.defId);
-    log.push(`Celestra: Player ${playerIndex + 1} looks at the top two cards of their deck.`);
+    log.push(
+      `Celestra: ${state.playerNames[playerIndex as 0 | 1]} looks at the top two cards of their deck.`,
+    );
   },
 });
 
@@ -418,10 +429,30 @@ registerBaseAbility("iht-colonial-one", {
 registerBaseAbility("blockading-base-star", {
   usableIn: [],
   trigger: "onCylonReveal",
-  preventThreatText: true,
   getTargets: () => null,
-  resolve() {
-    // Handled by fireCylonThreatRedText in game-engine.ts
+  resolve() {},
+  onCylonReveal(state, playerIndex, log, bases) {
+    // Find threats with red text
+    const threatsWithText: CardInstance[] = [];
+    for (const threat of state.cylonThreats) {
+      const def = cardRegistryRef[threat.card.defId];
+      if (def?.cylonThreatText) {
+        threatsWithText.push(threat.card);
+      }
+    }
+    if (threatsWithText.length === 0) return false;
+
+    const baseDef = bases[state.players[playerIndex].baseDefId];
+    log.push(`${baseDef.title}: Cylon threats revealed — choose whether to block threat text.`);
+    state.pendingChoice = {
+      type: "blockading-threat",
+      playerIndex,
+      cards: threatsWithText,
+      context: { baseOwnerIndex: playerIndex },
+      prompt: "Blockading Base Star — Exhaust to negate a threat's red text?",
+    };
+    state.cylonPhaseResumeNeeded = true;
+    return true;
   },
 });
 
@@ -480,7 +511,7 @@ export function getBaseAbilityActions(
     let targetLabel: string;
     if (targetId.startsWith("player-")) {
       const idx = parseInt(targetId.split("-")[1], 10);
-      targetLabel = idx === playerIndex ? "yourself" : `Player ${idx + 1}`;
+      targetLabel = idx === playerIndex ? "yourself" : state.playerNames[idx as 0 | 1];
     } else {
       const targetDef = findChallengeUnitDef(state, targetId);
       const ownerIdx = findOwnerIndex(state, targetId);
@@ -595,6 +626,33 @@ export function interceptInfluenceLoss(
   return reduced;
 }
 
+/**
+ * Dispatch onCylonReveal to any base with the trigger.
+ * Returns true if a pending choice was set up (cylon phase should pause).
+ */
+export function dispatchOnCylonReveal(
+  state: GameState,
+  log: LogItem[],
+  bases: Record<string, BaseCardDef>,
+): boolean {
+  for (let pi = 0; pi < state.players.length; pi++) {
+    const player = state.players[pi];
+    const baseDef = bases[player.baseDefId];
+    if (!baseDef?.abilityId) continue;
+
+    const handler = registry.get(baseDef.abilityId);
+    if (!handler?.onCylonReveal) continue;
+
+    const baseStack = player.zones.resourceStacks[0];
+    if (!baseStack || baseStack.exhausted) continue;
+
+    if (handler.onCylonReveal(state, pi, log, bases)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Check if a base ability is registered and usable in the given context. */
 export function isBaseAbilityUsableIn(
   abilityId: string,
@@ -667,6 +725,96 @@ function findOwnerIndex(state: GameState, instanceId: string): number | null {
 // Pending Choice Handlers
 // ============================================================
 
+// --- Blockading Base Star: choose threat to block ---
+registerPendingChoice("blockading-threat", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Negate: ${cardName(def)} — "${def.cylonThreatText}"`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    actions.push({ type: "makeChoice", description: "Decline — do not use ability" });
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    // Declined
+    if (choiceIndex >= choice.cards.length) {
+      log.push("Blockading Base Star: Declined.");
+      return;
+    }
+    // Exhaust the base
+    const player = state.players[playerIndex];
+    const baseStack = player.zones.resourceStacks[0];
+    if (baseStack) baseStack.exhausted = true;
+
+    // Find threat index
+    const chosenCard = choice.cards[choiceIndex];
+    const threatIndex = state.cylonThreats.findIndex(
+      (t) => t.card.instanceId === chosenCard.instanceId,
+    );
+    const def = getCardDef(chosenCard.defId);
+    log.push(`Blockading Base Star: Blocking ${def ? cardName(def) : "threat"}'s red text.`);
+
+    // Chain to player selection
+    const playerCards = state.players
+      .map((p) => p.zones.resourceStacks[0]?.topCard)
+      .filter(Boolean) as CardInstance[];
+    state.pendingChoice = {
+      type: "blockading-player",
+      playerIndex,
+      cards: playerCards,
+      context: { threatIndex },
+      prompt: `Blockading Base Star — Choose player to protect from "${def?.cylonThreatText ?? "red text"}"`,
+    };
+  },
+  aiDecide(choice, _choiceActions, state, playerIndex) {
+    // Pick the highest-power threat with red text
+    let bestIdx = 0;
+    let bestPower = -1;
+    for (let i = 0; i < choice.cards.length; i++) {
+      const threat = state.cylonThreats.find(
+        (t) => t.card.instanceId === choice.cards[i].instanceId,
+      );
+      if (threat && threat.power > bestPower) {
+        bestPower = threat.power;
+        bestIdx = i;
+      }
+    }
+    return bestIdx; // never decline if there are threats
+  },
+});
+
+// --- Blockading Base Star: choose player to protect ---
+registerPendingChoice("blockading-player", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      actions.push({
+        type: "makeChoice",
+        description: `Target ${state.playerNames[pi]}`,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const threatIndex = ctx.threatIndex as number;
+    state.cylonThreatImmunity = { threatIndex, playerIndex: choiceIndex };
+    log.push(
+      `Blockading Base Star: ${state.playerNames[choiceIndex]} is protected from threat text.`,
+    );
+  },
+  aiDecide(_choice, _choiceActions, _state, playerIndex) {
+    return playerIndex; // protect self
+  },
+});
+
 registerPendingChoice("celestra", {
   getActions(choice) {
     const actions: ValidAction[] = [];
@@ -682,7 +830,7 @@ registerPendingChoice("celestra", {
     }
     return actions;
   },
-  resolve(choice, choiceIndex, _state, player, playerIndex, log) {
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
     const chosenCard = choice.cards[choiceIndex];
     const otherCard = choice.cards[1 - choiceIndex];
     if (chosenCard && otherCard) {
@@ -692,7 +840,7 @@ registerPendingChoice("celestra", {
       player.deck.push(otherCard);
       if (chosenDef && otherDef) {
         log.push(
-          `Player ${playerIndex + 1} puts ${cardName(chosenDef)} on top and ${cardName(otherDef)} on the bottom.`,
+          `${state.playerNames[playerIndex as 0 | 1]} puts ${cardName(chosenDef)} on top and ${cardName(otherDef)} on the bottom.`,
         );
       }
     }

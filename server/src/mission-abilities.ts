@@ -432,6 +432,7 @@ register("arrow-of-apollo", {
       type: "arrow-of-apollo-search",
       playerIndex,
       cards: [...player.deck],
+      prompt: "Arrow Of Apollo — search your deck for a card",
     };
   },
 });
@@ -456,6 +457,7 @@ register("article-23", {
       type: "article-23",
       playerIndex,
       cards: personnel,
+      prompt: "Article 23 — sacrifice a personnel or lose 2 influence",
       context: {
         remainingPlayers: state.players.map((_, i) => i).filter((i) => i !== playerIndex),
       },
@@ -646,7 +648,7 @@ register("green-normal-human", {
         }
         owner.player.influence += 2;
         log.push(
-          `Green: ${helpers.cardName(def)} returned to hand. Player ${owner.playerIndex + 1} gains 2 influence.`,
+          `Green: ${helpers.cardName(def)} returned to hand. ${state.playerNames[owner.playerIndex as 0 | 1]} gains 2 influence.`,
         );
       }
     } else {
@@ -663,7 +665,7 @@ register("hand-of-god", {
       state.players[playerIndex],
       2,
       log,
-      `Player ${playerIndex + 1}`,
+      `${state.playerNames[playerIndex as 0 | 1]}`,
       state,
       playerIndex,
     );
@@ -688,6 +690,7 @@ register("hunt-for-tylium", {
       type: "hunt-for-tylium-hand",
       playerIndex,
       cards: [...player.hand],
+      prompt: "Hunt For Tylium — choose a card from hand to supply",
     };
   },
 });
@@ -725,7 +728,7 @@ register("investigation", {
         }
         helpers.applyInfluenceLoss(state, owner.playerIndex, 2, log, helpers.bases);
         log.push(
-          `Investigation: ${helpers.cardName(def)} put on top of deck. Player ${owner.playerIndex + 1} loses 2 influence.`,
+          `Investigation: ${helpers.cardName(def)} put on top of deck. ${state.playerNames[owner.playerIndex as 0 | 1]} loses 2 influence.`,
         );
       }
     } else {
@@ -793,6 +796,7 @@ register("life-has-a-melody", {
       type: "life-has-a-melody-search",
       playerIndex,
       cards: cylonCards,
+      prompt: "Life Has A Melody — choose a Cylon card from your deck",
     };
   },
 });
@@ -841,6 +845,7 @@ register("meet-the-new-boss", {
       type: "meet-new-boss-hand",
       playerIndex,
       cards: validHand,
+      prompt: "Meet The New Boss — choose a personnel from hand to exchange",
     };
   },
 });
@@ -960,7 +965,9 @@ register("picking-sides", {
           const def = getCardDef(top.defId);
           if (def?.type === "personnel" && def.title === chosenTitle) {
             helpers.defeatUnit(p, top.instanceId, log, state, pi);
-            log.push(`Picking Sides: Player ${pi + 1} sacrifices ${helpers.cardName(def)}.`);
+            log.push(
+              `Picking Sides: ${state.playerNames[pi as 0 | 1]} sacrifices ${helpers.cardName(def)}.`,
+            );
           }
         }
       }
@@ -1011,6 +1018,7 @@ register("pulling-rank", {
       type: "pulling-rank-1",
       playerIndex,
       cards: personnel,
+      prompt: "Pulling Rank — choose a unit to commit",
     };
   },
 });
@@ -1056,7 +1064,7 @@ register("red-evil-cylon", {
         }
         helpers.applyInfluenceLoss(state, owner.playerIndex, 2, log, helpers.bases);
         log.push(
-          `Red: ${helpers.cardName(def)} returned to hand. Player ${owner.playerIndex + 1} loses 2 influence.`,
+          `Red: ${helpers.cardName(def)} returned to hand. ${state.playerNames[owner.playerIndex as 0 | 1]} loses 2 influence.`,
         );
       }
     } else {
@@ -1126,7 +1134,7 @@ register("suspicions", {
   onResolve(state, playerIndex, _targetId, log) {
     const opIdx = 1 - playerIndex;
     helpers.applyInfluenceLoss(state, opIdx, 2, log, helpers.bases);
-    log.push(`Suspicions: Player ${opIdx + 1} loses 2 influence.`);
+    log.push(`Suspicions: ${state.playerNames[opIdx as 0 | 1]} loses 2 influence.`);
   },
 });
 
@@ -1226,6 +1234,7 @@ register("assassination", {
       type: "assassination-source",
       playerIndex,
       cards: sources,
+      prompt: "Assassination — choose a personnel to commit",
     };
   },
 });
@@ -1521,7 +1530,14 @@ register("multiple-contacts", {
       (m) => getCardDef(m.defId)?.abilityId === "multiple-contacts",
     );
     if (has) {
-      helpers.drawCards(player, 1, log, `Player ${playerIndex + 1}`, state, playerIndex);
+      helpers.drawCards(
+        player,
+        1,
+        log,
+        `${state.playerNames[playerIndex as 0 | 1]}`,
+        state,
+        playerIndex,
+      );
       log.push("Multiple Contacts: draw 1 card at ready phase start.");
     }
   },
@@ -1560,7 +1576,9 @@ register("tightening-the-noose", {
       const [card] = player.hand.splice(worstIdx, 1);
       player.discard.push(card);
     }
-    log.push(`Tightening The Noose: Player ${playerIndex + 1} discards ${drawCount} card(s).`);
+    log.push(
+      `Tightening The Noose: ${state.playerNames[playerIndex as 0 | 1]} discards ${drawCount} card(s).`,
+    );
   },
 });
 
@@ -1663,6 +1681,7 @@ register("critical-component", {
           type: "critical-component-stack",
           playerIndex,
           cards: eligible.map((e) => e.card),
+          prompt: "Critical Component — choose a resource stack to exhaust",
           context: { stackIndices: eligible.map((e) => e.stackIndex) },
         };
       }
@@ -1692,7 +1711,7 @@ register("cylon-betrayal", {
       const oppIndex = 1 - playerIndex;
       state.cylonPhaseFirstOverride = oppIndex;
       log.push(
-        `Cylon Betrayal: sacrificed. Player ${oppIndex + 1} goes first in next Cylon phase.`,
+        `Cylon Betrayal: sacrificed. ${state.playerNames[oppIndex as 0 | 1]} goes first in next Cylon phase.`,
       );
     },
   },
@@ -1843,7 +1862,6 @@ register("are-you-alive", {
       commitUnitLocal(state.players[playerIndex], sourceId, log);
       if (targetId) {
         helpers.applyPowerBuff(state, targetId, -2, log);
-        log.push("Are You Alive?: target unit gets -2 power.");
       }
     },
   },
@@ -1934,6 +1952,7 @@ register("prophetic-visions", {
         type: "prophetic-visions-arrange",
         playerIndex,
         cards: top2,
+        prompt: "Prophetic Visions — choose a card to put on top of opponent's deck",
         context: { opponentIndex: opIdx },
       };
     },
@@ -2489,8 +2508,8 @@ export function getMissionActivationActions(
       type: "playAbility",
       description: `${def.subtitle ?? def.abilityId}: ${def.abilityText?.substring(0, 60)}...`,
       cardDefId: def.id,
+      sourceInstanceId: mc.instanceId,
       selectableInstanceIds: targets ?? undefined,
-      targetInstanceId: mc.instanceId,
     });
   }
 
@@ -2517,8 +2536,8 @@ export function getMissionActivationActions(
             type: "playAbility",
             description: `${def.subtitle ?? def.abilityId} (linked): ${def.abilityText?.substring(0, 60)}...`,
             cardDefId: def.id,
+            sourceInstanceId: top.instanceId,
             selectableInstanceIds: targets ?? undefined,
-            targetInstanceId: top.instanceId,
           });
         }
       }
@@ -2772,6 +2791,7 @@ registerPendingChoice("pulling-rank-1", {
         type: "pulling-rank-2",
         playerIndex,
         cards: remaining,
+        prompt: "Pulling Rank — choose another unit to commit",
       };
     }
   },
@@ -2890,6 +2910,7 @@ registerPendingChoice("assassination-source", {
         type: "assassination-target",
         playerIndex,
         cards: targets,
+        prompt: "Assassination — choose a personnel to defeat",
       };
     }
   },
@@ -3085,6 +3106,7 @@ registerPendingChoice("hunt-for-tylium-hand", {
       type: "hunt-for-tylium-stack",
       playerIndex: choice.playerIndex,
       cards: stacks.map((s) => s.topCard),
+      prompt: "Hunt For Tylium — choose a resource stack to supply",
       context: { handInstanceId: chosenCard.instanceId },
     };
   },
@@ -3180,6 +3202,7 @@ registerPendingChoice("meet-new-boss-hand", {
         type: "meet-new-boss-field",
         playerIndex,
         cards: fieldMatches,
+        prompt: "Meet The New Boss — choose a personnel in play to exchange",
         context: { handInstanceId: chosenCard.instanceId },
       };
     } else {
@@ -3260,12 +3283,14 @@ registerPendingChoice("article-23", {
         const found = findUnitInAnyZone(player, chosenCard.instanceId);
         if (found) {
           helpers.defeatUnit(player, chosenCard.instanceId, log, state, playerIndex);
-          log.push(`Article 23: Player ${playerIndex + 1} sacrifices a personnel.`);
+          log.push(
+            `Article 23: ${state.playerNames[playerIndex as 0 | 1]} sacrifices a personnel.`,
+          );
         }
       }
     } else {
       helpers.applyInfluenceLoss(state, playerIndex, 2, log, helpers.bases);
-      log.push(`Article 23: Player ${playerIndex + 1} loses 2 influence.`);
+      log.push(`Article 23: ${state.playerNames[playerIndex as 0 | 1]} loses 2 influence.`);
     }
     if (remainingPlayers.length > 0) {
       const nextPlayer = remainingPlayers[0];
@@ -3284,6 +3309,7 @@ registerPendingChoice("article-23", {
         type: "article-23",
         playerIndex: nextPlayer,
         cards: nextPersonnel,
+        prompt: "Article 23 — sacrifice a personnel or lose 2 influence",
         context: { remainingPlayers: nextRemaining },
       };
     }

@@ -242,8 +242,8 @@ function getAllAlertUnits(player: PlayerState): string[] {
     .map((s) => s.cards[0].instanceId);
 }
 
-function pLabel(playerIndex: number): string {
-  return `Player ${playerIndex + 1}`;
+function pLabel(playerIndex: number, state?: GameState): string {
+  return state?.playerNames?.[playerIndex as 0 | 1] ?? `Player ${playerIndex + 1}`;
 }
 
 function getUnitDef(stack: UnitStack): CardDef | null {
@@ -465,6 +465,7 @@ register("covering-fire", {
       playerIndex,
       cards,
       context: { targetId },
+      prompt: "Covering Fire — choose a unit to commit for protection",
     };
   },
 });
@@ -497,7 +498,14 @@ register("lest-we-forget", {
     if (!targetId) return;
     helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Lest We Forget: target unit gets +2 power vs Cylon threat.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
+    helpers.drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      pLabel(playerIndex, state),
+      state,
+      playerIndex,
+    );
   },
 });
 
@@ -524,7 +532,14 @@ register("special-delivery", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Special Delivery: target personnel gets +1 power and Scramble.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
+    helpers.drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      pLabel(playerIndex, state),
+      state,
+      playerIndex,
+    );
   },
 });
 
@@ -550,7 +565,14 @@ register("strafing-run", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Strafing Run: target ship gets +1 power and Strafe.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
+    helpers.drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      pLabel(playerIndex, state),
+      state,
+      playerIndex,
+    );
   },
 });
 
@@ -766,6 +788,7 @@ register("distraction", {
       playerIndex,
       cards,
       context: { targetId },
+      prompt: "Distraction — choose a personnel to commit",
     };
   },
 });
@@ -810,6 +833,7 @@ register("military-coup", {
       playerIndex,
       cards,
       context: { targetId },
+      prompt: "Military Coup — choose a personnel to exhaust",
     };
   },
 });
@@ -916,6 +940,7 @@ register("decoys", {
       playerIndex,
       cards: [],
       context: { targetId, maxCommit: eligible.length },
+      prompt: "Decoys — choose how many units to commit",
     };
   },
 });
@@ -939,7 +964,7 @@ register("downed-pilot", {
       return d && d.type === "personnel";
     });
     if (alertShips.length === 0 && allPersonnel.length === 0) {
-      log.push(`Downed Pilot: ${pLabel(opp)} has no ships or personnel.`);
+      log.push(`Downed Pilot: ${pLabel(opp, state)} has no ships or personnel.`);
       return;
     }
     // Build choice cards: alert ships (commit) + all personnel (sacrifice)
@@ -951,6 +976,7 @@ register("downed-pilot", {
       playerIndex: opp,
       cards: choiceCards,
       context: { shipCount: alertShips.length },
+      prompt: "Downed Pilot — commit a ship or sacrifice a personnel",
     };
   },
 });
@@ -970,6 +996,7 @@ register("endless-task", {
       type: "endless-task-target",
       playerIndex,
       cards: [],
+      prompt: "Endless Task — choose a player to target",
     };
   },
 });
@@ -1003,6 +1030,7 @@ register("grounded", {
       playerIndex: opp,
       cards: [],
       context: { shipCount: alertShips.length, personnelCount: alertPersonnel.length },
+      prompt: "Grounded — commit a ship or commit all personnel",
     };
   },
 });
@@ -1019,7 +1047,7 @@ register("hangar-deck-fire", {
       return d && d.type === "ship";
     });
     if (!hasSupply && ships.length === 0) {
-      log.push(`Hangar Deck Fire: ${pLabel(opp)} has nothing to sacrifice.`);
+      log.push(`Hangar Deck Fire: ${pLabel(opp, state)} has nothing to sacrifice.`);
       return;
     }
     if (!hasSupply) {
@@ -1028,6 +1056,7 @@ register("hangar-deck-fire", {
         type: "hangar-deck-fire-ship",
         playerIndex: opp,
         cards: ships.map((s) => s.cards[0]),
+        prompt: "Hangar Deck Fire — choose a ship to sacrifice",
       };
       return;
     }
@@ -1037,7 +1066,7 @@ register("hangar-deck-fire", {
         if (stack.supplyCards.length > 0) {
           const supply = stack.supplyCards.pop()!;
           oppPlayer.discard.push(supply);
-          log.push(`Hangar Deck Fire: ${pLabel(opp)} sacrifices a supply card.`);
+          log.push(`Hangar Deck Fire: ${pLabel(opp, state)} sacrifices a supply card.`);
           return;
         }
       }
@@ -1048,6 +1077,7 @@ register("hangar-deck-fire", {
       type: "hangar-deck-fire-choice",
       playerIndex: opp,
       cards: [],
+      prompt: "Hangar Deck Fire — sacrifice a ship or a supply card",
     };
   },
 });
@@ -1089,6 +1119,7 @@ function networkHackingForPlayer(state: GameState, pi: number, log?: LogItem[]):
     playerIndex: pi,
     cards: [],
     context: { nextPlayer: pi + 1 },
+    prompt: "Network Hacking — commit a Cylon or commit all ships",
   };
 }
 
@@ -1109,6 +1140,7 @@ register("setback", {
       type: "setback-target",
       playerIndex,
       cards: [],
+      prompt: "Setback — choose a player to target",
     };
   },
 });
@@ -1128,7 +1160,7 @@ register("still-no-contact", {
       return d && d.type === "personnel";
     });
     if (allPersonnel.length === 0) {
-      log.push(`Still No Contact: ${pLabel(opp)} has no personnel.`);
+      log.push(`Still No Contact: ${pLabel(opp, state)} has no personnel.`);
       return;
     }
     // Build choice cards: alert personnel (commit) + all personnel (sacrifice)
@@ -1140,6 +1172,7 @@ register("still-no-contact", {
       playerIndex: opp,
       cards: choiceCards,
       context: { commitCount: alertPersonnel.length },
+      prompt: "Still No Contact — commit a personnel or sacrifice a personnel",
     };
   },
 });
@@ -1232,6 +1265,7 @@ register("suicide-bomber", {
       playerIndex,
       cards,
       context: { targetId },
+      prompt: "Suicide Bomber — choose a Cylon personnel to sacrifice",
     };
   },
 });
@@ -1269,6 +1303,7 @@ register("them-or-us", {
       playerIndex,
       cards: ships.map((s) => s.cards[0]),
       context: { targetId },
+      prompt: "Them or Us — choose a ship to sacrifice",
     };
   },
 });
@@ -1443,6 +1478,7 @@ register("painful-recovery", {
       playerIndex,
       cards,
       context: { targetId },
+      prompt: "Painful Recovery — choose a Cylon unit to return to deck",
     };
   },
 });
@@ -1599,7 +1635,7 @@ register("act-of-contrition", {
     const opp = 1 - playerIndex;
     const oppPlayer = state.players[opp];
     if (oppPlayer.hand.length === 0) {
-      log.push(`Act of Contrition: ${pLabel(opp)} has no cards in hand.`);
+      log.push(`Act of Contrition: ${pLabel(opp, state)} has no cards in hand.`);
       return;
     }
     const handNames = oppPlayer.hand
@@ -1608,12 +1644,13 @@ register("act-of-contrition", {
         return d ? helpers.cardName(d) : "unknown";
       })
       .join(", ");
-    log.push(`Act of Contrition: ${pLabel(opp)} reveals hand: ${handNames}`);
+    log.push(`Act of Contrition: ${pLabel(opp, state)} reveals hand: ${handNames}`);
     state.pendingChoice = {
       type: "act-of-contrition",
       playerIndex,
       cards: [...oppPlayer.hand], // copy of hand cards for choice display
       context: { opponentIndex: opp },
+      prompt: "Act of Contrition — choose a card to discard from opponent's hand",
     };
   },
 });
@@ -1658,7 +1695,7 @@ register("crackdown", {
     const opp = 1 - playerIndex;
     const oppPlayer = state.players[opp];
     if (oppPlayer.hand.length === 0) {
-      log.push(`Crackdown: ${pLabel(opp)} has no cards.`);
+      log.push(`Crackdown: ${pLabel(opp, state)} has no cards.`);
       return;
     }
     // Opponent chooses which card to discard
@@ -1666,6 +1703,7 @@ register("crackdown", {
       type: "crackdown-discard",
       playerIndex: opp,
       cards: [...oppPlayer.hand],
+      prompt: "Crackdown — choose a card to discard",
     };
   },
 });
@@ -1682,7 +1720,7 @@ register("cylon-computer-virus", {
         p.discard.push(card);
       }
       p.hand = [];
-      helpers.drawCards(p, startingHandSize, log, pLabel(pi), state, pi);
+      helpers.drawCards(p, startingHandSize, log, pLabel(pi, state), state, pi);
     }
     log.push("Cylon Computer Virus: all players discarded and redrew (starting hand size).");
   },
@@ -1703,6 +1741,7 @@ register("reformat", {
       playerIndex,
       cards: [],
       context: { maxDiscard: player.hand.length },
+      prompt: "Reformat — choose how many cards to discard and redraw",
     };
   },
 });
@@ -1718,7 +1757,7 @@ register("full-disclosure", {
           return d ? helpers.cardName(d) : "unknown";
         })
         .join(", ");
-      log.push(`Full Disclosure: ${pLabel(pi)} reveals: ${names || "(empty hand)"}`);
+      log.push(`Full Disclosure: ${pLabel(pi, state)} reveals: ${names || "(empty hand)"}`);
     }
   },
 });
@@ -1749,7 +1788,7 @@ register("resupply", {
       }
     }
     if (maxSupply > 0) {
-      helpers.drawCards(player, maxSupply, log, pLabel(playerIndex), state, playerIndex);
+      helpers.drawCards(player, maxSupply, log, pLabel(playerIndex, state), state, playerIndex);
       log.push(`Resupply: drew ${maxSupply} cards.`);
     } else {
       log.push("Resupply: no supply cards in unexhausted stacks.");
@@ -1765,7 +1804,7 @@ register("networked-computers", {
     let bestMystic = -1;
     for (let pi = 0; pi < state.players.length; pi++) {
       const mystic = helpers.revealMysticValue(state, pi, log);
-      log.push(`Networked Computers: ${pLabel(pi)} reveals mystic value ${mystic}.`);
+      log.push(`Networked Computers: ${pLabel(pi, state)} reveals mystic value ${mystic}.`);
       if (mystic > bestMystic) {
         bestMystic = mystic;
         bestPlayer = pi;
@@ -1790,7 +1829,7 @@ register("networked-computers", {
       winner.hand.push(recovered);
       const rDef = cardRegistry[recovered.defId];
       log.push(
-        `Networked Computers: ${pLabel(bestPlayer)} recovers ${rDef ? helpers.cardName(rDef) : "card"} from discard.`,
+        `Networked Computers: ${pLabel(bestPlayer, state)} recovers ${rDef ? helpers.cardName(rDef) : "card"} from discard.`,
       );
     }
   },
@@ -1827,7 +1866,7 @@ register("test-of-faith", {
       state.players[playerIndex].influence += 1;
     }
     log.push(
-      `Test of Faith: ${pLabel(playerIndex)} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
+      `Test of Faith: ${pLabel(playerIndex, state)} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
     );
   },
 });
@@ -1853,14 +1892,14 @@ register("high-stakes-game", {
       totals.push(count);
       if (count > bestTotal) bestTotal = count;
       log.push(
-        `High Stakes Game: ${pLabel(pi)} reveals hand. ${count} cards with highest mystic value.`,
+        `High Stakes Game: ${pLabel(pi, state)} reveals hand. ${count} cards with highest mystic value.`,
       );
     }
     for (let pi = 0; pi < state.players.length; pi++) {
       if (totals[pi] === bestTotal && !state.preventInfluenceGain) {
         state.players[pi].influence += 2;
         log.push(
-          `High Stakes Game: ${pLabel(pi)} gains 2 influence. (Now ${state.players[pi].influence})`,
+          `High Stakes Game: ${pLabel(pi, state)} gains 2 influence. (Now ${state.players[pi].influence})`,
         );
       }
     }
@@ -2019,7 +2058,14 @@ register("boarding-party", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Boarding Party: target ship gains Scramble.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
+    helpers.drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      pLabel(playerIndex, state),
+      state,
+      playerIndex,
+    );
   },
 });
 
@@ -2068,7 +2114,14 @@ register("everyone-green", {
       owner.player.temporaryTraitRemovals[targetId] = existing;
     }
     log.push("Everyone's Green: target Cylon personnel loses Cylon trait.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
+    helpers.drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      pLabel(playerIndex, state),
+      state,
+      playerIndex,
+    );
   },
 });
 
@@ -2093,7 +2146,14 @@ register("out-of-sight", {
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
     log.push("Out of Sight: target personnel gains Scramble.");
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
+    helpers.drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      pLabel(playerIndex, state),
+      state,
+      playerIndex,
+    );
   },
 });
 
@@ -2149,7 +2209,7 @@ register("cylons-look-like-humans", {
         p.discard.push(milled);
       }
       if (cylonCount > 0) {
-        log.push(`Cylons Look Like Humans: ${pLabel(pi)} mills ${cylonCount} cards.`);
+        log.push(`Cylons Look Like Humans: ${pLabel(pi, state)} mills ${cylonCount} cards.`);
       }
     }
   },
@@ -2290,7 +2350,14 @@ register("treacherous-toaster", {
         break;
       }
     }
-    helpers.drawCards(state.players[playerIndex], 1, log, pLabel(playerIndex), state, playerIndex);
+    helpers.drawCards(
+      state.players[playerIndex],
+      1,
+      log,
+      pLabel(playerIndex, state),
+      state,
+      playerIndex,
+    );
   },
 });
 
@@ -2798,6 +2865,7 @@ registerPendingChoice("suicide-bomber-cylon", {
         type: "suicide-bomber-target2",
         playerIndex,
         cards: secondTargets,
+        prompt: "Suicide Bomber — choose a second personnel to defeat",
       };
     }
   },
@@ -2960,6 +3028,7 @@ registerPendingChoice("setback-target", {
       type: "setback-exhaust",
       playerIndex: targetIdx,
       cards: units,
+      prompt: "Setback — choose a unit to exhaust",
     };
   },
   aiDecide(_choice, choiceActions) {
@@ -2991,7 +3060,9 @@ registerPendingChoice("setback-exhaust", {
       exhaustUnitLocal(p, chosenCard.instanceId);
     }
     const def = helpers.getCardDef(chosenCard.defId);
-    log.push(`Setback: ${pLabel(playerIndex)} exhausts ${def ? helpers.cardName(def) : "unit"}.`);
+    log.push(
+      `Setback: ${pLabel(playerIndex, state)} exhausts ${def ? helpers.cardName(def) : "unit"}.`,
+    );
   },
   aiDecide(_choice, choiceActions) {
     // AI picks lowest-power unit to exhaust
@@ -3057,6 +3128,7 @@ registerPendingChoice("endless-task-target", {
       type: "endless-task-unit",
       playerIndex: targetIdx,
       cards: units,
+      prompt: "Endless Task — choose a unit to commit or exhaust",
     };
   },
   aiDecide(_choice, choiceActions) {
@@ -3121,7 +3193,7 @@ registerPendingChoice("endless-task-unit", {
       commitUnitLocal(targetPlayer, chosen.instanceId, log);
     } else {
       exhaustUnitLocal(targetPlayer, chosen.instanceId);
-      log.push(`Endless Task: ${pLabel(playerIndex)} exhausts ${chosen.name}.`);
+      log.push(`Endless Task: ${pLabel(playerIndex, state)} exhausts ${chosen.name}.`);
     }
   },
   aiDecide(_choice, choiceActions) {
@@ -3164,6 +3236,7 @@ registerPendingChoice("grounded-choice", {
         type: "grounded-ship",
         playerIndex,
         cards: alertShips.map((s) => s.cards[0]),
+        prompt: "Grounded — choose a ship to commit",
       };
     } else {
       const personnel = p.zones.alert.filter((s) => {
@@ -3242,6 +3315,7 @@ registerPendingChoice("hangar-deck-fire-choice", {
           type: "hangar-deck-fire-ship",
           playerIndex,
           cards: ships.map((s) => s.cards[0]),
+          prompt: "Hangar Deck Fire — choose a ship to sacrifice",
         };
       }
     } else {
@@ -3250,7 +3324,7 @@ registerPendingChoice("hangar-deck-fire-choice", {
         if (stack.supplyCards.length > 0) {
           const supply = stack.supplyCards.pop()!;
           p.discard.push(supply);
-          log.push(`Hangar Deck Fire: ${pLabel(playerIndex)} sacrifices a supply card.`);
+          log.push(`Hangar Deck Fire: ${pLabel(playerIndex, state)} sacrifices a supply card.`);
           return;
         }
       }
@@ -3346,6 +3420,7 @@ registerPendingChoice("network-hacking-choice", {
         playerIndex,
         cards: cylons.map((s) => s.cards[0]),
         context: { nextPlayer },
+        prompt: "Network Hacking — choose a Cylon unit to commit",
       };
     } else {
       const ships = p.zones.alert.filter((s) => {
@@ -3435,7 +3510,7 @@ registerPendingChoice("crackdown-discard", {
       const removed = p.hand.splice(idx, 1)[0];
       p.discard.push(removed);
     }
-    log.push(`Crackdown: ${pLabel(playerIndex)} discards a card.`);
+    log.push(`Crackdown: ${pLabel(playerIndex, state)} discards a card.`);
   },
   aiDecide(_choice, choiceActions) {
     // AI discards lowest mystic value
@@ -3473,18 +3548,18 @@ registerPendingChoice("downed-pilot-choice", {
     }
     return actions;
   },
-  resolve(choice, choiceIndex, _state, _player, playerIndex, log) {
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
     const shipCount = ((choice.context ?? {}) as Record<string, unknown>).shipCount as number;
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
-    const p = _state.players[playerIndex];
+    const p = state.players[playerIndex];
     const def = helpers.getCardDef(chosenCard.defId);
     if (choiceIndex < shipCount) {
       commitUnitLocal(p, chosenCard.instanceId, log);
-      log.push(`Downed Pilot: ${pLabel(playerIndex)} commits ${helpers.cardName(def)}.`);
+      log.push(`Downed Pilot: ${pLabel(playerIndex, state)} commits ${helpers.cardName(def)}.`);
     } else {
       sacrificeUnit(p, chosenCard.instanceId, log);
-      log.push(`Downed Pilot: ${pLabel(playerIndex)} sacrifices ${helpers.cardName(def)}.`);
+      log.push(`Downed Pilot: ${pLabel(playerIndex, state)} sacrifices ${helpers.cardName(def)}.`);
     }
   },
   aiDecide(choice, choiceActions) {
@@ -3536,18 +3611,20 @@ registerPendingChoice("still-no-contact-choice", {
     }
     return actions;
   },
-  resolve(choice, choiceIndex, _state, _player, playerIndex, log) {
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
     const commitCount = ((choice.context ?? {}) as Record<string, unknown>).commitCount as number;
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
-    const p = _state.players[playerIndex];
+    const p = state.players[playerIndex];
     const def = helpers.getCardDef(chosenCard.defId);
     if (choiceIndex < commitCount) {
       commitUnitLocal(p, chosenCard.instanceId, log);
-      log.push(`Still No Contact: ${pLabel(playerIndex)} commits ${helpers.cardName(def)}.`);
+      log.push(`Still No Contact: ${pLabel(playerIndex, state)} commits ${helpers.cardName(def)}.`);
     } else {
       sacrificeUnit(p, chosenCard.instanceId, log);
-      log.push(`Still No Contact: ${pLabel(playerIndex)} sacrifices ${helpers.cardName(def)}.`);
+      log.push(
+        `Still No Contact: ${pLabel(playerIndex, state)} sacrifices ${helpers.cardName(def)}.`,
+      );
     }
   },
   aiDecide(choice, choiceActions) {
@@ -3600,7 +3677,7 @@ registerPendingChoice("them-or-us-ship", {
     if (!chosenCard) return;
     sacrificeUnit(player, chosenCard.instanceId, log);
     const def = helpers.getCardDef(chosenCard.defId);
-    log.push(`Them or Us: ${pLabel(playerIndex)} sacrifices ${helpers.cardName(def)}.`);
+    log.push(`Them or Us: ${pLabel(playerIndex, state)} sacrifices ${helpers.cardName(def)}.`);
     // Defeat target personnel
     const targetId = ((choice.context ?? {}) as Record<string, unknown>).targetId as string;
     if (targetId) {
@@ -3647,7 +3724,7 @@ registerPendingChoice("reformat-count", {
       const removed = player.hand.splice(idx, 1)[0];
       player.discard.push(removed);
     }
-    helpers.drawCards(player, discardCount, log, `Player ${playerIndex + 1}`, state, playerIndex);
+    helpers.drawCards(player, discardCount, log, pLabel(playerIndex, state), state, playerIndex);
     log.push(`Reformat: discarded ${discardCount} cards, drew ${discardCount}.`);
   },
   aiDecide(_choice, choiceActions) {

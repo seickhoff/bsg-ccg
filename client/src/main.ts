@@ -175,16 +175,16 @@ function renderSplash(): void {
 
   // Play vs AI
   joinBtn.addEventListener("click", () => {
-    saveName();
-    pendingJoin = { type: "joinGame", mode: "vs-ai" };
+    const name = saveName();
+    pendingJoin = { type: "joinGame", mode: "vs-ai", playerName: name };
     showConnecting();
     connect();
   });
 
   // Host PvP game
   pvpBtn.addEventListener("click", () => {
-    saveName();
-    pendingJoin = { type: "joinGame", mode: "vs-player" };
+    const name = saveName();
+    pendingJoin = { type: "joinGame", mode: "vs-player", playerName: name };
     showConnecting();
     connect();
   });
@@ -200,8 +200,8 @@ function renderSplash(): void {
   function submitCode(): void {
     const code = codeInput.value.trim().toUpperCase();
     if (!code) return;
-    saveName();
-    pendingJoin = { type: "joinGame", joinCode: code };
+    const name = saveName();
+    pendingJoin = { type: "joinGame", joinCode: code, playerName: name };
     showConnecting();
     connect();
   }

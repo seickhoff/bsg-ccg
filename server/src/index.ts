@@ -69,6 +69,7 @@ interface PlayerSlot {
   type: "human" | "ai";
   ws: WebSocket | null; // null for AI players
   deck: DeckSubmission | null;
+  name: string;
 }
 
 interface GameRoom {
@@ -115,8 +116,13 @@ function createRoom(mode: GameMode): GameRoom {
     mode,
     joinCode: generateJoinCode(),
     players: [
-      { type: isAiVsAi ? "ai" : "human", ws: null, deck: null },
-      { type: isVsAi || isAiVsAi ? "ai" : "human", ws: null, deck: null },
+      { type: isAiVsAi ? "ai" : "human", ws: null, deck: null, name: isAiVsAi ? "Spectre" : "" },
+      {
+        type: isVsAi || isAiVsAi ? "ai" : "human",
+        ws: null,
+        deck: null,
+        name: isVsAi || isAiVsAi ? "Spectre" : "",
+      },
     ],
     spectators: [],
     gameState: null,
@@ -235,7 +241,17 @@ function startGame(room: GameRoom): void {
 
   room.gameGeneration++;
   room.lastBroadcastLogLen = 0;
-  room.gameState = createGame(base0, [...deck0.deckCardIds], base1, [...deck1.deckCardIds]);
+  const playerNames: [string, string] = [
+    room.players[0].name || "Player 1",
+    room.players[1].name || "Player 2",
+  ];
+  room.gameState = createGame(
+    base0,
+    [...deck0.deckCardIds],
+    base1,
+    [...deck1.deckCardIds],
+    playerNames,
+  );
 
   console.log(`Game started in ${room.id} (${room.mode})`);
   broadcastGameState(room);
@@ -504,13 +520,25 @@ wss.on("connection", (ws) => {
               sendToPlayer(ws, { type: "error", message: "That room is not a PvP game" });
               return;
             }
-            // Find an open human slot
-            const openIdx = existing.players.findIndex((s) => s.type === "human" && !s.ws);
+            // Find an open human slot (treat stale/closing sockets as empty)
+            const openIdx = existing.players.findIndex((s) => {
+              if (s.type !== "human") return false;
+              if (!s.ws) return true;
+              if (s.ws.readyState !== WebSocket.OPEN) {
+                wsRoomMap.delete(s.ws);
+                wsPlayerIndex.delete(s.ws);
+                s.ws.terminate();
+                s.ws = null;
+                return true;
+              }
+              return false;
+            });
             if (openIdx === -1) {
               sendToPlayer(ws, { type: "error", message: "Room is full" });
               return;
             }
             assignWsToRoom(ws, existing, openIdx);
+            existing.players[openIdx].name = msg.playerName || "Commander";
             console.log(`Player 2 joined PvP room ${existing.id} (code ${code})`);
             sendToPlayer(ws, { type: "joined", roomId: existing.id });
             sendToPlayer(ws, { type: "cardRegistry", registry });
@@ -532,10 +560,21 @@ wss.on("connection", (ws) => {
           if (msg.roomId) {
             const existing = roomsById.get(msg.roomId);
             if (existing) {
-              // Find which slot this player was in
+              // Find which slot this player was in.
+              // Check for slots where ws is null OR the old ws is no longer open
+              // (handles race where close event hasn't fired yet through proxy).
               let reconnectedIdx = -1;
               for (let i = 0; i < 2; i++) {
-                if (existing.players[i].type === "human" && !existing.players[i].ws) {
+                if (existing.players[i].type !== "human") continue;
+                const oldWs = existing.players[i].ws;
+                if (!oldWs || oldWs.readyState !== WebSocket.OPEN) {
+                  // Clean up the stale socket if present
+                  if (oldWs) {
+                    wsRoomMap.delete(oldWs);
+                    wsPlayerIndex.delete(oldWs);
+                    existing.players[i].ws = null;
+                    oldWs.terminate();
+                  }
                   reconnectedIdx = i;
                   break;
                 }
@@ -576,6 +615,7 @@ wss.on("connection", (ws) => {
           } else {
             // Human is player 0
             assignWsToRoom(ws, room, 0);
+            room.players[0].name = msg.playerName || "Commander";
           }
 
           console.log(`Player joined ${room.id} (mode: ${mode}, code: ${room.joinCode})`);
@@ -691,11 +731,13 @@ wss.on("connection", (ws) => {
             return;
           }
 
-          // Leave old room if any
+          // Capture player name before leaving old room
+          let debugPlayerName = "Commander";
           if (wsRoomMap.has(ws)) {
             const oldRoom = wsRoomMap.get(ws)!;
             const oldIdx = wsPlayerIndex.get(ws);
             if (oldIdx !== undefined && oldIdx >= 0) {
+              debugPlayerName = oldRoom.players[oldIdx].name || debugPlayerName;
               oldRoom.players[oldIdx].ws = null;
             } else {
               const specIdx = oldRoom.spectators.indexOf(ws);
@@ -706,13 +748,18 @@ wss.on("connection", (ws) => {
           }
 
           const debugRoom = createRoom("vs-ai");
+          debugRoom.players[0].name = debugPlayerName;
           assignWsToRoom(ws, debugRoom, 0);
 
           sendToPlayer(ws, { type: "joined", roomId: debugRoom.id });
           sendToPlayer(ws, { type: "cardRegistry", registry });
 
           try {
-            debugRoom.gameState = createDebugGame(msg.scenario, registry);
+            const debugNames: [string, string] = [
+              debugRoom.players[0].name || "Player 1",
+              debugRoom.players[1].name || "Player 2",
+            ];
+            debugRoom.gameState = createDebugGame(msg.scenario, registry, debugNames);
             // Set up AI deck slot so AI can respond
             debugRoom.players[1].deck = buildAIDeck(registry);
             debugRoom.players[0].deck = { baseId: msg.scenario.player0.baseId, deckCardIds: [] };

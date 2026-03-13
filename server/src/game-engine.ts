@@ -35,6 +35,7 @@ import {
   exhaustColonialHeavy798,
   getBaseAbilityHandler,
   setBaseAbilityCardRegistry,
+  dispatchOnCylonReveal,
 } from "./base-abilities.js";
 import {
   getUnitAbilityActions,
@@ -98,6 +99,7 @@ import {
 } from "./mission-abilities.js";
 import {
   setPendingChoiceHelpers,
+  getHelpers,
   dispatchGetPendingChoiceActions,
   dispatchResolvePendingChoice,
   registerPendingChoice,
@@ -135,7 +137,7 @@ export function setCardRegistry(
     applyInfluenceLoss,
     revealMysticValue(state: GameState, playerIndex: number, log: LogItem[]): number {
       const player = state.players[playerIndex];
-      const result = revealMysticValue(player, log, `Player ${playerIndex + 1}`);
+      const result = revealMysticValue(player, log, state.playerNames[playerIndex as 0 | 1]);
       return result.value;
     },
     bases,
@@ -210,6 +212,11 @@ function isSingular(def: CardDef): boolean {
 function cardName(def: CardDef): string {
   if (def.title && def.subtitle) return `${def.title}, ${def.subtitle}`;
   return def.title ?? def.subtitle ?? "?";
+}
+
+/** Get player display name from state. */
+function pName(s: GameState, index: number): string {
+  return s.playerNames[index as 0 | 1] ?? `Player ${index + 1}`;
 }
 
 /**
@@ -450,6 +457,7 @@ export function createGame(
   deck1: string[],
   base2: BaseCardDef,
   deck2: string[],
+  playerNames?: [string, string],
 ): GameState {
   instanceCounter = 0;
 
@@ -482,14 +490,17 @@ export function createGame(
   shuffle(p1.deck);
   shuffle(p2.deck);
 
+  const names = playerNames ?? ["Player 1", "Player 2"];
+
   // Draw starting hands
   const log: LogItem[] = [];
-  drawCards(p1, base1.handSize, log, "Player 1");
-  drawCards(p2, base2.handSize, log, "Player 2");
+  drawCards(p1, base1.handSize, log, names[0]);
+  drawCards(p2, base2.handSize, log, names[1]);
   log.push("Game created. Players may choose to keep or redraw their hands.");
 
   const state: GameState = {
     players: [p1, p2],
+    playerNames: names,
     phase: "setup",
     turn: 0,
     readyStep: 1 as ReadyStep,
@@ -509,7 +520,11 @@ export function createGame(
 // Debug / Test Scenario Setup
 // ============================================================
 
-export function createDebugGame(scenario: DebugScenario, registry: CardRegistry): GameState {
+export function createDebugGame(
+  scenario: DebugScenario,
+  registry: CardRegistry,
+  playerNames?: [string, string],
+): GameState {
   instanceCounter = 0;
 
   const makeDebugPlayer = (setup: DebugPlayerSetup, fallbackDeckIds: string[]): PlayerState => {
@@ -593,6 +608,7 @@ export function createDebugGame(scenario: DebugScenario, registry: CardRegistry)
 
   const state: GameState = {
     players: [p0, p1],
+    playerNames: playerNames ?? ["Player 1", "Player 2"],
     phase,
     turn,
     readyStep: 1 as ReadyStep,
@@ -604,6 +620,12 @@ export function createDebugGame(scenario: DebugScenario, registry: CardRegistry)
     log: stampLog(log),
     winner: null,
   };
+
+  // If starting in cylon phase, run the phase setup to reveal threats
+  if (phase === "cylon") {
+    const bases = registry.bases;
+    startCylonPhase(state, state.log, bases);
+  }
 
   return state;
 }
@@ -636,6 +658,7 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
       influence: you.influence,
     },
     opponent: oppView,
+    playerNames: state.playerNames,
     phase: state.phase,
     turn: state.turn,
     readyStep: state.readyStep,
@@ -646,6 +669,9 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     cylonThreats: state.cylonThreats,
     log: state.log,
     winner: state.winner,
+    traitGrants: { ...you.temporaryTraitGrants, ...opp.temporaryTraitGrants },
+    choicePrompt: state.pendingChoice?.prompt,
+    choiceType: state.pendingChoice?.type,
   };
 }
 
@@ -1144,6 +1170,10 @@ function getChallengeActions(
       actions.push(...getBaseAbilityActions(baseDef.abilityId, state, playerIndex, bases, context));
     }
 
+    // Mission activated abilities (persistent + link) usable during challenges
+    const missionContext = challenge.isCylonChallenge ? "cylon-challenge" : "challenge";
+    actions.push(...getMissionActivationActions(state, playerIndex, missionContext));
+
     actions.push({ type: "challengePass", description: "Pass" });
     return actions;
   }
@@ -1379,7 +1409,7 @@ export function applyAction(
 ): { state: GameState; log: LogItem[] } {
   const s = cloneState(state);
   const log: LogItem[] = [];
-  const pLabel = `Player ${playerIndex + 1}`;
+  const pLabel = s.playerNames[playerIndex as 0 | 1];
   const player = s.players[playerIndex];
   const opponent = s.players[1 - playerIndex];
 
@@ -1439,7 +1469,7 @@ export function applyAction(
     // --- Ready phase step 3: draw cards ---
     case "drawCards": {
       for (let i = 0; i < s.players.length; i++) {
-        drawCards(s.players[i], 2, log, `Player ${i + 1}`);
+        drawCards(s.players[i], 2, log, s.playerNames[i as 0 | 1]);
       }
       log.push("All players draw 2 cards.");
       s.readyStep = 4 as ReadyStep;
@@ -1582,6 +1612,7 @@ export function applyAction(
               type: "expedite-choice",
               playerIndex,
               cards: eligibleIndices.map((i) => player.hand[i]),
+              prompt: "Expedite — play an additional card with excess resources?",
               context: {
                 excessResources: { ...excessResources },
                 eligibleIndices,
@@ -2135,7 +2166,7 @@ export function applyAction(
     case "passCylon": {
       applyInfluenceLoss(s, playerIndex, 1, log, bases);
       player.consecutivePasses++;
-      log.push(`${pLabel} passes in Cylon phase.`);
+      log.push(`${pLabel} stands down (pass — lose 1 influence).`);
       checkVictory(s, log);
       if (s.phase !== "gameOver") {
         // Check if all passed consecutively or no threats remain
@@ -2250,6 +2281,18 @@ export function applyAction(
       // If the resolution set up a NEW pendingChoice (chained), stay on same player
       if (s.pendingChoice) {
         // Stay on same player for next choice
+      } else if (s.fleetJumpPending) {
+        // Fleet jump sacrifice — chain to next player or finish
+        const nextPlayer = (playerIndex + 1) % s.players.length;
+        if (nextPlayer === s.firstPlayerIndex) {
+          finishFleetJump(s, log, bases);
+        } else {
+          setupFleetJumpSacrifice(s, log, bases, nextPlayer);
+        }
+      } else if (s.cylonPhaseResumeNeeded) {
+        // Cylon phase was paused for base ability choices — resume
+        s.cylonPhaseResumeNeeded = undefined;
+        resumeAfterCylonReveal(s, log, bases);
       } else if (hadChallenge && !s.challenge) {
         // Challenge was fully resolved inside resolvePendingChoice (already advanced)
       } else if (s.challenge) {
@@ -2338,7 +2381,7 @@ function startReadyPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
     player.zones.alert.push(...toReady);
     if (toReady.length > 0) {
       const names = toReady.map((st) => cardName(getCardDef(st.cards[0].defId))).join(", ");
-      log.push(`Player ${s.players.indexOf(player) + 1} readies: ${names}.`);
+      log.push(`${pName(s, s.players.indexOf(player))} readies: ${names}.`);
     }
   }
 
@@ -2463,56 +2506,32 @@ function advanceExecutionTurn(s: GameState): void {
 /**
  * Fire Cylon threat red text effects when threats are revealed.
  * Per rules: "red Cylon threat text triggers at this time in turn order if more than one is revealed."
- * Blockading Base Star can exhaust to prevent one threat's text from affecting one player.
+ * Uses cylonThreatImmunity (set by base ability choices) to skip one threat's text for one player.
  */
 function fireCylonThreatRedText(
   s: GameState,
   log: LogItem[],
-  bases: Record<string, BaseCardDef>,
+  _bases: Record<string, BaseCardDef>,
 ): void {
-  // Check for Blockading Base Star — if unexhausted, auto-prevent the worst threat's text
-  let preventedThreatIdx = -1;
-  for (let pi = 0; pi < s.players.length; pi++) {
-    const p = s.players[pi];
-    const baseDef = bases[p.baseDefId];
-    if (baseDef?.abilityId && getBaseAbilityHandler(baseDef.abilityId)?.preventThreatText) {
-      const baseStack = p.zones.resourceStacks[0];
-      if (baseStack && !baseStack.exhausted) {
-        // Find the most harmful threat with red text
-        let worstIdx = -1;
-        let worstScore = -1;
-        for (let ti = 0; ti < s.cylonThreats.length; ti++) {
-          const def = getCardDef(s.cylonThreats[ti].card.defId);
-          if (def.cylonThreatText) {
-            const score = s.cylonThreats[ti].power + 1; // prefer higher-power threats
-            if (score > worstScore) {
-              worstScore = score;
-              worstIdx = ti;
-            }
-          }
-        }
-        if (worstIdx >= 0) {
-          baseStack.exhausted = true;
-          preventedThreatIdx = worstIdx;
-          const tDef = getCardDef(s.cylonThreats[worstIdx].card.defId);
-          log.push(`${baseDef.title}: Exhausted to prevent ${cardName(tDef)}'s Cylon threat text.`);
-        }
-      }
-      break;
-    }
-  }
+  const immunity = s.cylonThreatImmunity;
 
   // Fire red text for each threat in turn order
   for (let ti = 0; ti < s.cylonThreats.length; ti++) {
-    if (ti === preventedThreatIdx) continue; // prevented by Blockading Base Star
     const threat = s.cylonThreats[ti];
     const def = getCardDef(threat.card.defId);
     if (!def.cylonThreatText) continue;
 
     const text = def.cylonThreatText.toLowerCase();
-    log.push(`Cylon threat text (${cardName(def)}): "${def.cylonThreatText}"`);
+    const skipPlayer = immunity && ti === immunity.threatIndex ? immunity.playerIndex : undefined;
+    if (skipPlayer !== undefined) {
+      log.push(
+        `Cylon threat text (${cardName(def)}): "${def.cylonThreatText}" — ${s.playerNames[skipPlayer as 0 | 1]} protected.`,
+      );
+    } else {
+      log.push(`Cylon threat text (${cardName(def)}): "${def.cylonThreatText}"`);
+    }
 
-    if (!applyRegisteredCylonThreat(s, def, text, log)) {
+    if (!applyRegisteredCylonThreat(s, def, text, log, skipPlayer)) {
       log.push(`  → (Unhandled red text: "${def.cylonThreatText}")`);
     }
   }
@@ -2527,7 +2546,7 @@ function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
   if (s.cylonPhaseFirstOverride !== undefined) {
     s.firstPlayerIndex = s.cylonPhaseFirstOverride;
     s.cylonPhaseFirstOverride = undefined;
-    log.push(`Cylon Betrayal: Player ${s.firstPlayerIndex + 1} goes first.`);
+    log.push(`Cylon Betrayal: ${pName(s, s.firstPlayerIndex)} goes first.`);
   } else {
     s.firstPlayerIndex = determineFirstPlayer(s);
   }
@@ -2568,7 +2587,7 @@ function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
   const doralBonus = computeCylonThreatBonus(s) + computeMissionCylonThreatBonus(s);
   s.cylonThreats = [];
   for (let i = 0; i < s.players.length; i++) {
-    const card = revealTopCard(s.players[i], log, `Player ${i + 1}`);
+    const card = revealTopCard(s.players[i], log, s.playerNames[i as 0 | 1]);
     const def = getCardDef(card.defId);
     const threatPower = (def.cylonThreat ?? 0) + doralBonus;
     s.cylonThreats.push({
@@ -2577,10 +2596,28 @@ function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
       ownerIndex: i,
     });
     log.push(
-      `Player ${i + 1} reveals ${cardName(def)} as Cylon threat (power ${threatPower}${doralBonus > 0 ? `, includes +${doralBonus} Doral` : ""}).`,
+      `${s.playerNames[i as 0 | 1]} reveals ${cardName(def)} as Cylon threat (power ${threatPower}${doralBonus > 0 ? `, includes +${doralBonus} Doral` : ""}).`,
     );
   }
 
+  // Dispatch onCylonReveal to base abilities (e.g. Blockading Base Star)
+  // If a base sets up a pendingChoice, pause and let the player decide before firing red text
+  if (dispatchOnCylonReveal(s, log, bases)) {
+    return; // paused — resumeAfterCylonReveal will be called after choices resolve
+  }
+
+  resumeAfterCylonReveal(s, log, bases);
+}
+
+/**
+ * Resume cylon phase after threat reveal (and any base ability choices).
+ * Fires red text, checks fleet jump, removes 0-power threats.
+ */
+function resumeAfterCylonReveal(
+  s: GameState,
+  log: LogItem[],
+  bases: Record<string, BaseCardDef>,
+): void {
   // Fire Cylon threat red text (rules: "triggers at this time in turn order")
   try {
     fireCylonThreatRedText(s, log, bases);
@@ -2590,53 +2627,25 @@ function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
     log.push(`[Engine error processing Cylon threat text: ${errMsg}]`);
   }
 
+  // Clear immunity after use
+  s.cylonThreatImmunity = undefined;
+
   // Check if ALL revealed threats have the Cylon trait → fleet jumps
   const allCylon = s.cylonThreats.every((t) => {
     const def = getCardDef(t.card.defId);
     return def.traits?.includes("Cylon");
   });
   if (allCylon) {
-    log.push("All Cylon threats have the Cylon trait — fleet must jump!");
-    for (let pi = 0; pi < s.players.length; pi++) {
-      const p = s.players[pi];
-      // AI: sacrifice smallest asset (no supply) first, then supply card from largest stack
-      let sacrificed = false;
-      // Try to sacrifice a bare asset (non-base resource stack with no supply cards)
-      for (let si = 1; si < p.zones.resourceStacks.length; si++) {
-        if (p.zones.resourceStacks[si].supplyCards.length === 0) {
-          const removed = p.zones.resourceStacks.splice(si, 1)[0];
-          p.discard.push(removed.topCard);
-          log.push(
-            `Player ${pi + 1} sacrifices asset ${cardName(getCardDef(removed.topCard.defId))}.`,
-          );
-          sacrificed = true;
-          break;
-        }
-      }
-      if (!sacrificed) {
-        // Sacrifice a supply card from any stack
-        for (const stack of p.zones.resourceStacks) {
-          if (stack.supplyCards.length > 0) {
-            const supply = stack.supplyCards.pop()!;
-            p.discard.push(supply);
-            log.push(`Player ${pi + 1} sacrifices a supply card.`);
-            sacrificed = true;
-            break;
-          }
-        }
-      }
-      if (!sacrificed) {
-        log.push(`Player ${pi + 1} has no asset or supply card to sacrifice.`);
-      }
-    }
-    // All threats go to discard
-    for (const t of s.cylonThreats) {
-      s.players[t.ownerIndex].discard.push(t.card);
-    }
-    s.cylonThreats = [];
-    endCylonPhase(s, log, bases);
+    log.push(
+      "All Cylon threats have the Cylon trait — fleet must jump! Each player sacrifices an asset or supply card.",
+    );
+    s.fleetJumpPending = true;
+    setupFleetJumpSacrifice(s, log, bases, s.firstPlayerIndex);
     return;
   }
+
+  // 1b: Fleet holds — remove 0-power threats, then players challenge or pass
+  log.push("Fleet holds position — players must resolve remaining threats.");
 
   // Remove 0-power threats
   s.cylonThreats = s.cylonThreats.filter((t) => {
@@ -2658,6 +2667,62 @@ function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
   for (const p of s.players) {
     p.consecutivePasses = 0;
   }
+}
+
+/**
+ * Set up a fleet-jump sacrifice choice for the given player.
+ * If the player has nothing to sacrifice, auto-skip and chain to next player.
+ * When all players are done, discard threats and end the phase.
+ */
+function setupFleetJumpSacrifice(
+  s: GameState,
+  log: LogItem[],
+  bases: Record<string, BaseCardDef>,
+  playerIndex: number,
+): void {
+  // Build sacrifice options for this player
+  const p = s.players[playerIndex];
+  const choices: CardInstance[] = [];
+
+  // Collect assets (non-base resource stacks)
+  for (let si = 1; si < p.zones.resourceStacks.length; si++) {
+    choices.push(p.zones.resourceStacks[si].topCard);
+  }
+  // Collect supply cards (one per stack that has supplies)
+  for (const stack of p.zones.resourceStacks) {
+    if (stack.supplyCards.length > 0) {
+      choices.push(stack.supplyCards[stack.supplyCards.length - 1]);
+    }
+  }
+
+  if (choices.length === 0) {
+    log.push(`${pName(s, playerIndex)} has no asset or supply card to sacrifice.`);
+    // Chain to next player or finish
+    const nextPlayer = (playerIndex + 1) % s.players.length;
+    if (nextPlayer === s.firstPlayerIndex) {
+      finishFleetJump(s, log, bases);
+    } else {
+      setupFleetJumpSacrifice(s, log, bases, nextPlayer);
+    }
+    return;
+  }
+
+  s.activePlayerIndex = playerIndex;
+  s.pendingChoice = {
+    type: "fleet-jump-sacrifice",
+    playerIndex,
+    cards: choices,
+    prompt: `Fleet Jump — ${pName(s, playerIndex)}, choose an asset or supply card to sacrifice`,
+  };
+}
+
+function finishFleetJump(s: GameState, log: LogItem[], bases: Record<string, BaseCardDef>): void {
+  for (const t of s.cylonThreats) {
+    s.players[t.ownerIndex].discard.push(t.card);
+  }
+  s.cylonThreats = [];
+  s.fleetJumpPending = undefined;
+  endCylonPhase(s, log, bases);
 }
 
 function advanceCylonTurn(s: GameState): void {
@@ -2728,6 +2793,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
               type: "six-seductress",
               playerIndex: challenge.challengerPlayerIndex,
               cards: [six],
+              prompt: "Number Six, Seductress — commit to give challenger +2 power?",
               context: { sixInstanceId: six.instanceId },
             };
             return; // wait for player choice
@@ -2751,6 +2817,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
             type: "manipulate-choice",
             playerIndex: challenge.challengerPlayerIndex,
             cards: [challengerStack.stack.cards[0]],
+            prompt: "Manipulate — gain influence instead of opponent losing it?",
             context: {},
           };
           return; // wait for player choice
@@ -2776,7 +2843,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
           const before = attackerPlayer.influence;
           attackerPlayer.influence += undefendedPower;
           log.push(
-            `Manipulate! Player ${challenge.challengerPlayerIndex + 1} gains ${undefendedPower} influence. (${before} → ${attackerPlayer.influence})`,
+            `Manipulate! ${pName(s, challenge.challengerPlayerIndex)} gains ${undefendedPower} influence. (${before} → ${attackerPlayer.influence})`,
           );
         }
       } else {
@@ -2794,7 +2861,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
         const atkMystic = revealMysticValue(
           attackerPlayer,
           log,
-          `Player ${challenge.challengerPlayerIndex + 1}`,
+          pName(s, challenge.challengerPlayerIndex),
         );
         atkVal = fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic.value);
         // Double mystic reveal (Elosha Priestess / Channel the Lords)
@@ -2802,7 +2869,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
           const atkMystic2 = revealMysticValue(
             attackerPlayer,
             log,
-            `Player ${challenge.challengerPlayerIndex + 1} (double)`,
+            `${pName(s, challenge.challengerPlayerIndex)} (double)`,
           );
           atkVal += fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic2.value);
           challenge.doubleMysticReveal = undefined; // consumed
@@ -2813,7 +2880,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
           const atkMystic2 = revealMysticValue(
             attackerPlayer,
             log,
-            `Player ${challenge.challengerPlayerIndex + 1} (Spot Judgment)`,
+            `${pName(s, challenge.challengerPlayerIndex)} (Spot Judgment)`,
           );
           const val2 = fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic2.value);
           atkVal = Math.max(atkVal, val2);
@@ -2827,7 +2894,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
           const oppMystic2 = revealMysticValue(
             oppPlayer,
             log,
-            `Player ${odm.opponentIndex + 1} (False Sense of Security)`,
+            `${pName(s, odm.opponentIndex)} (False Sense of Security)`,
           );
           const val2 = fireOnMysticReveal(s, odm.opponentIndex, oppMystic2.value);
           atkVal = Math.min(atkVal, val2);
@@ -2846,6 +2913,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
             type: "starbuck-reroll",
             playerIndex: challenge.challengerPlayerIndex,
             cards: [starbuck],
+            prompt: `Starbuck, Risk Taker — reroll mystic value ${challenge.challengerMysticValue}?`,
             context: { side: "challenger", currentValue: challenge.challengerMysticValue },
           };
           return; // wait for player choice
@@ -2858,14 +2926,14 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
         const defMystic = revealMysticValue(
           defenderPlayer,
           log,
-          `Player ${challenge.defenderPlayerIndex + 1}`,
+          pName(s, challenge.defenderPlayerIndex),
         );
         defVal = fireOnMysticReveal(s, challenge.defenderPlayerIndex, defMystic.value);
         if (challenge.doubleMysticReveal === challenge.defenderPlayerIndex) {
           const defMystic2 = revealMysticValue(
             defenderPlayer,
             log,
-            `Player ${challenge.defenderPlayerIndex + 1} (double)`,
+            `${pName(s, challenge.defenderPlayerIndex)} (double)`,
           );
           defVal += fireOnMysticReveal(s, challenge.defenderPlayerIndex, defMystic2.value);
           challenge.doubleMysticReveal = undefined;
@@ -2875,7 +2943,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
           const defMystic2 = revealMysticValue(
             defenderPlayer,
             log,
-            `Player ${challenge.defenderPlayerIndex + 1} (Spot Judgment)`,
+            `${pName(s, challenge.defenderPlayerIndex)} (Spot Judgment)`,
           );
           const val2 = fireOnMysticReveal(s, challenge.defenderPlayerIndex, defMystic2.value);
           defVal = Math.max(defVal, val2);
@@ -2889,7 +2957,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
           const oppMystic2 = revealMysticValue(
             oppPlayer,
             log,
-            `Player ${odm.opponentIndex + 1} (False Sense of Security)`,
+            `${pName(s, odm.opponentIndex)} (False Sense of Security)`,
           );
           const val2 = fireOnMysticReveal(s, odm.opponentIndex, oppMystic2.value);
           defVal = Math.min(defVal, val2);
@@ -2908,6 +2976,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
             type: "starbuck-reroll",
             playerIndex: challenge.defenderPlayerIndex,
             cards: [starbuck],
+            prompt: `Starbuck, Risk Taker — reroll mystic value ${challenge.defenderMysticValue}?`,
             context: { side: "defender", currentValue: challenge.defenderMysticValue },
           };
           return; // wait for player choice
@@ -3128,13 +3197,13 @@ function resolveCylonChallenge(
   const atkMystic = revealMysticValue(
     attackerPlayer,
     log,
-    `Player ${challenge.challengerPlayerIndex + 1}`,
+    pName(s, challenge.challengerPlayerIndex),
   );
   const atkMysticValue = fireOnMysticReveal(s, challenge.challengerPlayerIndex, atkMystic.value);
   const defMystic = revealMysticValue(
     cylonPlayer,
     log,
-    `Player ${challenge.cylonPlayerIndex! + 1} (Cylon player)`,
+    `${pName(s, challenge.cylonPlayerIndex!)} (Cylon player)`,
   );
 
   const threatIdx = challenge.cylonThreatIndex!;
@@ -3171,7 +3240,7 @@ function resolveCylonChallenge(
       const before = attackerPlayer.influence;
       attackerPlayer.influence += gain;
       log.push(
-        `Player ${challenge.challengerPlayerIndex + 1} gains ${gain} influence. (${before} → ${attackerPlayer.influence})`,
+        `${pName(s, challenge.challengerPlayerIndex)} gains ${gain} influence. (${before} → ${attackerPlayer.influence})`,
       );
     }
     commitUnit(attackerPlayer, challenge.challengerInstanceId, log);
@@ -3694,7 +3763,7 @@ function applyInfluenceLoss(
     const before = s.players[playerIndex].influence;
     s.players[playerIndex].influence -= adjusted;
     log.push(
-      `Player ${playerIndex + 1} loses ${adjusted} influence. (${before} → ${s.players[playerIndex].influence})`,
+      `${pName(s, playerIndex)} loses ${adjusted} influence. (${before} → ${s.players[playerIndex].influence})`,
     );
   }
 }
@@ -3758,10 +3827,14 @@ function applyPowerBuff(
     const c = s.challenge as ChallengeWithBuffs;
     if (c.challengerInstanceId === targetInstanceId) {
       c.challengerPowerBuff = (c.challengerPowerBuff ?? 0) + amount;
-      log.push(`Challenger gets ${amount >= 0 ? "+" : ""}${amount} power.`);
+      const tDef = findCardDefByInstanceId(s, targetInstanceId);
+      const tName = tDef ? cardName(tDef) : "Challenger";
+      log.push(`${tName} gets ${amount >= 0 ? "+" : ""}${amount} power.`);
     } else if (c.defenderInstanceId === targetInstanceId) {
       c.defenderPowerBuff = (c.defenderPowerBuff ?? 0) + amount;
-      log.push(`Defender gets ${amount >= 0 ? "+" : ""}${amount} power.`);
+      const tDef = findCardDefByInstanceId(s, targetInstanceId);
+      const tName = tDef ? cardName(tDef) : "Defender";
+      log.push(`${tName} gets ${amount >= 0 ? "+" : ""}${amount} power.`);
     }
   }
   // Outside of challenge, apply persistent buff to the unit stack (lasts until end of execution)
@@ -3812,7 +3885,7 @@ function checkVictory(s: GameState, log: LogItem[]): void {
     if (s.players[i].influence >= 20) {
       s.phase = "gameOver";
       s.winner = i;
-      log.push(`Player ${i + 1} wins! Influence reached ${s.players[i].influence}.`);
+      log.push(`${s.playerNames[i as 0 | 1]} wins! Influence reached ${s.players[i].influence}.`);
       return;
     }
   }
@@ -3821,7 +3894,7 @@ function checkVictory(s: GameState, log: LogItem[]): void {
       s.phase = "gameOver";
       s.winner = 1 - i;
       log.push(
-        `Player ${i + 1} loses! Influence dropped to ${s.players[i].influence}. Player ${2 - i} wins!`,
+        `${s.playerNames[i as 0 | 1]} loses! Influence dropped to ${s.players[i].influence}. ${s.playerNames[(1 - i) as 0 | 1]} wins!`,
       );
       return;
     }
@@ -3831,6 +3904,103 @@ function checkVictory(s: GameState, log: LogItem[]): void {
 // ============================================================
 // Expedite Pending Choice Handler
 // ============================================================
+
+registerPendingChoice("fleet-jump-sacrifice", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    const player = state.players[choice.playerIndex];
+    for (const card of choice.cards) {
+      // Determine if this is an asset or supply card
+      const isAsset = player.zones.resourceStacks.some(
+        (stack, si) => si > 0 && stack.topCard.instanceId === card.instanceId,
+      );
+      if (isAsset) {
+        const def = getCardDef(card.defId);
+        actions.push({
+          type: "makeChoice" as const,
+          description: `Sacrifice asset: ${cardName(def)}`,
+          cardDefId: def.id,
+        });
+      } else {
+        // Supply card — find which stack it belongs to for the label + badge
+        let stackLabel = "supply card";
+        let stackDefId: string | undefined;
+        for (const stack of player.zones.resourceStacks) {
+          if (stack.supplyCards.some((sc) => sc.instanceId === card.instanceId)) {
+            stackDefId = stack.topCard.defId;
+            const si = player.zones.resourceStacks.indexOf(stack);
+            if (si === 0) {
+              const baseDef = getHelpers().bases[player.baseDefId];
+              stackLabel = `supply card under ${baseDef?.title ?? "base"}`;
+            } else {
+              const assetDef = getCardDef(stack.topCard.defId);
+              stackLabel = `supply card under ${cardName(assetDef)}`;
+            }
+            break;
+          }
+        }
+        actions.push({
+          type: "makeChoice" as const,
+          description: `Sacrifice ${stackLabel}`,
+          cardDefId: stackDefId,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+
+    // Try to find as asset (non-base resource stack)
+    let found = false;
+    for (let si = 1; si < player.zones.resourceStacks.length; si++) {
+      if (player.zones.resourceStacks[si].topCard.instanceId === chosenCard.instanceId) {
+        const removed = player.zones.resourceStacks.splice(si, 1)[0];
+        player.discard.push(removed.topCard);
+        for (const sc of removed.supplyCards) player.discard.push(sc);
+        const def = getCardDef(removed.topCard.defId);
+        log.push(`${pName(state, playerIndex)} sacrifices asset ${cardName(def)}.`);
+        found = true;
+        break;
+      }
+    }
+
+    // Try as supply card
+    if (!found) {
+      for (const stack of player.zones.resourceStacks) {
+        const idx = stack.supplyCards.findIndex((c) => c.instanceId === chosenCard.instanceId);
+        if (idx !== -1) {
+          const supply = stack.supplyCards.splice(idx, 1)[0];
+          player.discard.push(supply);
+          log.push(`${pName(state, playerIndex)} sacrifices a supply card.`);
+          found = true;
+          break;
+        }
+      }
+    }
+
+    // Chaining is handled by the makeChoice handler in applyAction,
+    // which checks fleetJumpPending and calls setupFleetJumpSacrifice for the next player.
+  },
+  aiDecide(choice, _choiceActions, state, playerIndex) {
+    const player = state.players[playerIndex];
+    // AI: sacrifice cheapest asset first, then supply card
+    // Prefer bare assets (no supply cards) to preserve resources
+    let bestIdx = 0;
+    let bestIsAsset = false;
+    for (let i = 0; i < choice.cards.length; i++) {
+      const card = choice.cards[i];
+      const isAsset = player.zones.resourceStacks.some(
+        (stack, si) => si > 0 && stack.topCard.instanceId === card.instanceId,
+      );
+      if (isAsset && !bestIsAsset) {
+        bestIdx = i;
+        bestIsAsset = true;
+      }
+    }
+    return bestIdx;
+  },
+});
 
 registerPendingChoice("expedite-choice", {
   getActions(choice) {
@@ -3849,13 +4019,13 @@ registerPendingChoice("expedite-choice", {
   resolve(choice, choiceIndex, state, player, playerIndex, log) {
     // Last option is "Skip"
     if (choiceIndex >= choice.cards.length) {
-      log.push(`Player ${playerIndex + 1} skips Expedite.`);
+      log.push(`${pName(state, playerIndex)} skips Expedite.`);
       return;
     }
 
     const expCard = choice.cards[choiceIndex];
     const expDef = getCardDef(expCard.defId);
-    const pLabel = `Player ${playerIndex + 1}`;
+    const pLabel = state.playerNames[playerIndex as 0 | 1];
 
     // Remove from hand
     const handIdx = player.hand.findIndex((c) => c.instanceId === expCard.instanceId);

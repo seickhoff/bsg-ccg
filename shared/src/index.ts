@@ -28,6 +28,8 @@ export type CardType = "personnel" | "ship" | "event" | "mission";
 export type PendingChoiceType =
   // base-abilities
   | "celestra"
+  | "blockading-threat"
+  | "blockading-player"
   // unit-abilities
   | "space-park-scry"
   | "mining-ship-dig"
@@ -84,7 +86,9 @@ export type PendingChoiceType =
   | "still-no-contact-choice"
   // player ship/stack selection
   | "them-or-us-ship"
-  | "critical-component-stack";
+  | "critical-component-stack"
+  // cylon phase
+  | "fleet-jump-sacrifice";
 
 export type Trait =
   | "Capital Ship"
@@ -262,6 +266,7 @@ export interface PlayerState {
 
 export interface GameState {
   players: PlayerState[];
+  playerNames: [string, string];
   phase: GamePhase;
   turn: number;
   readyStep: ReadyStep;
@@ -282,12 +287,15 @@ export interface GameState {
     playerIndex: number;
     cards: CardInstance[]; // revealed cards to choose between
     context?: Record<string, unknown>; // ability-specific state (targetId, sourceId, etc.)
+    prompt?: string; // UI header text for the choice
   };
   extraPhases?: string[]; // queued extra phases (False Peace)
   forceEndExecution?: boolean; // skip to Cylon phase immediately (False Peace)
   effectImmunity?: Record<string, "power" | "all">; // instanceId → immunity type (Anti-Radiation / Fallout Shelter)
   cylonPhaseFirstOverride?: number; // Cylon Betrayal: force this player as first in next Cylon phase
-  cylonThreatTextImmune?: number; // Blockading Base Star: this threat index is immune to red text for one player
+  cylonThreatImmunity?: { threatIndex: number; playerIndex: number }; // threat text skips this player for this threat
+  cylonPhaseResumeNeeded?: boolean; // cylon phase paused for player choice, needs resume after
+  fleetJumpPending?: boolean; // fleet jump sacrifice in progress — discard threats + end phase after
 }
 
 // --- Player View (what the client sees) ---
@@ -312,6 +320,7 @@ export interface PlayerGameView {
     influence: number;
   };
   opponent: OpponentView;
+  playerNames: [string, string];
   phase: GamePhase;
   turn: number;
   readyStep: ReadyStep;
@@ -322,6 +331,9 @@ export interface PlayerGameView {
   cylonThreats: CylonThreatCard[];
   log: LogItem[];
   winner: number | null;
+  traitGrants?: Record<string, Trait[]>; // instanceId → temporary traits granted this turn
+  choicePrompt?: string; // context-specific header for pending choice UI
+  choiceType?: PendingChoiceType; // type of pending choice, for client-side conditional rendering
 }
 
 // --- Game Actions (client → server) ---
@@ -379,6 +391,7 @@ export interface ValidAction {
   selectableInstanceIds?: string[]; // board card instance IDs
   selectableStackIndices?: number[]; // resource stack indices
   selectableThreatIndices?: number[]; // cylon threat indices
+  sourceInstanceId?: string; // pre-selected source for ability actions (e.g. linked mission unit)
   targetInstanceId?: string; // pre-selected target for ability actions
   missionTargetIds?: string[]; // valid resolve-time targets for missions
   linkTargetIds?: string[]; // valid link attachment targets for missions
@@ -414,7 +427,7 @@ export interface DebugScenario {
 }
 
 export type ClientMessage =
-  | { type: "joinGame"; roomId?: string; mode?: GameMode; joinCode?: string }
+  | { type: "joinGame"; roomId?: string; mode?: GameMode; joinCode?: string; playerName?: string }
   | { type: "submitDeck"; baseId: string; deckCardIds: string[] }
   | { type: "action"; action: GameAction }
   | { type: "continue" }
