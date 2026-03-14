@@ -64,6 +64,8 @@ export type PendingChoiceType =
   | "network-hacking-choice"
   | "network-hacking-cylon"
   | "crackdown-discard"
+  | "angry-commit"
+  | "angry-defeat"
   // mission-abilities
   | "pulling-rank-1"
   | "pulling-rank-2"
@@ -86,6 +88,7 @@ export type PendingChoiceType =
   | "still-no-contact-choice"
   // player ship/stack selection
   | "them-or-us-ship"
+  | "them-or-us-target"
   | "critical-component-stack"
   // cylon phase
   | "fleet-jump-sacrifice";
@@ -396,6 +399,7 @@ export interface ValidAction {
   missionTargetIds?: string[]; // valid resolve-time targets for missions
   linkTargetIds?: string[]; // valid link attachment targets for missions
   abilityIndex?: number; // for dual-ability cards (e.g. Baltar VP: 0 or 1)
+  targetPrompt?: string; // custom prompt for target selection
 }
 
 // --- WebSocket Messages ---

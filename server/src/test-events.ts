@@ -667,6 +667,43 @@ header("Bingo Fuel — Return alert ship to hand");
   printLog(s);
 }
 
+// --- 12b. Bingo Fuel targeting OWN ship ---
+header("Bingo Fuel — Return own alert ship to hand");
+{
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-004", // persuasion
+        hand: ["BSG1-012"], // Bingo Fuel
+        alert: ["BSG1-146"], // Colonial Shuttle (own ship)
+        deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      },
+      player1: {
+        baseId: "BSG1-007",
+        alert: [],
+        influence: 10,
+        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      },
+      phase: "execution",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+  addSupply(state, 0, 1); // 2 persuasion
+
+  const { state: s, played } = playEvent(state, 0, "bingo fuel");
+  assert(played, "Bingo Fuel playable on own ship");
+  assert(s.players[0].zones.alert.length === 0, "Own ship removed from alert");
+  assert(
+    s.players[0].hand.some((c: CardInstance) => c.defId === "BSG1-146"),
+    "Own ship returned to own hand",
+  );
+  // Hand: started with 1 (Bingo Fuel), played it (-1), got ship back (+1) = 1
+  assert(s.players[0].hand.length === 1, `Hand has 1 card (got ${s.players[0].hand.length})`);
+  printLog(s);
+}
+
 // --- 13. Sick Bay: Return target alert personnel to hand ---
 header("Sick Bay — Return alert personnel to hand");
 {

@@ -36,6 +36,9 @@ export interface EventAbilityHandler {
     context: "execution" | "challenge" | "cylon-challenge",
   ): string[] | null;
 
+  /** Custom prompt for target selection (default: "Select target for <card>") */
+  targetPrompt?: string;
+
   /** Resolve the event effect */
   resolve(
     state: GameState,
@@ -335,6 +338,7 @@ register("fury", {
 // BSG1-019 Cylon Missile Battery: Target Cylon unit +2 power
 register("cylon-missile-battery", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
+  targetPrompt: "Select target Cylon unit",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -404,6 +408,7 @@ register("winning-hand", {
 // BSG1-055 You Gave Yourself Over: Target Civilian unit +2 power
 register("you-gave-yourself-over", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
+  targetPrompt: "Select target Civilian unit",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -473,6 +478,7 @@ register("covering-fire", {
 // BSG2-012 Cylon Surprise: Target Cylon Machine +2 power
 register("cylon-surprise", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
+  targetPrompt: "Select target Cylon Machine unit",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -512,6 +518,7 @@ register("lest-we-forget", {
 // BSG2-031 Special Delivery: Target personnel +1 power + Scramble + draw 1
 register("special-delivery", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -546,6 +553,7 @@ register("special-delivery", {
 // BSG2-033 Strafing Run: Target ship +1 power + Strafe + draw 1
 register("strafing-run", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target ship",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -604,6 +612,7 @@ register("strange-wingman", {
 // BSG2-035 Swearing In: Target Politician +2 power
 register("swearing-in", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
+  targetPrompt: "Select target Politician",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -626,6 +635,7 @@ register("swearing-in", {
 // BSG1-036 Outmaneuvered: Target ship -2 power
 register("outmaneuvered", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
+  targetPrompt: "Select target ship",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -644,6 +654,7 @@ register("outmaneuvered", {
 // BSG1-052 Vision of Serpents: Target personnel -2 power
 register("vision-of-serpents", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
+  targetPrompt: "Select target personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -727,6 +738,7 @@ register("condition-one", {
 // BSG1-016 Condition Two: Commit target unit
 register("condition-two", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target alert unit",
   getTargets(state) {
     const targets: string[] = [];
     for (const p of state.players) {
@@ -857,6 +869,7 @@ register("sneak-attack", {
 // BSG2-014 Determination: Restore target unit
 register("determination", {
   playableIn: ["execution"],
+  targetPrompt: "Select target exhausted unit",
   getTargets(state) {
     const targets: string[] = [];
     for (const p of state.players) {
@@ -897,6 +910,7 @@ register("massive-assault", {
 // BSG2-038 To the Victor: Exhaust target personnel
 register("to-the-victor", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => !u.stack.exhausted)
@@ -1190,43 +1204,122 @@ register("angry", {
       return d && d.type === "personnel" && !s.exhausted;
     });
   },
-  getTargets(state, playerIndex) {
-    // Target any personnel (any player)
-    return getAllUnits(state)
-      .filter((u) => {
-        const d = getUnitDef(u.stack);
-        return d && d.type === "personnel";
-      })
-      .map((u) => u.instanceId);
-  },
-  resolve(state, playerIndex, targetId, log) {
-    if (!targetId) return;
+  resolve(state, playerIndex, _targetId, _log) {
     const player = state.players[playerIndex];
-    // Auto-pick cheapest alert personnel to commit+exhaust (not the target if own)
     const ownPersonnel = player.zones.alert.filter((s) => {
       const d = getUnitDef(s);
-      return d && d.type === "personnel" && !s.exhausted && s.cards[0]?.instanceId !== targetId;
+      return d && d.type === "personnel" && !s.exhausted;
     });
     if (ownPersonnel.length === 0) return;
-    let cheapest = ownPersonnel[0];
-    for (const s of ownPersonnel) {
-      const d = getUnitDef(s);
-      if (d && (d.power ?? 0) < (getUnitDef(cheapest)?.power ?? 0)) cheapest = s;
+    state.pendingChoice = {
+      type: "angry-commit",
+      playerIndex,
+      cards: ownPersonnel.map((s) => s.cards[0]),
+      prompt: "Angry — choose a personnel you control to commit and exhaust",
+    };
+  },
+});
+
+registerPendingChoice("angry-commit", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (const card of choice.cards) {
+      const def = helpers.getCardDef(card.defId);
+      if (!def) continue;
+      actions.push({
+        type: "makeChoice",
+        description: `Commit & exhaust ${helpers.cardName(def)}`,
+        cardDefId: def.id,
+      });
     }
-    // Commit and exhaust
-    const idx = player.zones.alert.indexOf(cheapest);
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    // Commit and exhaust the chosen personnel
+    const idx = player.zones.alert.findIndex(
+      (s) => s.cards[0]?.instanceId === chosenCard.instanceId,
+    );
     if (idx >= 0) {
+      const stack = player.zones.alert[idx];
       player.zones.alert.splice(idx, 1);
-      cheapest.exhausted = true;
-      player.zones.reserve.push(cheapest);
+      stack.exhausted = true;
+      player.zones.reserve.push(stack);
     }
-    const ownDef = getUnitDef(cheapest);
+    const ownDef = helpers.getCardDef(chosenCard.defId);
     log.push(`Angry: ${ownDef ? helpers.cardName(ownDef) : "personnel"} committed and exhausted.`);
-    // Defeat target
-    const targetOwner = findUnitOwner(state, targetId);
-    if (targetOwner) {
-      helpers.defeatUnit(targetOwner.player, targetId, log, state, targetOwner.playerIndex);
+    // Now pick a personnel to defeat (any player)
+    const allPersonnel = getAllUnits(state).filter((u) => {
+      const d = getUnitDef(u.stack);
+      return d && d.type === "personnel";
+    });
+    if (allPersonnel.length === 0) return;
+    state.pendingChoice = {
+      type: "angry-defeat",
+      playerIndex,
+      cards: allPersonnel.map((u) => u.stack.cards[0]),
+      context: { ownerIndices: allPersonnel.map((u) => u.playerIndex) },
+      prompt: "Angry — choose a personnel to defeat",
+    };
+  },
+  aiDecide(choice, _choiceActions, _state, _playerIndex) {
+    // AI picks cheapest own personnel
+    let bestIdx = 0;
+    let bestPow = Infinity;
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = cardRegistry[choice.cards[i].defId];
+      const pow = def?.power ?? 0;
+      if (pow < bestPow) {
+        bestPow = pow;
+        bestIdx = i;
+      }
     }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("angry-defeat", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    const ownerIndices = ((choice.context ?? {}) as Record<string, unknown>)
+      .ownerIndices as number[];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const card = choice.cards[i];
+      const def = helpers.getCardDef(card.defId);
+      if (!def) continue;
+      const ownerName = pLabel(ownerIndices?.[i] ?? 0, state);
+      actions.push({
+        type: "makeChoice",
+        description: `Defeat ${ownerName}'s ${helpers.cardName(def)}`,
+        cardDefId: def.id,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const owner = findUnitOwner(state, chosenCard.instanceId);
+    if (owner) {
+      helpers.defeatUnit(owner.player, chosenCard.instanceId, log, state, owner.playerIndex);
+    }
+  },
+  aiDecide(choice, _choiceActions, state, playerIndex) {
+    // AI defeats strongest opponent personnel
+    let bestIdx = 0;
+    let bestPow = -1;
+    for (let i = 0; i < choice.cards.length; i++) {
+      const owner = findUnitOwner(state, choice.cards[i].instanceId);
+      if (!owner || owner.playerIndex === playerIndex) continue;
+      const def = cardRegistry[choice.cards[i].defId];
+      const pow = def?.power ?? 0;
+      if (pow > bestPow) {
+        bestPow = pow;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
   },
 });
 
@@ -1282,16 +1375,7 @@ register("them-or-us", {
       return d && d.type === "ship";
     });
   },
-  getTargets(state) {
-    return getAllUnits(state)
-      .filter((u) => {
-        const d = getUnitDef(u.stack);
-        return d && d.type === "personnel";
-      })
-      .map((u) => u.instanceId);
-  },
-  resolve(state, playerIndex, targetId, log) {
-    if (!targetId) return;
+  resolve(state, playerIndex, _targetId, _log) {
     const player = state.players[playerIndex];
     const ships = [...player.zones.alert, ...player.zones.reserve].filter((s) => {
       const d = getUnitDef(s);
@@ -1302,7 +1386,6 @@ register("them-or-us", {
       type: "them-or-us-ship",
       playerIndex,
       cards: ships.map((s) => s.cards[0]),
-      context: { targetId },
       prompt: "Them or Us — choose a ship to sacrifice",
     };
   },
@@ -1354,6 +1437,7 @@ register("like-a-ghost-town", {
 // BSG1-012 Bingo Fuel: Return target alert ship to owner's hand
 register("bingo-fuel", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target alert ship",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => u.zone === "alert" && getUnitDef(u.stack)?.type === "ship")
@@ -1373,6 +1457,7 @@ register("bingo-fuel", {
 // BSG1-042 Sick Bay: Return target alert personnel to owner's hand
 register("sick-bay", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target alert personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => u.zone === "alert" && getUnitDef(u.stack)?.type === "personnel")
@@ -1392,6 +1477,7 @@ register("sick-bay", {
 // BSG1-047 Stranded: Shuffle target reserve personnel into owner's deck
 register("stranded", {
   playableIn: ["execution"],
+  targetPrompt: "Select target reserve personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => u.zone === "reserve" && getUnitDef(u.stack)?.type === "personnel")
@@ -1417,6 +1503,7 @@ register("stranded", {
 // BSG1-051 Under Arrest: Put target personnel on top of owner's deck
 register("under-arrest", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -1490,6 +1577,7 @@ register("painful-recovery", {
 // BSG1-013 Catastrophe: Defeat target persistent mission
 register("catastrophe", {
   playableIn: ["execution"],
+  targetPrompt: "Select target persistent mission",
   getTargets(state) {
     // Target persistent missions in resource areas and unresolved missions
     const targets: string[] = [];
@@ -1543,6 +1631,7 @@ register("catastrophe", {
 // BSG2-011 Crushing Reality: Exhaust target mission
 register("crushing-reality", {
   playableIn: ["execution"],
+  targetPrompt: "Select target mission",
   getTargets(state) {
     const targets: string[] = [];
     for (const p of state.players) {
@@ -1595,6 +1684,7 @@ register("site-of-betrayal", {
 // BSG2-037 This Tribunal Is Over: Defeat target mission
 register("this-tribunal", {
   playableIn: ["execution"],
+  targetPrompt: "Select target mission",
   getTargets(state) {
     const targets: string[] = [];
     for (const p of state.players) {
@@ -2040,6 +2130,7 @@ register("unwelcome-visitor", {
 // BSG2-008 Boarding Party: Target ship gains Scramble + draw 1
 register("boarding-party", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target ship",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -2072,6 +2163,7 @@ register("boarding-party", {
 // BSG2-013 Cylons on the Brain: Target personnel gains Cylon trait
 register("cylons-on-brain", {
   playableIn: ["execution"],
+  targetPrompt: "Select target personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -2096,6 +2188,7 @@ register("cylons-on-brain", {
 // BSG2-017 Everyone's Green: Target Cylon (non-Machine) personnel loses Cylon + draw
 register("everyone-green", {
   playableIn: ["execution"],
+  targetPrompt: "Select target Cylon personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -2128,6 +2221,7 @@ register("everyone-green", {
 // BSG2-026 Out of Sight: Target personnel gains Scramble + draw 1
 register("out-of-sight", {
   playableIn: ["execution", "challenge"],
+  targetPrompt: "Select target personnel",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -2160,6 +2254,7 @@ register("out-of-sight", {
 // BSG2-041 Unexpected...: Target Cylon ship loses Cylon trait
 register("unexpected", {
   playableIn: ["execution"],
+  targetPrompt: "Select target Cylon ship",
   getTargets(state) {
     return getAllUnits(state)
       .filter((u) => {
@@ -2468,6 +2563,10 @@ export function getEventTargets(
   if (!targets || !state.effectImmunity) return targets;
   // Filter out units with "all" effect immunity (Fallout Shelter)
   return targets.filter((id) => state.effectImmunity?.[id] !== "all");
+}
+
+export function getEventTargetPrompt(abilityId: string): string | undefined {
+  return registry.get(abilityId)?.targetPrompt;
 }
 
 export function canPlayEvent(
@@ -2849,13 +2948,18 @@ registerPendingChoice("suicide-bomber-cylon", {
       }
     }
     const secondTargets: CardInstance[] = [];
-    for (const p of state.players) {
+    const secondOwnerIndices: number[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
       for (const zn of [p.zones.alert, p.zones.reserve]) {
         for (const stack of zn) {
           const tc = stack.cards[0];
           if (tc?.faceUp && tc.instanceId !== targetId) {
             const d = helpers.getCardDef(tc.defId);
-            if (d?.type === "personnel") secondTargets.push(tc);
+            if (d?.type === "personnel") {
+              secondTargets.push(tc);
+              secondOwnerIndices.push(pi);
+            }
           }
         }
       }
@@ -2865,6 +2969,7 @@ registerPendingChoice("suicide-bomber-cylon", {
         type: "suicide-bomber-target2",
         playerIndex,
         cards: secondTargets,
+        context: { ownerIndices: secondOwnerIndices },
         prompt: "Suicide Bomber — choose a second personnel to defeat",
       };
     }
@@ -2888,14 +2993,17 @@ registerPendingChoice("suicide-bomber-cylon", {
 });
 
 registerPendingChoice("suicide-bomber-target2", {
-  getActions(choice) {
+  getActions(choice, state) {
     const actions: ValidAction[] = [];
+    const ownerIndices = ((choice.context ?? {}) as Record<string, unknown>)
+      .ownerIndices as number[];
     for (let i = 0; i < choice.cards.length; i++) {
       const def = helpers.getCardDef(choice.cards[i].defId);
       if (def) {
+        const ownerName = pLabel(ownerIndices?.[i] ?? 0, state);
         actions.push({
           type: "makeChoice",
-          description: `Defeat ${helpers.cardName(def)}`,
+          description: `Defeat ${ownerName}'s ${helpers.cardName(def)}`,
           cardDefId: def.id,
         });
       }
@@ -3678,16 +3786,21 @@ registerPendingChoice("them-or-us-ship", {
     sacrificeUnit(player, chosenCard.instanceId, log);
     const def = helpers.getCardDef(chosenCard.defId);
     log.push(`Them or Us: ${pLabel(playerIndex, state)} sacrifices ${helpers.cardName(def)}.`);
-    // Defeat target personnel
-    const targetId = ((choice.context ?? {}) as Record<string, unknown>).targetId as string;
-    if (targetId) {
-      const owner = findUnitOwner(state, targetId);
-      if (owner) {
-        helpers.defeatUnit(owner.player, targetId, log, state, owner.playerIndex);
-      }
-    }
+    // Now pick a personnel to defeat (any player)
+    const allPersonnel = getAllUnits(state).filter((u) => {
+      const d = getUnitDef(u.stack);
+      return d && d.type === "personnel";
+    });
+    if (allPersonnel.length === 0) return;
+    state.pendingChoice = {
+      type: "them-or-us-target",
+      playerIndex,
+      cards: allPersonnel.map((u) => u.stack.cards[0]),
+      context: { ownerIndices: allPersonnel.map((u) => u.playerIndex) },
+      prompt: "Them or Us — choose a personnel to defeat",
+    };
   },
-  aiDecide(choice) {
+  aiDecide(choice, _choiceActions, _state, _playerIndex) {
     // AI sacrifices cheapest ship
     let bestIdx = 0;
     let bestPow = Infinity;
@@ -3695,6 +3808,50 @@ registerPendingChoice("them-or-us-ship", {
       const def = cardRegistry[choice.cards[i].defId];
       const pow = def?.power ?? 0;
       if (pow < bestPow) {
+        bestPow = pow;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  },
+});
+
+registerPendingChoice("them-or-us-target", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    const ownerIndices = ((choice.context ?? {}) as Record<string, unknown>)
+      .ownerIndices as number[];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const card = choice.cards[i];
+      const def = helpers.getCardDef(card.defId);
+      if (!def) continue;
+      const ownerName = pLabel(ownerIndices?.[i] ?? 0, state);
+      actions.push({
+        type: "makeChoice",
+        description: `Defeat ${ownerName}'s ${helpers.cardName(def)}`,
+        cardDefId: def.id,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const owner = findUnitOwner(state, chosenCard.instanceId);
+    if (owner) {
+      helpers.defeatUnit(owner.player, chosenCard.instanceId, log, state, owner.playerIndex);
+    }
+  },
+  aiDecide(choice, _choiceActions, state, playerIndex) {
+    // AI defeats strongest opponent personnel
+    let bestIdx = 0;
+    let bestPow = -1;
+    for (let i = 0; i < choice.cards.length; i++) {
+      const owner = findUnitOwner(state, choice.cards[i].instanceId);
+      if (!owner || owner.playerIndex === playerIndex) continue;
+      const def = cardRegistry[choice.cards[i].defId];
+      const pow = def?.power ?? 0;
+      if (pow > bestPow) {
         bestPow = pow;
         bestIdx = i;
       }

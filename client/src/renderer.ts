@@ -1831,7 +1831,7 @@ function handleActionClick(
           const cardLabel = def ? getCardName(card.defId) : "event";
           enterSelectModeInstance(
             container,
-            `Select target for ${cardLabel}`,
+            action.targetPrompt ?? `Select target for ${cardLabel}`,
             targets,
             (targetId) => {
               onAction!({
@@ -1855,7 +1855,7 @@ function handleActionClick(
         const cardLabel = def ? getCardName(card.defId) : "event";
         enterSelectModeInstance(
           container,
-          `Select target for ${cardLabel}`,
+          action.targetPrompt ?? `Select target for ${cardLabel}`,
           targets,
           (targetId) => {
             onAction!({ type: "playCard", cardIndex: cardIdx, targetInstanceId: targetId });
@@ -2116,7 +2116,7 @@ function handleActionClick(
             const cardLabel = evCard ? getCardName(evCard.defId) : "event";
             enterSelectModeInstance(
               container,
-              `Select target for ${cardLabel}`,
+              action.targetPrompt ?? `Select target for ${cardLabel}`,
               eventTargets,
               (targetId) => {
                 onAction!({

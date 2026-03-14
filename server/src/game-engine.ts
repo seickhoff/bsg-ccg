@@ -68,6 +68,7 @@ import {
   canPlayEvent,
   isEventPlayableIn,
   getEventTargets,
+  getEventTargetPrompt,
   setEventGameHelpers,
   setEventAbilityCardRegistry,
 } from "./event-abilities.js";
@@ -785,6 +786,8 @@ export function getValidActions(
         const targets = getEventTargets(def.abilityId, state, playerIndex, "execution");
         if (targets) {
           eventAction.selectableInstanceIds = targets;
+          const prompt = getEventTargetPrompt(def.abilityId);
+          if (prompt) eventAction.targetPrompt = prompt;
         }
       }
       actions.push(eventAction);
@@ -1121,6 +1124,8 @@ function getChallengeActions(
           const targets = getEventTargets(def.abilityId, state, playerIndex, challengeContext);
           if (targets) {
             challengeEventAction.selectableInstanceIds = targets;
+            const prompt = getEventTargetPrompt(def.abilityId);
+            if (prompt) challengeEventAction.targetPrompt = prompt;
           }
         }
         actions.push(challengeEventAction);
