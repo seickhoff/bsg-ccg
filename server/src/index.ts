@@ -61,7 +61,34 @@ const heartbeatInterval = setInterval(() => {
   }
 }, HEARTBEAT_MS);
 
-wss.on("close", () => clearInterval(heartbeatInterval));
+wss.on("close", () => {
+  clearInterval(heartbeatInterval);
+  clearInterval(resyncInterval);
+});
+
+// --- Periodic resync: re-broadcast game state to rooms idle for too long ---
+// Catches silently dropped messages (socket appeared OPEN but network path was broken).
+const RESYNC_MS = 10_000; // check every 10 seconds
+const RESYNC_IDLE_MS = 15_000; // resync if no activity for 15 seconds
+
+const resyncInterval = setInterval(() => {
+  const now = Date.now();
+  for (const room of rooms) {
+    if (!room.gameState) continue;
+    if (room.aiProcessing) continue;
+    if (now - room.lastActivityMs < RESYNC_IDLE_MS) continue;
+
+    // Only resync if a connected human player exists
+    const hasConnectedHuman = room.players.some(
+      (s) => s.type === "human" && s.ws && s.ws.readyState === WebSocket.OPEN,
+    );
+    if (!hasConnectedHuman) continue;
+
+    room.lastActivityMs = now; // prevent repeated resyncs every 10s
+    room.lastBroadcastLogLen = room.gameState.log.length; // don't re-send old log
+    broadcastGameState(room);
+  }
+}, RESYNC_MS);
 
 // --- Game Room ---
 
@@ -86,6 +113,8 @@ interface GameRoom {
   gameGeneration: number;
   /** Track how many log entries have been broadcast so we only send new ones */
   lastBroadcastLogLen: number;
+  /** Timestamp of last player action or broadcast — used for stale-turn resync */
+  lastActivityMs: number;
 }
 
 const ROOM_CLEANUP_MS = 5 * 60 * 1000;
@@ -131,6 +160,7 @@ function createRoom(mode: GameMode): GameRoom {
     continueResolve: null,
     gameGeneration: 0,
     lastBroadcastLogLen: 0,
+    lastActivityMs: Date.now(),
   };
   rooms.push(room);
   roomsById.set(room.id, room);
@@ -189,6 +219,7 @@ function sendToPlayer(ws: WebSocket, msg: ServerMessage): void {
 /** Send appropriate game view to all connected humans + spectators. */
 function broadcastGameState(room: GameRoom): void {
   if (!room.gameState) return;
+  room.lastActivityMs = Date.now();
 
   const newLogEntries = room.gameState.log.slice(room.lastBroadcastLogLen);
   room.lastBroadcastLogLen = room.gameState.log.length;

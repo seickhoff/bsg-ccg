@@ -1533,6 +1533,7 @@ register("under-arrest", {
 // BSG1-037 Painful Recovery: Put own Cylon unit on deck → commit+exhaust target personnel
 register("painful-recovery", {
   playableIn: ["execution"],
+  targetPrompt: "Select target Cylon unit you control to return to deck",
   canPlay(state, playerIndex) {
     return [
       ...state.players[playerIndex].zones.alert,
@@ -1542,30 +1543,43 @@ register("painful-recovery", {
       return d && hasTrait(d, "Cylon") && (d.type === "personnel" || d.type === "ship");
     });
   },
-  getTargets(state) {
-    return getAllUnits(state)
-      .filter((u) => {
-        const d = getUnitDef(u.stack);
-        return d && d.type === "personnel";
+  getTargets(state, playerIndex) {
+    // Target a Cylon unit you control
+    return [...state.players[playerIndex].zones.alert, ...state.players[playerIndex].zones.reserve]
+      .filter((s) => {
+        const d = getUnitDef(s);
+        return d && hasTrait(d, "Cylon") && (d.type === "personnel" || d.type === "ship");
       })
-      .map((u) => u.instanceId);
+      .map((s) => s.cards[0].instanceId);
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    // Find eligible Cylon units to put on deck
-    const cylons = [...player.zones.alert, ...player.zones.reserve].filter((s) => {
-      const d = getUnitDef(s);
-      return d && hasTrait(d, "Cylon") && (d.type === "personnel" || d.type === "ship");
-    });
-    if (cylons.length === 0) return;
-    const cards = cylons.map((s) => s.cards[0]);
+    // Put the chosen Cylon unit on top of its owner's deck
+    const found = findUnitInAnyZone(player, targetId);
+    if (!found) return;
+    const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
+    zone.splice(found.index, 1);
+    const d = helpers.getCardDef(found.stack.cards[0]?.defId ?? "");
+    for (const card of found.stack.cards.reverse()) {
+      player.deck.unshift(card);
+    }
+    log.push(`Painful Recovery: ${helpers.cardName(d)} put on top of deck.`);
+    // "If you do" — now pick a personnel to commit+exhaust
+    const personnelTargets = getAllUnits(state)
+      .filter((u) => {
+        const def = getUnitDef(u.stack);
+        return def && def.type === "personnel";
+      })
+      .map((u) => ({ instanceId: u.instanceId, stack: u.stack }));
+    if (personnelTargets.length === 0) return;
+    const cards = personnelTargets.map((u) => u.stack.cards[0]);
     state.pendingChoice = {
-      type: "painful-recovery-cylon",
+      type: "painful-recovery-personnel",
       playerIndex,
       cards,
-      context: { targetId },
-      prompt: "Painful Recovery — choose a Cylon unit to return to deck",
+      context: {},
+      prompt: "Painful Recovery — choose a personnel to commit and exhaust",
     };
   },
 });
@@ -2845,7 +2859,7 @@ registerPendingChoice("military-coup-exhaust", {
   },
 });
 
-registerPendingChoice("painful-recovery-cylon", {
+registerPendingChoice("painful-recovery-personnel", {
   getActions(choice) {
     const actions: ValidAction[] = [];
     for (let i = 0; i < choice.cards.length; i++) {
@@ -2853,42 +2867,28 @@ registerPendingChoice("painful-recovery-cylon", {
       if (def) {
         actions.push({
           type: "makeChoice",
-          description: `Put on deck ${helpers.cardName(def)}`,
+          description: `Commit+exhaust ${helpers.cardName(def)}`,
           cardDefId: def.id,
         });
       }
     }
     return actions;
   },
-  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
-    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
-    const found = findUnitInAnyZone(player, chosenCard.instanceId);
-    if (found) {
-      const zone = found.zone === "alert" ? player.zones.alert : player.zones.reserve;
-      zone.splice(found.index, 1);
-      for (const card of found.stack.cards.reverse()) {
-        player.deck.unshift(card);
-      }
-      const d = helpers.getCardDef(chosenCard.defId);
-      log.push(`Painful Recovery: ${helpers.cardName(d)} put on top of deck.`);
-    }
-    const targetId = ctx.targetId as string;
-    if (targetId) {
-      for (const p of state.players) {
-        const tgt = findUnitInAnyZone(p, targetId);
-        if (tgt && tgt.zone === "alert") {
-          p.zones.alert.splice(tgt.index, 1);
-          tgt.stack.exhausted = true;
-          p.zones.reserve.push(tgt.stack);
-          log.push("Painful Recovery: target personnel committed and exhausted.");
-          break;
-        } else if (tgt) {
-          tgt.stack.exhausted = true;
-          log.push("Painful Recovery: target personnel exhausted.");
-          break;
-        }
+    for (const p of state.players) {
+      const tgt = findUnitInAnyZone(p, chosenCard.instanceId);
+      if (tgt && tgt.zone === "alert") {
+        p.zones.alert.splice(tgt.index, 1);
+        tgt.stack.exhausted = true;
+        p.zones.reserve.push(tgt.stack);
+        log.push("Painful Recovery: target personnel committed and exhausted.");
+        break;
+      } else if (tgt) {
+        tgt.stack.exhausted = true;
+        log.push("Painful Recovery: target personnel exhausted.");
+        break;
       }
     }
   },

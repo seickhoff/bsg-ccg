@@ -532,6 +532,7 @@ __bsg_send({
       hand: ["BSG1-042"],
       alert: [],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 3,
     },
     player1: {
       baseId: "BSG1-007",
@@ -559,6 +560,7 @@ __bsg_send({
       hand: ["BSG1-051"],
       alert: [],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 3,
     },
     player1: {
       baseId: "BSG1-007",
@@ -644,6 +646,7 @@ __bsg_send({
       hand: ["BSG2-011"],
       alert: [],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-004",
@@ -671,6 +674,7 @@ __bsg_send({
       hand: ["BSG2-030"],
       alert: ["BSG1-060"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 2,
     },
     player1: {
       baseId: "BSG1-007",
@@ -727,8 +731,9 @@ __bsg_send({
   scenario: {
     player0: {
       baseId: "BSG1-005",
-      hand: ["BSG1-018", "BSG1-098", "BSG1-099"],
+      hand: ["BSG1-018", "BSG1-098"],
       alert: [],
+      assets: ["BSG1-099"],
       deck: ["BSG1-100", "BSG1-101", "BSG1-102", "BSG1-103", "BSG1-104", "BSG1-117", "BSG1-140"],
     },
     player1: {

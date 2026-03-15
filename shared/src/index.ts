@@ -48,7 +48,7 @@ export type PendingChoiceType =
   | "covering-fire-commit"
   | "distraction-commit"
   | "military-coup-exhaust"
-  | "painful-recovery-cylon"
+  | "painful-recovery-personnel"
   | "suicide-bomber-cylon"
   | "suicide-bomber-target2"
   | "decoys-count"
