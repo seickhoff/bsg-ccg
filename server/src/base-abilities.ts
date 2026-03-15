@@ -89,6 +89,19 @@ export function setBaseAbilityCardRegistry(cards: Record<string, CardDef>): void
   cardRegistryRef = cards;
 }
 
+type InfluenceLossFn = (
+  state: GameState,
+  playerIndex: number,
+  amount: number,
+  log: LogItem[],
+) => void;
+
+let applyInfluenceLossFn: InfluenceLossFn | null = null;
+
+export function setBaseAbilityInfluenceLoss(fn: InfluenceLossFn): void {
+  applyInfluenceLossFn = fn;
+}
+
 function getCardDef(defId: string): CardDef | undefined {
   return cardRegistryRef[defId];
 }
@@ -162,21 +175,18 @@ registerBaseAbility("colonial-one", {
 // --- Galactica: target player -1 influence ---
 registerBaseAbility("galactica", {
   usableIn: ["execution", "challenge"],
-  getTargets: () => null, // always targets opponent in 2-player
-  resolve(state, playerIndex, _target, log, bases) {
-    const oppIndex = 1 - playerIndex;
-    // Route through interceptInfluenceLoss for I.H.T. Colonial One interception
-    let adjusted = interceptInfluenceLoss(state, oppIndex, 1, log, bases);
-    // Cloud 9, Cruise Ship: commit to reduce influence loss by 1
-    if (adjusted > 0) {
-      adjusted = interceptCloud9InfluenceLoss(state, oppIndex, adjusted, log);
+  getTargets(state) {
+    const targets: string[] = [];
+    for (let i = 0; i < state.players.length; i++) {
+      targets.push(`player-${i}`);
     }
-    if (adjusted > 0) {
-      state.players[oppIndex].influence -= adjusted;
-    }
-    log.push(
-      `Galactica: ${state.playerNames[oppIndex as 0 | 1]} loses influence. (Now ${state.players[oppIndex].influence})`,
-    );
+    return targets;
+  },
+  resolve(state, _playerIndex, targetId, log) {
+    if (!targetId || !targetId.startsWith("player-")) return;
+    const targetPlayerIndex = parseInt(targetId.split("-")[1], 10);
+    if (isNaN(targetPlayerIndex) || !state.players[targetPlayerIndex]) return;
+    applyInfluenceLossFn!(state, targetPlayerIndex, 1, log);
   },
 });
 

@@ -794,33 +794,7 @@ __bsg_send({
       hand: ["BSG1-026"],
       alert: [],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
-    },
-    player1: {
-      baseId: "BSG1-007",
-      alert: ["BSG1-098"],
-      influence: 10,
-      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
-    },
-    phase: "execution",
-    turn: 3,
-    activePlayerIndex: 0,
-  },
-});
-```
-
-**Test:** Play Executive Privilege, then let opponent challenge. Verify no influence loss.
-
-### Test of Faith (Gain 1 influence)
-
-```js
-__bsg_send({
-  type: "debugSetup",
-  scenario: {
-    player0: {
-      baseId: "BSG1-004",
-      hand: ["BSG1-049"],
-      alert: [],
-      deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 2,
     },
     player1: {
       baseId: "BSG1-007",
@@ -835,7 +809,35 @@ __bsg_send({
 });
 ```
 
-**Test:** Play Test of Faith. Verify +1 influence.
+**Test:** Play Executive Privilege (or test Expedite first), then let opponent challenge + use Galactica. Verify no influence loss.
+
+### Test of Faith (Gain 1 influence)
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: ["BSG1-102", "BSG1-049"],
+      alert: [],
+      deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 4,
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+```
+
+**Test:** Play BSG1-102 personnel (2 persuasion) with 4 supply → 2 excess persuasion triggers Expedite for Test of Faith. Verify +1 influence.
 
 ### Standoff (Prevent influence gain)
 
@@ -845,9 +847,11 @@ __bsg_send({
   scenario: {
     player0: {
       baseId: "BSG1-007",
+      assets: ["BSG1-100", "BSG1-099"],
       hand: ["BSG1-044"],
       alert: [],
-      deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      deck: ["BSG1-098", "BSG1-099"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-004",

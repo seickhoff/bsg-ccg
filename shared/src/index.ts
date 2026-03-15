@@ -63,6 +63,7 @@ export type PendingChoiceType =
   | "hangar-deck-fire-ship"
   | "network-hacking-choice"
   | "network-hacking-cylon"
+  | "advanced-planning-choose"
   | "crackdown-discard"
   | "angry-commit"
   | "angry-defeat"

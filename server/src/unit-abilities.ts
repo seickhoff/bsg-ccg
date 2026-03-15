@@ -124,6 +124,19 @@ export function setUnitAbilityCardRegistry(cards: Record<string, CardDef>): void
   cardRegistryRef = cards;
 }
 
+type InfluenceLossFn = (
+  state: GameState,
+  playerIndex: number,
+  amount: number,
+  log: LogItem[],
+) => void;
+
+let applyInfluenceLossFn: InfluenceLossFn | null = null;
+
+export function setUnitAbilityInfluenceLoss(fn: InfluenceLossFn): void {
+  applyInfluenceLossFn = fn;
+}
+
 function getCardDef(defId: string): CardDef | undefined {
   return cardRegistryRef[defId];
 }
@@ -508,14 +521,7 @@ register("boomer-saboteur", {
   getTargets: () => null,
   resolve(state, _pi, _sid, _tid, log) {
     for (let i = 0; i < state.players.length; i++) {
-      let loss = 1;
-      loss = interceptCloud9Loss(state, i, loss, log);
-      if (loss > 0) {
-        state.players[i].influence -= loss;
-      }
-      log.push(
-        `${state.playerNames[i as 0 | 1]} loses ${loss > 0 ? loss : "0 (prevented)"} influence. (Now ${state.players[i].influence})`,
-      );
+      applyInfluenceLossFn!(state, i, 1, log);
     }
   },
 });

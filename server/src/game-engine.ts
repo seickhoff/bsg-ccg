@@ -35,6 +35,7 @@ import {
   exhaustColonialHeavy798,
   getBaseAbilityHandler,
   setBaseAbilityCardRegistry,
+  setBaseAbilityInfluenceLoss,
   dispatchOnCylonReveal,
 } from "./base-abilities.js";
 import {
@@ -53,6 +54,7 @@ import {
   fireOnChallengeInit,
   fireOnChallengeWin,
   setUnitAbilityCardRegistry,
+  setUnitAbilityInfluenceLoss,
   findAlertStarbuckReroll,
   findAlertSixSeductress,
   findReserveTighXO,
@@ -115,7 +117,9 @@ export function setCardRegistry(
 ): void {
   cardRegistry = cards;
   setBaseAbilityCardRegistry(cards);
+  setBaseAbilityInfluenceLoss((s, pi, amt, log) => applyInfluenceLoss(s, pi, amt, log, bases));
   setUnitAbilityCardRegistry(cards);
+  setUnitAbilityInfluenceLoss((s, pi, amt, log) => applyInfluenceLoss(s, pi, amt, log, bases));
   setEventAbilityCardRegistry(cards);
   setMissionAbilityCardRegistry(cards);
   setMissionGameHelpers({

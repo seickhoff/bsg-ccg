@@ -1759,7 +1759,7 @@ register("act-of-contrition", {
   },
 });
 
-// BSG1-010 Advanced Planning: Look at top 5, keep best on top, rest on bottom
+// BSG1-010 Advanced Planning: Look at top 5, put one on top, rest on bottom
 register("advanced-planning", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
@@ -1769,26 +1769,68 @@ register("advanced-planning", {
       top5.push(player.deck.shift()!);
     }
     if (top5.length === 0) return;
-    // Auto-pick: keep highest mystic value on top
+    if (top5.length === 1) {
+      // Only one card — put it back, no choice needed
+      player.deck.unshift(top5[0]);
+      const def = cardRegistry[top5[0].defId];
+      log.push(
+        `Advanced Planning: only 1 card in deck; ${def ? helpers.cardName(def) : "a card"} stays on top.`,
+      );
+      return;
+    }
+    log.push(`Advanced Planning: looking at top ${top5.length} cards…`);
+    state.pendingChoice = {
+      type: "advanced-planning-choose",
+      playerIndex,
+      cards: top5,
+      prompt: "Advanced Planning — choose a card to put on top of your deck",
+    };
+  },
+});
+
+registerPendingChoice("advanced-planning-choose", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (const card of choice.cards) {
+      const def = helpers.getCardDef(card.defId);
+      if (!def) continue;
+      actions.push({
+        type: "makeChoice",
+        description: `Keep ${helpers.cardName(def)} on top`,
+        cardDefId: def.id,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const kept = choice.cards[choiceIndex];
+    if (!kept) return;
+    // Put chosen card on top of deck
+    player.deck.unshift(kept);
+    // Put the rest on bottom
+    for (let i = 0; i < choice.cards.length; i++) {
+      if (i === choiceIndex) continue;
+      player.deck.push(choice.cards[i]);
+    }
+    state.pendingChoice = undefined;
+    const keptDef = helpers.getCardDef(kept.defId);
+    log.push(
+      `Advanced Planning: kept ${keptDef ? helpers.cardName(keptDef) : "a card"} on top; rest placed on bottom.`,
+    );
+  },
+  aiDecide(choice) {
+    // AI picks highest mystic value
     let bestIdx = 0;
     let bestMystic = 0;
-    for (let i = 0; i < top5.length; i++) {
-      const def = cardRegistry[top5[i].defId];
-      if (def && (def.mysticValue ?? 0) > bestMystic) {
-        bestMystic = def.mysticValue ?? 0;
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      const mystic = def?.mysticValue ?? 0;
+      if (mystic > bestMystic) {
+        bestMystic = mystic;
         bestIdx = i;
       }
     }
-    const kept = top5.splice(bestIdx, 1)[0];
-    player.deck.unshift(kept); // put on top
-    // Rest on bottom
-    for (const card of top5) {
-      player.deck.push(card);
-    }
-    const keptDef = cardRegistry[kept.defId];
-    log.push(
-      `Advanced Planning: looked at top 5 cards; kept ${keptDef ? helpers.cardName(keptDef) : "a card"} on top.`,
-    );
+    return bestIdx;
   },
 });
 
