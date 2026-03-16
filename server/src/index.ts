@@ -52,9 +52,14 @@ const HEARTBEAT_MS = 30_000;
 const heartbeatInterval = setInterval(() => {
   for (const ws of wss.clients) {
     if ((ws as any).isAlive === false) {
-      console.log("Terminating unresponsive WebSocket (missed pong)");
-      ws.terminate();
-      continue;
+      (ws as any).heartbeatMisses = ((ws as any).heartbeatMisses ?? 0) + 1;
+      if ((ws as any).heartbeatMisses >= 2) {
+        console.log("Terminating unresponsive WebSocket (missed 2 pongs)");
+        ws.terminate();
+        continue;
+      }
+    } else {
+      (ws as any).heartbeatMisses = 0;
     }
     (ws as any).isAlive = false;
     ws.ping();
@@ -63,32 +68,7 @@ const heartbeatInterval = setInterval(() => {
 
 wss.on("close", () => {
   clearInterval(heartbeatInterval);
-  clearInterval(resyncInterval);
 });
-
-// --- Periodic resync: re-broadcast game state to rooms idle for too long ---
-// Catches silently dropped messages (socket appeared OPEN but network path was broken).
-const RESYNC_MS = 10_000; // check every 10 seconds
-const RESYNC_IDLE_MS = 15_000; // resync if no activity for 15 seconds
-
-const resyncInterval = setInterval(() => {
-  const now = Date.now();
-  for (const room of rooms) {
-    if (!room.gameState) continue;
-    if (room.aiProcessing) continue;
-    if (now - room.lastActivityMs < RESYNC_IDLE_MS) continue;
-
-    // Only resync if a connected human player exists
-    const hasConnectedHuman = room.players.some(
-      (s) => s.type === "human" && s.ws && s.ws.readyState === WebSocket.OPEN,
-    );
-    if (!hasConnectedHuman) continue;
-
-    room.lastActivityMs = now; // prevent repeated resyncs every 10s
-    room.lastBroadcastLogLen = room.gameState.log.length; // don't re-send old log
-    broadcastGameState(room);
-  }
-}, RESYNC_MS);
 
 // --- Game Room ---
 
