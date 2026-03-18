@@ -1,4 +1,5 @@
 import type { CardRegistry } from "./index.js";
+import { cardName } from "./index.js";
 
 // ============================================================
 // BSG CCG — Deck Validation
@@ -13,12 +14,6 @@ export interface DeckSubmission {
 export interface DeckValidationResult {
   valid: boolean;
   errors: string[];
-}
-
-/** Get the full card name used for the 4-copy uniqueness rule */
-function getCardName(card: { title?: string; subtitle?: string; id: string }): string {
-  if (card.title && card.subtitle) return `${card.title}, ${card.subtitle}`;
-  return card.subtitle ?? card.title ?? card.id;
 }
 
 export function validateDeck(
@@ -46,7 +41,7 @@ export function validateDeck(
       errors.push(`Unknown card: ${cardId}`);
       continue;
     }
-    const name = getCardName(def);
+    const name = cardName(def);
     nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
   }
 

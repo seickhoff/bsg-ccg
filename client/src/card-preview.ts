@@ -1,10 +1,35 @@
-import type { CardDef, BaseCardDef, CardRegistry } from "@bsg/shared";
+import type { CardDef, BaseCardDef, CardRegistry, Trait, Keyword } from "@bsg/shared";
+import { escapeHtml as esc } from "./utils.js";
 
 // ============================================================
 // BSG CCG — Shared Card Preview Overlay
 // Full-screen overlay showing a card image + details.
 // Supports optional prev/next navigation through a list.
 // ============================================================
+
+const SCOPE_LABELS = {
+  phase: "this phase",
+  turn: "this turn",
+  challenge: "this challenge",
+} as const;
+
+export type ModScope = keyof typeof SCOPE_LABELS;
+
+export interface ScopedMod<T> {
+  value: T;
+  scope: ModScope;
+}
+
+/** Runtime info overlay for units on the board (power buffs, granted traits, etc.) */
+export interface CardRuntimeInfo {
+  powerBuff?: number; // execution-phase buff (scope always "phase")
+  challengeBuff?: number; // challenge buff (scope always "challenge")
+  grantedTraits?: ScopedMod<Trait>[];
+  removedTraits?: ScopedMod<Trait>[];
+  grantedKeywords?: ScopedMod<Keyword>[];
+  exhausted?: boolean;
+  stackSize?: number;
+}
 
 let registry: CardRegistry | null = null;
 let onClose: (() => void) | null = null;
@@ -22,15 +47,22 @@ function removePreservingScroll(el: Element): void {
 let navList: string[] = [];
 let navIndex = 0;
 let keyHandler: ((e: KeyboardEvent) => void) | null = null;
+let currentRuntime: CardRuntimeInfo | null = null;
+let runtimeMap: Map<string, CardRuntimeInfo> | null = null;
 
 export function setPreviewRegistry(reg: CardRegistry): void {
   registry = reg;
 }
 
 /** Show preview for a single card def id (no navigation). */
-export function showCardPreview(defId: string, opts?: { onClose?: () => void }): void {
+export function showCardPreview(
+  defId: string,
+  opts?: { onClose?: () => void; runtime?: CardRuntimeInfo },
+): void {
   if (!registry) return;
   onClose = opts?.onClose ?? null;
+  currentRuntime = opts?.runtime ?? null;
+  runtimeMap = null;
   navList = [];
   navIndex = 0;
   renderForDefId(defId);
@@ -40,10 +72,12 @@ export function showCardPreview(defId: string, opts?: { onClose?: () => void }):
 export function showCardPreviewNav(
   defIds: string[],
   startIndex: number,
-  opts?: { onClose?: () => void },
+  opts?: { onClose?: () => void; runtimeByDefId?: Map<string, CardRuntimeInfo> },
 ): void {
   if (!registry || defIds.length === 0) return;
   onClose = opts?.onClose ?? null;
+  currentRuntime = null;
+  runtimeMap = opts?.runtimeByDefId ?? null;
   navList = defIds;
   navIndex = Math.max(0, Math.min(startIndex, defIds.length - 1));
   renderForDefId(navList[navIndex]);
@@ -82,7 +116,8 @@ function renderForDefId(defId: string): void {
   const base = registry.bases[defId];
   if (!card && !base) return;
 
-  const contentHtml = base ? renderBaseContent(base) : renderCardContent(card!);
+  const rt = currentRuntime ?? runtimeMap?.get(defId) ?? null;
+  const contentHtml = base ? renderBaseContent(base) : renderCardContent(card!, rt);
   const hasNav = navList.length > 1;
   const posText = hasNav ? `${navIndex + 1} / ${navList.length}` : "";
 
@@ -101,19 +136,96 @@ function renderForDefId(defId: string): void {
 
 // --- Content renderers (no outer overlay wrapper) ---
 
-function renderCardContent(c: CardDef): string {
+function renderCardContent(c: CardDef, rt: CardRuntimeInfo | null): string {
   const altText =
     c.title && c.subtitle ? `${c.title}, ${c.subtitle}` : (c.title ?? c.subtitle ?? c.id);
+
+  // Power with runtime buffs
+  let powerHtml = "";
+  if (c.power != null) {
+    const basePower = c.power;
+    const phaseBuff = rt?.powerBuff ?? 0;
+    const challBuff = rt?.challengeBuff ?? 0;
+    const buff = phaseBuff + challBuff;
+    const total = basePower + buff;
+    if (buff !== 0) {
+      const parts: string[] = [`base ${basePower}`];
+      if (phaseBuff)
+        parts.push(
+          `${phaseBuff > 0 ? "+" : ""}${phaseBuff} <span class="card-pv-scope">this phase</span>`,
+        );
+      if (challBuff)
+        parts.push(
+          `${challBuff > 0 ? "+" : ""}${challBuff} <span class="card-pv-scope">this challenge</span>`,
+        );
+      powerHtml = `<div class="card-pv-detail">Power: <span class="card-pv-power-buffed">${total}</span> <span class="card-pv-power-detail">(${parts.join(", ")})</span></div>`;
+    } else {
+      powerHtml = `<div class="card-pv-detail">Power: ${basePower} · Mystic: ${c.mysticValue ?? 0} · CT: ${c.cylonThreat ?? 0}</div>`;
+    }
+    if (buff !== 0) {
+      powerHtml += `<div class="card-pv-detail">Mystic: ${c.mysticValue ?? 0} · CT: ${c.cylonThreat ?? 0}</div>`;
+    }
+  }
+
+  // Traits with grants/removals
+  const baseTraits = c.traits ?? [];
+  const granted = rt?.grantedTraits ?? [];
+  const removed = rt?.removedTraits ?? [];
+  const hasTraitMods = granted.length > 0 || removed.length > 0;
+  let traitsHtml = "";
+  if (baseTraits.length > 0 || hasTraitMods) {
+    const parts: string[] = [];
+    for (const t of baseTraits) {
+      const rem = removed.find((r) => r.value === t);
+      if (rem) {
+        parts.push(
+          `<span class="card-pv-trait-removed">${t}</span> <span class="card-pv-scope">${SCOPE_LABELS[rem.scope]}</span>`,
+        );
+      } else {
+        parts.push(t);
+      }
+    }
+    for (const t of granted) {
+      parts.push(
+        `<span class="card-pv-trait-granted">+${t.value}</span> <span class="card-pv-scope">${SCOPE_LABELS[t.scope]}</span>`,
+      );
+    }
+    traitsHtml = `<div class="card-pv-detail">Traits: ${parts.join(", ")}</div>`;
+  }
+
+  // Keywords with grants
+  const baseKeywords = c.keywords ?? [];
+  const grantedKw = rt?.grantedKeywords ?? [];
+  let keywordsHtml = "";
+  if (baseKeywords.length > 0 || grantedKw.length > 0) {
+    const parts: string[] = [...baseKeywords];
+    for (const kw of grantedKw) {
+      parts.push(
+        `<span class="card-pv-trait-granted">+${kw.value}</span> <span class="card-pv-scope">${SCOPE_LABELS[kw.scope]}</span>`,
+      );
+    }
+    keywordsHtml = `<div class="card-pv-detail">Keywords: ${parts.join(", ")}</div>`;
+  }
+
+  // Status line (exhausted, stack size)
+  const statusParts: string[] = [];
+  if (rt?.exhausted) statusParts.push("Exhausted");
+  if (rt?.stackSize && rt.stackSize > 1) statusParts.push(`Stack: ${rt.stackSize} cards`);
+  const statusHtml = statusParts.length
+    ? `<div class="card-pv-detail card-pv-status">${statusParts.join(" · ")}</div>`
+    : "";
+
   return `
     ${c.image ? `<img src="${c.image}" alt="${esc(altText)}" class="card-pv-img" />` : ""}
     <div class="card-pv-info">
       ${c.title ? `<div class="card-pv-name">${esc(c.title)}</div>` : ""}
       ${c.subtitle ? `<div class="card-pv-subtitle">${esc(c.subtitle)}</div>` : ""}
       <div class="card-pv-detail">${c.type} · ${formatCost(c.cost)}</div>
-      ${c.power != null ? `<div class="card-pv-detail">Power: ${c.power} · Mystic: ${c.mysticValue ?? 0} · CT: ${c.cylonThreat ?? 0}</div>` : ""}
+      ${powerHtml}
       ${c.resource ? `<div class="card-pv-detail">Resource: ${c.resource}</div>` : ""}
-      ${c.traits?.length ? `<div class="card-pv-detail">Traits: ${c.traits.join(", ")}</div>` : ""}
-      ${c.keywords?.length ? `<div class="card-pv-detail">Keywords: ${c.keywords.join(", ")}</div>` : ""}
+      ${traitsHtml}
+      ${keywordsHtml}
+      ${statusHtml}
       ${c.resolveText ? `<div class="card-pv-ability">${esc(c.resolveText)}</div>` : ""}
       <div class="card-pv-ability">${esc(c.abilityText)}</div>
       ${c.cylonThreatText ? `<div class="card-pv-threat">${esc(c.cylonThreatText)}</div>` : ""}
@@ -207,12 +319,4 @@ function formatCost(cost: CardDef["cost"]): string {
   return Object.entries(cost)
     .map(([res, amt]) => `${amt} ${res}`)
     .join(", ");
-}
-
-function esc(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

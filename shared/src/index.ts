@@ -340,9 +340,16 @@ export interface PlayerGameView {
   cylonThreats: CylonThreatCard[];
   log: LogItem[];
   winner: number | null;
-  traitGrants?: Record<string, Trait[]>; // instanceId → temporary traits granted this turn
-  traitRemovals?: Record<string, Trait[]>; // instanceId → temporary traits removed this turn
-  keywordGrants?: Record<string, Keyword[]>; // instanceId → temporary keywords granted this turn
+  traitGrants?: Record<string, Trait[]>; // instanceId → temporary traits granted (merged, for badges)
+  traitRemovals?: Record<string, Trait[]>; // instanceId → temporary traits removed (merged, for badges)
+  keywordGrants?: Record<string, Keyword[]>; // instanceId → temporary keywords granted (merged, for badges)
+  // Scoped variants (for detailed preview display)
+  phaseTraitGrants?: Record<string, Trait[]>;
+  turnTraitGrants?: Record<string, Trait[]>;
+  phaseTraitRemovals?: Record<string, Trait[]>;
+  turnTraitRemovals?: Record<string, Trait[]>;
+  phaseKeywordGrants?: Record<string, Keyword[]>;
+  turnKeywordGrants?: Record<string, Keyword[]>;
   choicePrompt?: string; // context-specific header for pending choice UI
   choiceType?: PendingChoiceType; // type of pending choice, for client-side conditional rendering
 }
@@ -468,6 +475,13 @@ export type ServerMessage =
 export interface CardRegistry {
   cards: Record<string, CardDef>;
   bases: Record<string, BaseCardDef>;
+}
+
+// --- Card Name Helper ---
+
+export function cardName(card: { title?: string; subtitle?: string; id: string }): string {
+  if (card.title && card.subtitle) return `${card.title}, ${card.subtitle}`;
+  return card.subtitle ?? card.title ?? card.id;
 }
 
 // --- Deck Validation (re-export from shared module) ---

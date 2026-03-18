@@ -2114,6 +2114,37 @@ body {
   line-height: 1.3;
 }
 
+.card-pv-power-buffed {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.card-pv-power-detail {
+  font-size: 0.75rem;
+  color: #999;
+}
+
+.card-pv-trait-granted {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.card-pv-trait-removed {
+  color: #f44336;
+  text-decoration: line-through;
+}
+
+.card-pv-status {
+  color: #ff9800;
+  font-style: italic;
+}
+
+.card-pv-scope {
+  font-size: 0.7rem;
+  color: #aaa;
+  font-style: italic;
+}
+
 /* ============================================================
    Deck Builder Styles — Mobile-First
    ============================================================ */

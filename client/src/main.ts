@@ -16,6 +16,7 @@ import {
   setPlayerName,
 } from "./renderer.js";
 import { renderDeckBuilder } from "./deck-builder.js";
+import { escapeHtml } from "./utils.js";
 import "./style.css";
 
 // ============================================================
@@ -48,14 +49,6 @@ let reconnectAttempts = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let fullLog: LogItem[] = [];
 let pendingJoin: ClientMessage | null = null;
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 function sendMessage(msg: ClientMessage): void {
   if (ws && ws.readyState === WebSocket.OPEN) {

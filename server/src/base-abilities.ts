@@ -8,8 +8,10 @@ import type {
   LogItem,
   Trait,
 } from "@bsg/shared";
+import { cardName } from "@bsg/shared";
 import { registerPendingChoice } from "./pending-choice-registry.js";
 import { unitHasTrait } from "./trait-rules.js";
+import { findUnitInAnyZone } from "./zone-helpers.js";
 
 // ============================================================
 // BSG CCG — Base Ability Registry
@@ -125,28 +127,6 @@ function findUnitsInZone(
     }
   }
   return results;
-}
-
-function findUnitInAnyZone(
-  player: { zones: { alert: UnitStack[]; reserve: UnitStack[] } },
-  instanceId: string,
-): { stack: UnitStack; zone: "alert" | "reserve"; index: number } | null {
-  for (let i = 0; i < player.zones.alert.length; i++) {
-    if (player.zones.alert[i].cards[0]?.instanceId === instanceId) {
-      return { stack: player.zones.alert[i], zone: "alert", index: i };
-    }
-  }
-  for (let i = 0; i < player.zones.reserve.length; i++) {
-    if (player.zones.reserve[i].cards[0]?.instanceId === instanceId) {
-      return { stack: player.zones.reserve[i], zone: "reserve", index: i };
-    }
-  }
-  return null;
-}
-
-function cardName(def: CardDef): string {
-  if (def.title && def.subtitle) return `${def.title}, ${def.subtitle}`;
-  return def.title ?? def.subtitle ?? "?";
 }
 
 // ============================================================

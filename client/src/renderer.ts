@@ -15,9 +15,18 @@ import type {
   LogItem,
   ChallengeState,
   Trait,
+  Keyword,
 } from "@bsg/shared";
-import { setPreviewRegistry, showCardPreview, showCardPreviewNav } from "./card-preview.js";
+import { cardName } from "@bsg/shared";
+import {
+  setPreviewRegistry,
+  showCardPreview,
+  showCardPreviewNav,
+  type CardRuntimeInfo,
+  type ScopedMod,
+} from "./card-preview.js";
 import { ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, DRAG_THRESHOLD } from "./constants.js";
+import { escapeHtml } from "./utils.js";
 
 // ============================================================
 // BSG CCG — Client Renderer
@@ -71,9 +80,7 @@ function getCardDef(defId: string): CardDef | BaseCardDef | null {
 function getCardName(defId: string): string {
   const def = getCardDef(defId);
   if (!def) return defId;
-  if (def.title && "subtitle" in def && def.subtitle) return `${def.title}, ${def.subtitle}`;
-  if ("subtitle" in def && def.subtitle) return def.subtitle;
-  return def.title ?? defId;
+  return cardName(def);
 }
 
 function getCardTypeClass(defId: string): string {
@@ -94,6 +101,58 @@ function findUnitStack(zones: PlayerZones, instanceId: string): UnitStack | null
     if (stack.cards[0]?.instanceId === instanceId) return stack;
   }
   return null;
+}
+
+/** Build runtime info for the card preview overlay from current game state. */
+function buildRuntimeInfo(instanceId: string, state: PlayerGameView): CardRuntimeInfo | undefined {
+  const yourStack = findUnitStack(state.you.zones, instanceId);
+  const oppStack = findUnitStack(state.opponent.zones, instanceId);
+  const stack = yourStack ?? oppStack;
+  if (!stack) return undefined;
+  const topCard = stack.cards[0];
+  if (!topCard) return undefined;
+
+  let challengeBuff = 0;
+  if (state.challenge && topCard.instanceId === state.challenge.challengerInstanceId) {
+    challengeBuff = state.challenge.challengerPowerBuff ?? 0;
+  } else if (state.challenge && topCard.instanceId === state.challenge.defenderInstanceId) {
+    challengeBuff = state.challenge.defenderPowerBuff ?? 0;
+  }
+
+  const rt: CardRuntimeInfo = {};
+  if (stack.powerBuff) rt.powerBuff = stack.powerBuff;
+  if (challengeBuff) rt.challengeBuff = challengeBuff;
+
+  // Build scoped trait grants
+  const grantedTraits: ScopedMod<Trait>[] = [];
+  for (const t of state.phaseTraitGrants?.[instanceId] ?? [])
+    grantedTraits.push({ value: t, scope: "phase" });
+  for (const t of state.turnTraitGrants?.[instanceId] ?? [])
+    grantedTraits.push({ value: t, scope: "turn" });
+  if (grantedTraits.length) rt.grantedTraits = grantedTraits;
+
+  // Build scoped trait removals
+  const removedTraits: ScopedMod<Trait>[] = [];
+  for (const t of state.phaseTraitRemovals?.[instanceId] ?? [])
+    removedTraits.push({ value: t, scope: "phase" });
+  for (const t of state.turnTraitRemovals?.[instanceId] ?? [])
+    removedTraits.push({ value: t, scope: "turn" });
+  if (removedTraits.length) rt.removedTraits = removedTraits;
+
+  // Build scoped keyword grants
+  const grantedKeywords: ScopedMod<Keyword>[] = [];
+  for (const t of state.phaseKeywordGrants?.[instanceId] ?? [])
+    grantedKeywords.push({ value: t, scope: "phase" });
+  for (const t of state.turnKeywordGrants?.[instanceId] ?? [])
+    grantedKeywords.push({ value: t, scope: "turn" });
+  if (grantedKeywords.length) rt.grantedKeywords = grantedKeywords;
+
+  if (stack.exhausted) rt.exhausted = true;
+  if (stack.cards.length > 1) rt.stackSize = stack.cards.length;
+
+  // Only return if there's something to show
+  if (Object.keys(rt).length === 0) return undefined;
+  return rt;
 }
 
 function getCardCylonThreat(defId: string): number {
@@ -123,17 +182,14 @@ function formatCost(cost: CardDef["cost"]): string {
     .join(" ");
 }
 
+const RESOURCE_ICONS: Record<string, string> = {
+  persuasion: "P",
+  logistics: "L",
+  security: "S",
+};
+
 function resourceIcon(type: string): string {
-  switch (type) {
-    case "persuasion":
-      return "P";
-    case "logistics":
-      return "L";
-    case "security":
-      return "S";
-    default:
-      return "?";
-  }
+  return RESOURCE_ICONS[type] ?? "?";
 }
 
 function costBadgeHtml(cost: CardDef["cost"]): string {
@@ -1303,30 +1359,22 @@ function renderWinner(state: PlayerGameView): string {
   return `<div class="winner-banner ${isWinner ? "win" : "lose"}">${isWinner ? "YOU WIN!" : "YOU LOSE"}</div>`;
 }
 
+const PHASE_LABELS: Record<string, string> = {
+  setup: "Setup",
+  execution: "Execution",
+  cylon: "Cylon",
+  gameOver: "Game Over",
+};
+
+const READY_STEP_LABELS: Record<number, string> = {
+  3: "Ready \u2014 Draw Cards",
+  4: "Ready \u2014 Deploy Resource",
+  5: "Ready \u2014 Reorder Stacks",
+};
+
 function formatPhase(phase: string, readyStep: number): string {
-  switch (phase) {
-    case "setup":
-      return "Setup";
-    case "ready":
-      switch (readyStep) {
-        case 3:
-          return "Ready \u2014 Draw Cards";
-        case 4:
-          return "Ready \u2014 Deploy Resource";
-        case 5:
-          return "Ready \u2014 Reorder Stacks";
-        default:
-          return `Ready (step ${readyStep})`;
-      }
-    case "execution":
-      return "Execution";
-    case "cylon":
-      return "Cylon";
-    case "gameOver":
-      return "Game Over";
-    default:
-      return phase;
-  }
+  if (phase === "ready") return READY_STEP_LABELS[readyStep] ?? `Ready (step ${readyStep})`;
+  return PHASE_LABELS[phase] ?? phase;
 }
 
 function renderOpponentZones(
@@ -1689,12 +1737,16 @@ function attachEventListeners(
     });
   });
 
-  // Unit card image tap-to-preview
+  // Unit card image tap-to-preview (with runtime modifiers)
   container.querySelectorAll(".unit-card-img[data-def-id]").forEach((el) => {
     el.addEventListener("click", () => {
       if (el.classList.contains("selectable")) return;
-      const defId = (el as HTMLElement).dataset.defId;
-      if (defId) showCardPreview(defId);
+      const htmlEl = el as HTMLElement;
+      const defId = htmlEl.dataset.defId;
+      if (!defId) return;
+      const instanceId = htmlEl.dataset.instanceId;
+      const runtime = instanceId ? buildRuntimeInfo(instanceId, state) : undefined;
+      showCardPreview(defId, { runtime });
     });
   });
 
@@ -2525,22 +2577,14 @@ function showResourceDeployChoice(
   ]);
 }
 
-/** Check if there's a meaningful resource stack choice for a given cost. */
+/** Check if there's a resource cost that requires stack selection. */
 function hasResourceChoice(
   cost: { persuasion?: number; logistics?: number; security?: number } | null,
-  stacks: ResourceStack[],
+  _stacks: ResourceStack[],
 ): boolean {
   if (!cost) return false;
-  for (const [resType, amount] of Object.entries(cost) as [string, number][]) {
-    const candidates = stacks.filter(
-      (s) => !s.exhausted && getResourceName(s.topCard.defId) === resType,
-    );
-    if (candidates.length <= 1) continue;
-    // Multiple stacks of this type — is there more than one valid combination?
-    const total = candidates.reduce((sum, s) => sum + 1 + s.supplyCards.length, 0);
-    if (total > amount && candidates.length > 1) return true;
-  }
-  return false;
+  // Always let the player pick which stacks to spend
+  return Object.values(cost).some((amount) => amount > 0);
 }
 
 /** Compute the optimal stack selection (minimize waste) for a given cost. */
@@ -2882,12 +2926,4 @@ function restoreActionsBar(
 
   // Re-show the player action modal
   showPlayerActionModal(validActions, state, container);
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

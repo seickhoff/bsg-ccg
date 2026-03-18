@@ -6,8 +6,9 @@ import type {
   ResourceType,
   DeckSubmission,
 } from "@bsg/shared";
-import { validateDeck } from "@bsg/shared";
+import { validateDeck, cardName } from "@bsg/shared";
 import { saveDeck, loadDeck } from "./deck-storage.js";
+import { escapeHtml as esc } from "./utils.js";
 
 // ============================================================
 // BSG CCG — Deck Builder UI
@@ -68,19 +69,6 @@ export function renderDeckBuilder(
 
 // --- Helpers ---
 
-function esc(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function cardName(c: { title?: string; subtitle?: string; id: string }): string {
-  if (c.title && c.subtitle) return `${c.title}, ${c.subtitle}`;
-  return c.subtitle ?? c.title ?? c.id;
-}
-
 function costStr(cost: CardDef["cost"]): string {
   if (!cost) return "Free";
   return Object.entries(cost)
@@ -107,18 +95,13 @@ function getValidation(): { valid: boolean; errors: string[] } {
   return validateDeck({ baseId: state.selectedBaseId, deckCardIds: deckIds() }, state.registry);
 }
 
-function identityName(d: CardDef): string {
-  if (d.title && d.subtitle) return `${d.title}, ${d.subtitle}`;
-  return d.subtitle ?? d.title ?? d.id;
-}
-
 function copiesByName(d: CardDef): number {
   if (!state) return 0;
-  const target = identityName(d);
+  const target = cardName(d);
   let t = 0;
   for (const [id, n] of state.deckCards) {
     const c = state.registry.cards[id];
-    if (c && identityName(c) === target) t += n;
+    if (c && cardName(c) === target) t += n;
   }
   return t;
 }
@@ -141,6 +124,18 @@ function render(): void {
   const sz = deckSize();
   const stats = getDeckStats();
 
+  // Compute average mystic value across all deck cards
+  let mvTotal = 0;
+  let mvCount = 0;
+  for (const [id, n] of state.deckCards) {
+    const c = state.registry.cards[id];
+    if (c && c.mysticValue != null) {
+      mvTotal += c.mysticValue * n;
+      mvCount += n;
+    }
+  }
+  const avgMv = mvCount > 0 ? (mvTotal / mvCount).toFixed(1) : "—";
+
   // Preserve scroll position across re-renders
   const body = container.querySelector(".db-body");
   const scrollTop = body?.scrollTop ?? 0;
@@ -151,11 +146,16 @@ function render(): void {
         <div class="db-header-left">
           <span class="db-title">Deck Builder</span>
           <span class="db-count ${sz >= 60 ? "valid" : "invalid"}">${sz}/60</span>
-          <span class="db-stats-inline">
-            P:${stats.personnel} S:${stats.ship} E:${stats.event} M:${stats.mission}
-          </span>
         </div>
         <button class="db-play-btn" id="db-play" ${v.valid ? "" : "disabled"}>Play</button>
+      </div>
+
+      <div class="db-deck-stats">
+        <span>Personnel:${stats.personnel}</span>
+        <span>Ships:${stats.ship}</span>
+        <span>Events:${stats.event}</span>
+        <span>Missions:${stats.mission}</span>
+        <span>MV:${avgMv}</span>
       </div>
 
       <div class="db-tabs">
@@ -310,9 +310,6 @@ function renderDeckTab(v: { valid: boolean; errors: string[] }): string {
   }
   entries.sort((a, b) => cardName(a.card).localeCompare(cardName(b.card)));
 
-  const stats = getDeckStats();
-  const unitCount = stats.personnel + stats.ship;
-
   return `
     ${
       baseDef
@@ -327,14 +324,6 @@ function renderDeckTab(v: { valid: boolean; errors: string[] }): string {
     `
         : '<div class="db-empty">No base selected</div>'
     }
-
-    <div class="db-deck-stats">
-      <span>P:${stats.personnel}</span>
-      <span>S:${stats.ship}</span>
-      <span class="${unitCount < 30 ? "warn" : ""}">Units:${unitCount}</span>
-      <span>E:${stats.event}</span>
-      <span>M:${stats.mission}</span>
-    </div>
 
     ${v.errors.length > 0 ? `<div class="db-errors">${v.errors.map((e) => `<div class="db-error">${esc(e)}</div>`).join("")}</div>` : ""}
 
@@ -691,9 +680,26 @@ function updateHeader(): void {
     countEl.textContent = `${sz}/60`;
     countEl.className = `db-count ${sz >= 60 ? "valid" : "invalid"}`;
   }
-  const statsEl = container.querySelector(".db-stats-inline");
-  if (statsEl)
-    statsEl.textContent = `P:${stats.personnel} S:${stats.ship} E:${stats.event} M:${stats.mission}`;
+  let mvTotal = 0;
+  let mvCount = 0;
+  for (const [id, n] of state.deckCards) {
+    const c = state.registry.cards[id];
+    if (c && c.mysticValue != null) {
+      mvTotal += c.mysticValue * n;
+      mvCount += n;
+    }
+  }
+  const avgMv = mvCount > 0 ? (mvTotal / mvCount).toFixed(1) : "—";
+  const statsRow = container.querySelector(".db-deck-stats");
+  if (statsRow) {
+    statsRow.innerHTML = `
+      <span>Personnel:${stats.personnel}</span>
+      <span>Ships:${stats.ship}</span>
+      <span>Events:${stats.event}</span>
+      <span>Missions:${stats.mission}</span>
+      <span>MV:${avgMv}</span>
+    `;
+  }
   const playBtn = container.querySelector("#db-play") as HTMLButtonElement;
   if (playBtn) playBtn.disabled = !v.valid;
   const deckTab = container.querySelector('[data-tab="deck"]');

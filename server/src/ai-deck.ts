@@ -1,4 +1,6 @@
 import type { CardRegistry, CardDef, DeckSubmission, ResourceType } from "@bsg/shared";
+import { cardName } from "@bsg/shared";
+import { shuffle } from "./utils.js";
 
 // ============================================================
 // BSG CCG — AI Deck Builder
@@ -8,15 +10,6 @@ import type { CardRegistry, CardDef, DeckSubmission, ResourceType } from "@bsg/s
 /** Pick a random element from an array */
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-/** Shuffle an array in-place (Fisher-Yates) */
-function shuffle<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
 }
 
 /**
@@ -67,16 +60,12 @@ export function buildAIDeck(registry: CardRegistry): DeckSubmission {
 
   // If still under 60 (unlikely), add any remaining cards
   if (deckCardIds.length < TARGET_SIZE) {
-    const allScored = shuffle(allCards.map((card) => ({ card, score: 0 })));
+    const allScored = allCards.map((card) => ({ card, score: 0 }));
+    shuffle(allScored);
     addCards(allScored, deckCardIds, nameCounts, TARGET_SIZE - deckCardIds.length);
   }
 
   return { baseId, deckCardIds };
-}
-
-function getCardName(card: CardDef): string {
-  if (card.title && card.subtitle) return `${card.title}, ${card.subtitle}`;
-  return card.subtitle ?? card.title ?? card.id;
 }
 
 function scoreCard(card: CardDef, baseResource: ResourceType): number {
@@ -119,7 +108,7 @@ function addCards(
   let added = 0;
   for (const { card } of scored) {
     if (added >= count) break;
-    const name = getCardName(card);
+    const name = cardName(card);
     const current = nameCounts.get(name) ?? 0;
     // Add up to 4 copies
     const toAdd = Math.min(4 - current, count - added);

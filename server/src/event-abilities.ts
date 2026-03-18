@@ -18,6 +18,8 @@ import type {
 } from "@bsg/shared";
 import { registerPendingChoice } from "./pending-choice-registry.js";
 import { unitHasTrait } from "./trait-rules.js";
+import { findUnitInZone, findUnitInAnyZone, findUnitOwner } from "./zone-helpers.js";
+import { shuffle } from "./utils.js";
 
 // ============================================================
 // Handler Interface
@@ -113,46 +115,6 @@ function register(abilityId: string, handler: EventAbilityHandler): void {
 // ============================================================
 // Local Helpers
 // ============================================================
-
-function findUnitInZone(
-  zone: UnitStack[],
-  instanceId: string,
-): { stack: UnitStack; index: number } | null {
-  for (let i = 0; i < zone.length; i++) {
-    if (zone[i].cards[0]?.instanceId === instanceId) {
-      return { stack: zone[i], index: i };
-    }
-  }
-  return null;
-}
-
-function findUnitInAnyZone(
-  player: PlayerState,
-  instanceId: string,
-): { stack: UnitStack; zone: "alert" | "reserve"; index: number } | null {
-  const alertResult = findUnitInZone(player.zones.alert, instanceId);
-  if (alertResult) return { ...alertResult, zone: "alert" };
-  const reserveResult = findUnitInZone(player.zones.reserve, instanceId);
-  if (reserveResult) return { ...reserveResult, zone: "reserve" };
-  return null;
-}
-
-function findUnitOwner(
-  state: GameState,
-  instanceId: string,
-): {
-  player: PlayerState;
-  playerIndex: number;
-  stack: UnitStack;
-  zone: "alert" | "reserve";
-  index: number;
-} | null {
-  for (let pi = 0; pi < state.players.length; pi++) {
-    const result = findUnitInAnyZone(state.players[pi], instanceId);
-    if (result) return { player: state.players[pi], playerIndex: pi, ...result };
-  }
-  return null;
-}
 
 function commitUnitLocal(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInZone(player.zones.alert, instanceId);
@@ -264,13 +226,6 @@ function getTargetUnitDef(state: GameState, instanceId: string): CardDef | null 
 
 function hasTrait(state: GameState, instanceId: string, def: CardDef, trait: string): boolean {
   return unitHasTrait(state, instanceId, def, trait as import("@bsg/shared").Trait);
-}
-
-function shuffle<T>(array: T[]): void {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
 }
 
 function sacrificeUnit(player: PlayerState, instanceId: string, log: LogItem[]): boolean {

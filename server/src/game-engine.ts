@@ -19,7 +19,7 @@ import type {
   DebugPlayerSetup,
   CardRegistry,
 } from "@bsg/shared";
-import { hasKeyword } from "@bsg/shared";
+import { hasKeyword, cardName } from "@bsg/shared";
 import {
   canUnitChallenge,
   canUnitDefend,
@@ -107,6 +107,8 @@ import {
   dispatchResolvePendingChoice,
   registerPendingChoice,
 } from "./pending-choice-registry.js";
+import { findUnitInZone, findUnitInAnyZone } from "./zone-helpers.js";
+import { shuffle } from "./utils.js";
 import { setCylonThreatHelpers, applyRegisteredCylonThreat } from "./cylon-threat-handlers.js";
 // Card registry — populated at startup via setCardRegistry()
 let cardRegistry: Record<string, CardDef> = {};
@@ -187,14 +189,6 @@ function makeCardInstance(defId: string): CardInstance {
   return { instanceId: makeInstanceId(), defId, faceUp: true };
 }
 
-/** Fisher-Yates (Knuth) shuffle — in-place, O(n). */
-function shuffle<T>(array: T[]): void {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-}
-
 export function getCardDef(defId: string): CardDef {
   const def = cardRegistry[defId];
   if (!def) throw new Error(`Unknown card def: ${defId}`);
@@ -212,11 +206,6 @@ function isMission(def: CardDef): boolean {
 /** A singular card has both title and subtitle (per rules, only personnel). */
 function isSingular(def: CardDef): boolean {
   return !!def.title && !!def.subtitle;
-}
-
-function cardName(def: CardDef): string {
-  if (def.title && def.subtitle) return `${def.title}, ${def.subtitle}`;
-  return def.title ?? def.subtitle ?? "?";
 }
 
 /** Get player display name from state. */
@@ -290,6 +279,7 @@ function drawCards(
   playerLabel: string,
   state?: GameState,
   playerIndex?: number,
+  silent = false,
 ): void {
   for (let i = 0; i < count; i++) {
     if (player.deck.length === 0) {
@@ -305,7 +295,9 @@ function drawCards(
     }
     const card = player.deck.shift()!;
     player.hand.push(card);
-    log.push(`${playerLabel} draws a card.`);
+    if (!silent) {
+      log.push(`${playerLabel} draws a card.`);
+    }
   }
   // Tightening the Noose: fire onDraw hook during execution phase
   if (state && playerIndex !== undefined && state.phase === "execution") {
@@ -361,20 +353,6 @@ function getStackResourceType(
   // Otherwise it's a card def used as asset
   const cardDef = cardRegistry[defId];
   return cardDef?.resource ?? null;
-}
-
-// --- Find unit stack by instance ID in a zone ---
-
-function findUnitInZone(
-  zone: UnitStack[],
-  instanceId: string,
-): { stack: UnitStack; index: number } | null {
-  for (let i = 0; i < zone.length; i++) {
-    if (zone[i].cards[0]?.instanceId === instanceId) {
-      return { stack: zone[i], index: i };
-    }
-  }
-  return null;
 }
 
 // --- Power breakdown logging ---
@@ -500,8 +478,8 @@ export function createGame(
 
   // Draw starting hands
   const log: LogItem[] = [];
-  drawCards(p1, base1.handSize, log, names[0]);
-  drawCards(p2, base2.handSize, log, names[1]);
+  drawCards(p1, base1.handSize, log, names[0], undefined, undefined, true);
+  drawCards(p2, base2.handSize, log, names[1], undefined, undefined, true);
   log.push("Game created. Players may choose to keep or redraw their hands.");
 
   const state: GameState = {
@@ -693,6 +671,12 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
       ...you.turnKeywordGrants,
       ...opp.turnKeywordGrants,
     },
+    phaseTraitGrants: { ...you.temporaryTraitGrants, ...opp.temporaryTraitGrants },
+    turnTraitGrants: { ...you.turnTraitGrants, ...opp.turnTraitGrants },
+    phaseTraitRemovals: { ...you.temporaryTraitRemovals, ...opp.temporaryTraitRemovals },
+    turnTraitRemovals: { ...you.turnTraitRemovals, ...opp.turnTraitRemovals },
+    phaseKeywordGrants: { ...you.temporaryKeywordGrants, ...opp.temporaryKeywordGrants },
+    turnKeywordGrants: { ...you.turnKeywordGrants, ...opp.turnKeywordGrants },
     choicePrompt: state.pendingChoice?.prompt,
     choiceType: state.pendingChoice?.type,
   };
@@ -1460,7 +1444,7 @@ export function applyAction(
       player.deck.push(...player.hand);
       player.hand = [];
       shuffle(player.deck);
-      drawCards(player, baseDef.handSize, log, pLabel);
+      drawCards(player, baseDef.handSize, log, pLabel, undefined, undefined, true);
       player.hasMulliganed = true;
       log.push(`${pLabel} redraws their hand.`);
       checkSetupComplete(s, log, bases);
@@ -1502,7 +1486,7 @@ export function applyAction(
     // --- Ready phase step 3: draw cards ---
     case "drawCards": {
       for (let i = 0; i < s.players.length; i++) {
-        drawCards(s.players[i], 2, log, s.playerNames[i as 0 | 1]);
+        drawCards(s.players[i], 2, log, s.playerNames[i as 0 | 1], undefined, undefined, true);
       }
       log.push("All players draw 2 cards.");
       s.readyStep = 4 as ReadyStep;
@@ -3408,23 +3392,6 @@ function pickLinkTarget(
     }
   }
   return best;
-}
-
-function findUnitInAnyZone(
-  player: PlayerState,
-  instanceId: string,
-): { stack: UnitStack; zone: "alert" | "reserve"; index: number } | null {
-  for (let i = 0; i < player.zones.alert.length; i++) {
-    if (player.zones.alert[i].cards[0]?.instanceId === instanceId) {
-      return { stack: player.zones.alert[i], zone: "alert", index: i };
-    }
-  }
-  for (let i = 0; i < player.zones.reserve.length; i++) {
-    if (player.zones.reserve[i].cards[0]?.instanceId === instanceId) {
-      return { stack: player.zones.reserve[i], zone: "reserve", index: i };
-    }
-  }
-  return null;
 }
 
 function findUnitStackByInstanceId(s: GameState, instanceId: string): UnitStack | null {

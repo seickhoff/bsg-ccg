@@ -10,9 +10,10 @@ import type {
   CardInstance,
   LogItem,
 } from "@bsg/shared";
-import { hasKeyword } from "@bsg/shared";
+import { hasKeyword, cardName } from "@bsg/shared";
 import { unitHasTrait } from "./trait-rules.js";
 import { fireMissionOnDraw } from "./mission-abilities.js";
+import { findUnitInZone, findUnitInAnyZone } from "./zone-helpers.js";
 import { registerPendingChoice, getHelpers } from "./pending-choice-registry.js";
 
 // ============================================================
@@ -147,42 +148,6 @@ export function setUnitAbilityInfluenceLoss(fn: InfluenceLossFn): void {
 
 function getCardDef(defId: string): CardDef | undefined {
   return cardRegistryRef[defId];
-}
-
-// --- Zone helpers ---
-
-function findUnitInZone(
-  zone: UnitStack[],
-  instanceId: string,
-): { stack: UnitStack; index: number } | null {
-  for (let i = 0; i < zone.length; i++) {
-    if (zone[i].cards[0]?.instanceId === instanceId) {
-      return { stack: zone[i], index: i };
-    }
-  }
-  return null;
-}
-
-function findUnitInAnyZone(
-  player: PlayerState,
-  instanceId: string,
-): { stack: UnitStack; zone: "alert" | "reserve"; index: number } | null {
-  for (let i = 0; i < player.zones.alert.length; i++) {
-    if (player.zones.alert[i].cards[0]?.instanceId === instanceId) {
-      return { stack: player.zones.alert[i], zone: "alert", index: i };
-    }
-  }
-  for (let i = 0; i < player.zones.reserve.length; i++) {
-    if (player.zones.reserve[i].cards[0]?.instanceId === instanceId) {
-      return { stack: player.zones.reserve[i], zone: "reserve", index: i };
-    }
-  }
-  return null;
-}
-
-function cardName(def: CardDef): string {
-  if (def.title && def.subtitle) return `${def.title}, ${def.subtitle}`;
-  return def.title ?? def.subtitle ?? "?";
 }
 
 function getUnitPowerBasic(stack: UnitStack): number {

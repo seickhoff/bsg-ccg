@@ -24,6 +24,8 @@ import type {
   Trait,
 } from "@bsg/shared";
 import { registerPendingChoice } from "./pending-choice-registry.js";
+import { findUnitInZone, findUnitInAnyZone, findUnitOwner } from "./zone-helpers.js";
+import { shuffle } from "./utils.js";
 
 // Re-use PowerContext from unit-abilities
 export interface PowerContext {
@@ -192,46 +194,6 @@ function getCardDef(defId: string): CardDef {
   return cardRegistry[defId];
 }
 
-function findUnitInZone(
-  zone: UnitStack[],
-  instanceId: string,
-): { stack: UnitStack; index: number } | null {
-  for (let i = 0; i < zone.length; i++) {
-    if (zone[i].cards[0]?.instanceId === instanceId) {
-      return { stack: zone[i], index: i };
-    }
-  }
-  return null;
-}
-
-function findUnitInAnyZone(
-  player: PlayerState,
-  instanceId: string,
-): { stack: UnitStack; zone: "alert" | "reserve"; index: number } | null {
-  const alertResult = findUnitInZone(player.zones.alert, instanceId);
-  if (alertResult) return { ...alertResult, zone: "alert" };
-  const reserveResult = findUnitInZone(player.zones.reserve, instanceId);
-  if (reserveResult) return { ...reserveResult, zone: "reserve" };
-  return null;
-}
-
-function findUnitOwner(
-  state: GameState,
-  instanceId: string,
-): {
-  player: PlayerState;
-  playerIndex: number;
-  stack: UnitStack;
-  zone: "alert" | "reserve";
-  index: number;
-} | null {
-  for (let pi = 0; pi < state.players.length; pi++) {
-    const result = findUnitInAnyZone(state.players[pi], instanceId);
-    if (result) return { player: state.players[pi], playerIndex: pi, ...result };
-  }
-  return null;
-}
-
 function commitUnitLocal(player: PlayerState, instanceId: string, log?: LogItem[]): boolean {
   const found = findUnitInZone(player.zones.alert, instanceId);
   if (found) {
@@ -332,13 +294,6 @@ function getLinkedMissionHandlers(
     if (handler) results.push({ card: mc, def, handler });
   }
   return results;
-}
-
-function shuffle(arr: CardInstance[]): void {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
 }
 
 // ============================================================
