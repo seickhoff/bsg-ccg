@@ -509,6 +509,39 @@ body {
   pointer-events: none;
 }
 
+.keyword-grant-badge {
+  position: absolute;
+  top: 14px;
+  left: 3px;
+  background: rgba(40, 120, 180, 0.9);
+  color: #fff;
+  font-size: 0.45rem;
+  font-weight: 700;
+  padding: 1px 3px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.trait-removal-badge {
+  position: absolute;
+  top: 14px;
+  left: 3px;
+  background: rgba(120, 120, 120, 0.9);
+  color: #fff;
+  font-size: 0.45rem;
+  font-weight: 700;
+  padding: 1px 3px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  text-decoration: line-through;
+  letter-spacing: 0.3px;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .unit-card-img.selectable {
   border: 2px solid #ffd54f;
   box-shadow: 0 0 8px rgba(255, 213, 79, 0.5);

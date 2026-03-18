@@ -11,6 +11,7 @@ import type {
   LogItem,
 } from "@bsg/shared";
 import { hasKeyword } from "@bsg/shared";
+import { unitHasTrait } from "./trait-rules.js";
 import { fireMissionOnDraw } from "./mission-abilities.js";
 import { registerPendingChoice, getHelpers } from "./pending-choice-registry.js";
 
@@ -30,6 +31,8 @@ export interface PowerContext {
   isDefender?: boolean;
   challengerDef?: CardDef;
   defenderDef?: CardDef;
+  challengerInstanceId?: string;
+  defenderInstanceId?: string;
 }
 
 export interface UnitAbilityHandler {
@@ -43,7 +46,12 @@ export interface UnitAbilityHandler {
       | "sacrifice-other"
       | "exhaust";
     /** Filter for the "other" unit (commit-other / sacrifice-other cost) */
-    otherFilter?: (def: CardDef, state: GameState, playerIndex: number) => boolean;
+    otherFilter?: (
+      def: CardDef,
+      state: GameState,
+      playerIndex: number,
+      instanceId: string,
+    ) => boolean;
     /** Contexts where this can be voluntarily activated */
     usableIn: ("execution" | "challenge" | "cylon-challenge")[];
     /** Once-per-turn limitation */
@@ -225,14 +233,19 @@ function getAlertUnits(
 }
 
 /** Count Pilots controlled by player (in alert or reserve, face-up) */
-function countTraitUnits(player: PlayerState, trait: Trait, excludeInstanceId?: string): number {
+function countTraitUnits(
+  state: GameState,
+  player: PlayerState,
+  trait: Trait,
+  excludeInstanceId?: string,
+): number {
   let count = 0;
   for (const zone of [player.zones.alert, player.zones.reserve]) {
     for (const stack of zone) {
       const topCard = stack.cards[0];
       if (topCard?.faceUp && topCard.instanceId !== excludeInstanceId) {
         const def = getCardDef(topCard.defId);
-        if (def?.traits?.includes(trait)) count++;
+        if (unitHasTrait(state, topCard.instanceId, def, trait)) count++;
       }
     }
   }
@@ -458,14 +471,19 @@ register("helo-buff", {
       for (const id of [state.challenge.challengerInstanceId, state.challenge.defenderInstanceId]) {
         if (id && id !== sourceId) {
           const def = findDefByInstanceId(state, id);
-          if (def?.traits?.includes("Pilot")) targets.push(id);
+          if (unitHasTrait(state, id, def, "Pilot" as Trait)) targets.push(id);
         }
       }
       return targets.length > 0 ? targets : [];
     }
-    return findTargetUnits(state, playerIndex, (def) => !!def.traits?.includes("Pilot"), {
-      excludeSourceId: sourceId,
-    });
+    return findTargetUnits(
+      state,
+      playerIndex,
+      (def, stack) => unitHasTrait(state, stack.cards[0].instanceId, def, "Pilot" as Trait),
+      {
+        excludeSourceId: sourceId,
+      },
+    );
   },
   resolve(state, _pi, _sid, targetId, log) {
     if (!targetId || !state.challenge) return;
@@ -482,14 +500,19 @@ register("ellen-buff", {
       for (const id of [state.challenge.challengerInstanceId, state.challenge.defenderInstanceId]) {
         if (id && id !== sourceId) {
           const def = findDefByInstanceId(state, id);
-          if (def?.traits?.includes("Officer")) targets.push(id);
+          if (unitHasTrait(state, id, def, "Officer" as Trait)) targets.push(id);
         }
       }
       return targets.length > 0 ? targets : [];
     }
-    return findTargetUnits(state, playerIndex, (def) => !!def.traits?.includes("Officer"), {
-      excludeSourceId: sourceId,
-    });
+    return findTargetUnits(
+      state,
+      playerIndex,
+      (def, stack) => unitHasTrait(state, stack.cards[0].instanceId, def, "Officer" as Trait),
+      {
+        excludeSourceId: sourceId,
+      },
+    );
   },
   resolve(state, _pi, _sid, targetId, log) {
     if (!targetId || !state.challenge) return;
@@ -548,6 +571,10 @@ register("roslin-influence", {
   activation: { cost: "commit", usableIn: ["execution", "challenge"] },
   getTargets: () => null,
   resolve(state, playerIndex, _sid, _tid, log) {
+    if (state.preventInfluenceGain) {
+      log.push(`${state.preventInfluenceGain}: influence gain prevented.`);
+      return;
+    }
     state.players[playerIndex].influence += 1;
     log.push(
       `${state.playerNames[playerIndex as 0 | 1]} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
@@ -985,7 +1012,9 @@ register("six-ready-cylon", {
     return findTargetUnits(
       state,
       playerIndex,
-      (def) => def.type === "personnel" && !!def.traits?.includes("Cylon"),
+      (def, stack) =>
+        def.type === "personnel" &&
+        unitHasTrait(state, stack.cards[0].instanceId, def, "Cylon" as Trait),
       { ownOnly: true, reserveOnly: true, excludeSourceId: sourceId },
     );
   },
@@ -1081,7 +1110,9 @@ register("starbuck-slay", {
     return findTargetUnits(
       state,
       0,
-      (def) => def.type === "personnel" && !!def.traits?.includes("Cylon"),
+      (def, stack) =>
+        def.type === "personnel" &&
+        unitHasTrait(state, stack.cards[0].instanceId, def, "Cylon" as Trait),
       { excludeSourceId: sourceId },
     );
   },
@@ -1126,7 +1157,8 @@ register("centurion-hunt", {
   commitOtherPowerBuff: 2,
   activation: {
     cost: "commit-other",
-    otherFilter: (def) => def.type === "personnel" && !!def.traits?.includes("Cylon"),
+    otherFilter: (def, state, _pi, instanceId) =>
+      def.type === "personnel" && unitHasTrait(state, instanceId, def, "Cylon" as Trait),
     usableIn: ["execution", "challenge"],
     oncePerTurn: true,
   },
@@ -1134,7 +1166,9 @@ register("centurion-hunt", {
     return findTargetUnits(
       state,
       playerIndex,
-      (def) => def.type === "personnel" && !!def.traits?.includes("Cylon"),
+      (def, stack) =>
+        def.type === "personnel" &&
+        unitHasTrait(state, stack.cards[0].instanceId, def, "Cylon" as Trait),
       { ownOnly: true, alertOnly: true, excludeSourceId: sourceId },
     );
   },
@@ -1392,7 +1426,8 @@ register("hadrian-investigate", {
       (def, stack) =>
         def.type === "personnel" &&
         !stack.exhausted &&
-        !!(def.traits?.includes("Enlisted") || def.traits?.includes("Cylon")),
+        (unitHasTrait(state, stack.cards[0].instanceId, def, "Enlisted" as Trait) ||
+          unitHasTrait(state, stack.cards[0].instanceId, def, "Cylon" as Trait)),
       { alertOnly: true, excludeSourceId: sourceId },
     );
   },
@@ -1420,7 +1455,7 @@ register("apollo-cag", {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
     const def = getCardDef(topCard.defId);
-    if (!def?.traits?.includes("Pilot")) return 0;
+    if (!unitHasTrait(state, topCard.instanceId, def, "Pilot" as Trait)) return 0;
     // Check if owner has Apollo CAG in play (not this unit)
     const owner = state.players[ownerIndex];
     for (const zone of [owner.zones.alert, owner.zones.reserve]) {
@@ -1459,9 +1494,12 @@ register("dee-cylon", {
 
 // Helo Raptor ECO: "This personnel gets +3 power while challenging a Cylon personnel."
 register("helo-anticylon", {
-  getPowerModifier(_state, _unitStack, _ownerIndex, context) {
-    if (!context.isChallenger || !context.defenderDef) return 0;
-    if (context.defenderDef.type === "personnel" && context.defenderDef.traits?.includes("Cylon"))
+  getPowerModifier(state, _unitStack, _ownerIndex, context) {
+    if (!context.isChallenger || !context.defenderDef || !context.defenderInstanceId) return 0;
+    if (
+      context.defenderDef.type === "personnel" &&
+      unitHasTrait(state, context.defenderInstanceId, context.defenderDef, "Cylon" as Trait)
+    )
       return 3;
     return 0;
   },
@@ -1473,7 +1511,7 @@ register("starbuck-hotshot", {
   getPowerModifier(state, unitStack, ownerIndex) {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
-    return countTraitUnits(state.players[ownerIndex], "Pilot", topCard.instanceId);
+    return countTraitUnits(state, state.players[ownerIndex], "Pilot", topCard.instanceId);
   },
 });
 
@@ -1493,7 +1531,7 @@ register("anders-leader", {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
     const def = getCardDef(topCard.defId);
-    if (!def?.traits?.includes("Civilian")) return 0;
+    if (!unitHasTrait(state, topCard.instanceId, def, "Civilian" as Trait)) return 0;
     const owner = state.players[ownerIndex];
     for (const zone of [owner.zones.alert, owner.zones.reserve]) {
       for (const stack of zone) {
@@ -1549,6 +1587,10 @@ register("boomer-conspirator", {
 register("billy-etb", {
   trigger: "onEnterPlay",
   resolve(state, playerIndex, _sid, _tid, log) {
+    if (state.preventInfluenceGain) {
+      log.push(`${state.preventInfluenceGain}: influence gain prevented.`);
+      return;
+    }
     state.players[playerIndex].influence += 1;
     log.push(
       `Billy Keikeya: ${state.playerNames[playerIndex as 0 | 1]} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
@@ -1630,6 +1672,10 @@ register("tyrol-etb", {
 register("helo-defeat", {
   trigger: "onDefeat",
   resolve(state, playerIndex, _sid, _tid, log) {
+    if (state.preventInfluenceGain) {
+      log.push(`${state.preventInfluenceGain}: influence gain prevented.`);
+      return;
+    }
     state.players[playerIndex].influence += 2;
     log.push(
       `Helo: ${state.playerNames[playerIndex as 0 | 1]} gains 2 influence on defeat. (Now ${state.players[playerIndex].influence})`,
@@ -1728,7 +1774,7 @@ register("cloud9-civilian", {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
     const def = getCardDef(topCard.defId);
-    if (!def?.traits?.includes("Civilian")) return 0;
+    if (!unitHasTrait(state, topCard.instanceId, def, "Civilian" as Trait)) return 0;
     const owner = state.players[ownerIndex];
     for (const zone of [owner.zones.alert, owner.zones.reserve]) {
       for (const stack of zone) {
@@ -1749,7 +1795,7 @@ register("colonial-one-politician", {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
     const def = getCardDef(topCard.defId);
-    if (!def?.traits?.includes("Politician")) return 0;
+    if (!unitHasTrait(state, topCard.instanceId, def, "Politician" as Trait)) return 0;
     const owner = state.players[ownerIndex];
     for (const zone of [owner.zones.alert, owner.zones.reserve]) {
       for (const stack of zone) {
@@ -1792,7 +1838,7 @@ register("galactica-fighters", {
     const topCard = unitStack.cards[0];
     if (!topCard) return 0;
     const def = getCardDef(topCard.defId);
-    if (!def?.traits?.includes("Fighter")) return 0;
+    if (!unitHasTrait(state, topCard.instanceId, def, "Fighter" as Trait)) return 0;
     const owner = state.players[ownerIndex];
     for (const zone of [owner.zones.alert, owner.zones.reserve]) {
       for (const stack of zone) {
@@ -1922,6 +1968,10 @@ register("colonial-one-influence", {
     if (!targetId || !targetId.startsWith("player-")) return;
     const targetPlayerIndex = parseInt(targetId.split("-")[1], 10);
     if (isNaN(targetPlayerIndex) || !state.players[targetPlayerIndex]) return;
+    if (state.preventInfluenceGain) {
+      log.push(`${state.preventInfluenceGain}: influence gain prevented.`);
+      return;
+    }
     state.players[targetPlayerIndex].influence += 1;
     log.push(
       `${state.playerNames[targetPlayerIndex as 0 | 1]} gains 1 influence (now ${state.players[targetPlayerIndex].influence}).`,
@@ -2060,7 +2110,8 @@ register("freighter-recover", {
     const targets: string[] = [];
     for (const card of player.discard) {
       const def = getCardDef(card.defId);
-      if (def?.traits?.includes("Cylon")) targets.push(card.instanceId);
+      if (unitHasTrait(state, card.instanceId, def, "Cylon" as Trait))
+        targets.push(card.instanceId);
     }
     return targets.length > 0 ? targets : [];
   },
@@ -2151,7 +2202,10 @@ register("doomed-liner-bounce", {
       const tc = stack.cards[0];
       if (tc?.faceUp) {
         const def = getCardDef(tc.defId);
-        if (def?.traits?.includes("Cylon") && (def.type === "personnel" || def.type === "ship")) {
+        if (
+          unitHasTrait(state, tc.instanceId, def, "Cylon" as Trait) &&
+          (def?.type === "personnel" || def?.type === "ship")
+        ) {
           targets.push(tc.instanceId);
         }
       }
@@ -2160,7 +2214,10 @@ register("doomed-liner-bounce", {
       const tc = stack.cards[0];
       if (tc?.faceUp) {
         const def = getCardDef(tc.defId);
-        if (def?.traits?.includes("Cylon") && (def.type === "personnel" || def.type === "ship")) {
+        if (
+          unitHasTrait(state, tc.instanceId, def, "Cylon" as Trait) &&
+          (def?.type === "personnel" || def?.type === "ship")
+        ) {
           targets.push(tc.instanceId);
         }
       }
@@ -2660,7 +2717,10 @@ export function fireOnChallengeInit(
       const tc = stack.cards[0];
       if (tc?.faceUp && tc.instanceId !== challengerInstanceId) {
         const def = getCardDef(tc.defId);
-        if (def?.type === "personnel" && def.traits?.includes("Pilot")) {
+        if (
+          def?.type === "personnel" &&
+          unitHasTrait(state, tc.instanceId, def, "Pilot" as Trait)
+        ) {
           commitUnit(player, tc.instanceId, log);
           if (state.challenge) {
             state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 3;
@@ -2734,7 +2794,10 @@ export function getEffectiveTraits(
   }
 
   // Apollo Political Liaison: all other Officers gain Politician
-  if (def.traits?.includes("Officer") && !traits.includes("Politician")) {
+  if (
+    unitHasTrait(state, topCard.instanceId, def, "Officer" as Trait) &&
+    !traits.includes("Politician")
+  ) {
     for (const zone of [player.zones.alert, player.zones.reserve]) {
       for (const stack of zone) {
         const tc = stack.cards[0];

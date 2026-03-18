@@ -407,7 +407,7 @@ export function renderGame(
       <div class="boards">
         <div class="opponent-board">
           <div class="board-label">${escapeHtml(opponentName.toUpperCase())}</div>
-          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants)}
+          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals)}
         </div>
 
         <div class="divider"></div>
@@ -1333,6 +1333,8 @@ function renderOpponentZones(
   opp: OpponentView,
   challenge: ChallengeState | null,
   traitGrants?: Record<string, Trait[]>,
+  keywordGrants?: Record<string, string[]>,
+  traitRemovals?: Record<string, Trait[]>,
 ): string {
   return `
     <div class="zone resource-zone">
@@ -1345,14 +1347,14 @@ function renderOpponentZones(
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants)).join("")}
+        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals)).join("")}
         ${opp.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants)).join("")}
+        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals)).join("")}
         ${opp.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1364,14 +1366,14 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants)).join("")}
+        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals)).join("")}
         ${state.you.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants)).join("")}
+        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals)).join("")}
         ${state.you.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1506,6 +1508,8 @@ function renderUnitStack(
   isYours: boolean,
   challenge: ChallengeState | null = null,
   traitGrants?: Record<string, Trait[]>,
+  keywordGrants?: Record<string, string[]>,
+  traitRemovals?: Record<string, Trait[]>,
 ): string {
   const topCard = stack.cards[0];
   if (!topCard) return "";
@@ -1540,6 +1544,14 @@ function renderUnitStack(
   const traitBadge = granted?.length
     ? `<div class="trait-grant-badge" title="${granted.join(", ")}">${granted.join(", ")}</div>`
     : "";
+  const removed = traitRemovals?.[topCard.instanceId];
+  const traitRemovalBadge = removed?.length
+    ? `<div class="trait-removal-badge" title="Lost: ${removed.join(", ")}">-${removed.join(", ")}</div>`
+    : "";
+  const grantedKw = keywordGrants?.[topCard.instanceId];
+  const keywordBadge = grantedKw?.length
+    ? `<div class="keyword-grant-badge" title="${grantedKw.join(", ")}">${grantedKw.join(", ")}</div>`
+    : "";
 
   if (image) {
     const displayImage = stack.exhausted ? "images/cards/bsgbetback-portrait.jpg" : image;
@@ -1551,6 +1563,8 @@ function renderUnitStack(
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
         ${traitBadge}
+        ${traitRemovalBadge}
+        ${keywordBadge}
       </div>
     `;
   }
@@ -1563,6 +1577,8 @@ function renderUnitStack(
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
         ${traitBadge}
+        ${traitRemovalBadge}
+        ${keywordBadge}
       </div>
     `;
   }
@@ -1577,6 +1593,9 @@ function renderUnitStack(
       </div>
       ${stackSize > 1 ? `<div class="card-stack-count">x${stackSize}</div>` : ""}
       ${linkedBadge}
+      ${traitBadge}
+      ${traitRemovalBadge}
+      ${keywordBadge}
     </div>
   `;
 }

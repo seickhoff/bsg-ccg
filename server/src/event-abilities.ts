@@ -17,6 +17,7 @@ import type {
   ValidAction,
 } from "@bsg/shared";
 import { registerPendingChoice } from "./pending-choice-registry.js";
+import { unitHasTrait } from "./trait-rules.js";
 
 // ============================================================
 // Handler Interface
@@ -261,8 +262,8 @@ function getTargetUnitDef(state: GameState, instanceId: string): CardDef | null 
   return null;
 }
 
-function hasTrait(def: CardDef, trait: string): boolean {
-  return def.traits?.includes(trait as import("@bsg/shared").Trait) ?? false;
+function hasTrait(state: GameState, instanceId: string, def: CardDef, trait: string): boolean {
+  return unitHasTrait(state, instanceId, def, trait as import("@bsg/shared").Trait);
 }
 
 function shuffle<T>(array: T[]): void {
@@ -343,7 +344,7 @@ register("cylon-missile-battery", {
     return getAllUnits(state)
       .filter((u) => {
         const d = getUnitDef(u.stack);
-        return d && hasTrait(d, "Cylon");
+        return d && hasTrait(state, u.instanceId, d, "Cylon");
       })
       .map((u) => u.instanceId);
   },
@@ -376,7 +377,7 @@ register("presidential-candidate", {
     const owner = findUnitOwner(state, state.challenge.defenderInstanceId);
     if (!owner) return [];
     const def = getUnitDef(owner.stack);
-    if (!def || !hasTrait(def, "Politician")) return [];
+    if (!def || !hasTrait(state, state.challenge.defenderInstanceId, def, "Politician")) return [];
     return [state.challenge.defenderInstanceId];
   },
   resolve(state, playerIndex, targetId, log) {
@@ -413,7 +414,7 @@ register("you-gave-yourself-over", {
     return getAllUnits(state)
       .filter((u) => {
         const d = getUnitDef(u.stack);
-        return d && hasTrait(d, "Civilian");
+        return d && hasTrait(state, u.instanceId, d, "Civilian");
       })
       .map((u) => u.instanceId);
   },
@@ -483,7 +484,11 @@ register("cylon-surprise", {
     return getAllUnits(state)
       .filter((u) => {
         const d = getUnitDef(u.stack);
-        return d && hasTrait(d, "Cylon") && hasTrait(d, "Machine");
+        return (
+          d &&
+          hasTrait(state, u.instanceId, d, "Cylon") &&
+          hasTrait(state, u.instanceId, d, "Machine")
+        );
       })
       .map((u) => u.instanceId);
   },
@@ -592,7 +597,8 @@ register("strange-wingman", {
     const targets: string[] = [];
     for (const stack of [...player.zones.alert, ...player.zones.reserve]) {
       const d = getUnitDef(stack);
-      if (d && hasTrait(d, "Fighter")) targets.push(stack.cards[0].instanceId);
+      if (d && hasTrait(state, stack.cards[0].instanceId, d, "Fighter"))
+        targets.push(stack.cards[0].instanceId);
     }
     return targets;
   },
@@ -602,7 +608,8 @@ register("strange-wingman", {
     let cylonShips = 0;
     for (const stack of [...player.zones.alert, ...player.zones.reserve]) {
       const d = getUnitDef(stack);
-      if (d && d.type === "ship" && hasTrait(d, "Cylon")) cylonShips++;
+      if (d && d.type === "ship" && hasTrait(state, stack.cards[0].instanceId, d, "Cylon"))
+        cylonShips++;
     }
     helpers.applyPowerBuff(state, targetId, cylonShips, log);
     log.push(`Strange Wingman: target Fighter gets +${cylonShips} power.`);
@@ -617,7 +624,7 @@ register("swearing-in", {
     return getAllUnits(state)
       .filter((u) => {
         const d = getUnitDef(u.stack);
-        return d && hasTrait(d, "Politician");
+        return d && hasTrait(state, u.instanceId, d, "Politician");
       })
       .map((u) => u.instanceId);
   },
@@ -857,7 +864,7 @@ register("sneak-attack", {
     for (const p of state.players) {
       const toCommit = p.zones.alert.filter((s) => {
         const d = getUnitDef(s);
-        return d && hasTrait(d, "Fighter");
+        return d && hasTrait(state, s.cards[0].instanceId, d, "Fighter");
       });
       for (const s of toCommit) {
         commitUnitLocal(p, s.cards[0].instanceId, log);
@@ -898,7 +905,11 @@ register("massive-assault", {
       const toReady = p.zones.reserve.filter((s) => {
         if (s.exhausted) return false;
         const d = getUnitDef(s);
-        return d && (hasTrait(d, "Capital Ship") || hasTrait(d, "Fighter"));
+        return (
+          d &&
+          (hasTrait(state, s.cards[0].instanceId, d, "Capital Ship") ||
+            hasTrait(state, s.cards[0].instanceId, d, "Fighter"))
+        );
       });
       for (const s of toReady) {
         readyUnitLocal(p, s.cards[0].instanceId, log);
@@ -1110,7 +1121,7 @@ function networkHackingForPlayer(state: GameState, pi: number, log?: LogItem[]):
   const p = state.players[pi];
   const cylons = p.zones.alert.filter((s) => {
     const d = getUnitDef(s);
-    return d && hasTrait(d, "Cylon");
+    return d && hasTrait(state, s.cards[0].instanceId, d, "Cylon");
   });
   const ships = p.zones.alert.filter((s) => {
     const d = getUnitDef(s);
@@ -1332,7 +1343,7 @@ register("suicide-bomber", {
       ...state.players[playerIndex].zones.reserve,
     ].some((s) => {
       const d = getUnitDef(s);
-      return d && d.type === "personnel" && hasTrait(d, "Cylon");
+      return d && d.type === "personnel" && hasTrait(state, s.cards[0].instanceId, d, "Cylon");
     });
   },
   getTargets(state) {
@@ -1349,7 +1360,7 @@ register("suicide-bomber", {
     // Find eligible Cylon personnel to sacrifice
     const cylonPersonnel = [...player.zones.alert, ...player.zones.reserve].filter((s) => {
       const d = getUnitDef(s);
-      return d && d.type === "personnel" && hasTrait(d, "Cylon");
+      return d && d.type === "personnel" && hasTrait(state, s.cards[0].instanceId, d, "Cylon");
     });
     if (cylonPersonnel.length === 0) return;
     const cards = cylonPersonnel.map((s) => s.cards[0]);
@@ -1418,7 +1429,7 @@ register("like-a-ghost-town", {
       const civilians = [...p.zones.alert, ...p.zones.reserve]
         .filter((s) => {
           const d = getUnitDef(s);
-          return d && hasTrait(d, "Civilian");
+          return d && hasTrait(state, s.cards[0].instanceId, d, "Civilian");
         })
         .map((s) => s.cards[0]?.instanceId)
         .filter(Boolean) as string[];
@@ -1540,7 +1551,11 @@ register("painful-recovery", {
       ...state.players[playerIndex].zones.reserve,
     ].some((s) => {
       const d = getUnitDef(s);
-      return d && hasTrait(d, "Cylon") && (d.type === "personnel" || d.type === "ship");
+      return (
+        d &&
+        hasTrait(state, s.cards[0].instanceId, d, "Cylon") &&
+        (d.type === "personnel" || d.type === "ship")
+      );
     });
   },
   getTargets(state, playerIndex) {
@@ -1548,7 +1563,11 @@ register("painful-recovery", {
     return [...state.players[playerIndex].zones.alert, ...state.players[playerIndex].zones.reserve]
       .filter((s) => {
         const d = getUnitDef(s);
-        return d && hasTrait(d, "Cylon") && (d.type === "personnel" || d.type === "ship");
+        return (
+          d &&
+          hasTrait(state, s.cards[0].instanceId, d, "Cylon") &&
+          (d.type === "personnel" || d.type === "ship")
+        );
       })
       .map((s) => s.cards[0].instanceId);
   },
@@ -1989,7 +2008,7 @@ register("networked-computers", {
 register("executive-privilege", {
   playableIn: ["execution", "challenge", "cylon-challenge"],
   resolve(state, _playerIndex, _targetId, log) {
-    state.preventInfluenceLoss = true;
+    state.preventInfluenceLoss = "Executive Privilege";
     log.push("Executive Privilege: all influence loss prevented this phase.");
   },
 });
@@ -1998,7 +2017,7 @@ register("executive-privilege", {
 register("standoff", {
   playableIn: ["execution", "challenge"],
   resolve(state, _playerIndex, _targetId, log) {
-    state.preventInfluenceGain = true;
+    state.preventInfluenceGain = "Standoff";
     log.push("Standoff: all influence gain prevented this phase.");
   },
 });
@@ -2008,12 +2027,14 @@ register("test-of-faith", {
   playableIn: ["execution"],
   resolve(state, playerIndex, _targetId, log) {
     // In 2-player, target self for gain
-    if (!state.preventInfluenceGain) {
+    if (state.preventInfluenceGain) {
+      log.push(`${state.preventInfluenceGain}: influence gain prevented.`);
+    } else {
       state.players[playerIndex].influence += 1;
+      log.push(
+        `Test of Faith: ${pLabel(playerIndex, state)} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
+      );
     }
-    log.push(
-      `Test of Faith: ${pLabel(playerIndex, state)} gains 1 influence. (Now ${state.players[playerIndex].influence})`,
-    );
   },
 });
 
@@ -2042,11 +2063,15 @@ register("high-stakes-game", {
       );
     }
     for (let pi = 0; pi < state.players.length; pi++) {
-      if (totals[pi] === bestTotal && !state.preventInfluenceGain) {
-        state.players[pi].influence += 2;
-        log.push(
-          `High Stakes Game: ${pLabel(pi, state)} gains 2 influence. (Now ${state.players[pi].influence})`,
-        );
+      if (totals[pi] === bestTotal) {
+        if (state.preventInfluenceGain) {
+          log.push(`${state.preventInfluenceGain}: influence gain prevented.`);
+        } else {
+          state.players[pi].influence += 2;
+          log.push(
+            `High Stakes Game: ${pLabel(pi, state)} gains 2 influence. (Now ${state.players[pi].influence})`,
+          );
+        }
       }
     }
   },
@@ -2076,7 +2101,7 @@ register("stims", {
     const owner = findUnitOwner(state, state.challenge.challengerInstanceId);
     if (!owner) return [];
     const def = getUnitDef(owner.stack);
-    if (!def || !hasTrait(def, "Pilot")) return [];
+    if (!def || !hasTrait(state, state.challenge.challengerInstanceId, def, "Pilot")) return [];
     return [state.challenge.challengerInstanceId];
   },
   resolve(state, _playerIndex, targetId, log) {
@@ -2166,7 +2191,12 @@ register("unwelcome-visitor", {
     const owner = findUnitOwner(state, state.challenge.challengerInstanceId);
     if (!owner) return [];
     const def = getUnitDef(owner.stack);
-    if (!def || def.type !== "personnel" || !hasTrait(def, "Cylon")) return [];
+    if (
+      !def ||
+      def.type !== "personnel" ||
+      !hasTrait(state, state.challenge.challengerInstanceId, def, "Cylon")
+    )
+      return [];
     return [state.challenge.challengerInstanceId];
   },
   resolve(state, _playerIndex, targetId, log) {
@@ -2204,7 +2234,9 @@ register("boarding-party", {
       if (!existing.includes("Scramble")) existing.push("Scramble");
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
-    log.push("Boarding Party: target ship gains Scramble.");
+    const targetDef = getTargetUnitDef(state, targetId);
+    const targetName = targetDef ? helpers.cardName(targetDef) : "target ship";
+    log.push(`Boarding Party: ${targetName} gains Scramble this phase.`);
     helpers.drawCards(
       state.players[playerIndex],
       1,
@@ -2237,7 +2269,9 @@ register("cylons-on-brain", {
       if (!existing.includes("Cylon")) existing.push("Cylon");
       owner.player.temporaryTraitGrants[targetId] = existing;
     }
-    log.push("Cylons on the Brain: target personnel gains Cylon trait.");
+    const targetDef = getTargetUnitDef(state, targetId);
+    const targetName = targetDef ? helpers.cardName(targetDef) : "target personnel";
+    log.push(`Cylons on the Brain: ${targetName} gains Cylon trait this phase.`);
   },
 });
 
@@ -2249,7 +2283,12 @@ register("everyone-green", {
     return getAllUnits(state)
       .filter((u) => {
         const d = getUnitDef(u.stack);
-        return d && d.type === "personnel" && hasTrait(d, "Cylon") && !hasTrait(d, "Machine");
+        return (
+          d &&
+          d.type === "personnel" &&
+          hasTrait(state, u.instanceId, d, "Cylon") &&
+          !hasTrait(state, u.instanceId, d, "Machine")
+        );
       })
       .map((u) => u.instanceId);
   },
@@ -2262,7 +2301,9 @@ register("everyone-green", {
       if (!existing.includes("Cylon")) existing.push("Cylon");
       owner.player.temporaryTraitRemovals[targetId] = existing;
     }
-    log.push("Everyone's Green: target Cylon personnel loses Cylon trait.");
+    const targetDef = getTargetUnitDef(state, targetId);
+    const targetName = targetDef ? helpers.cardName(targetDef) : "target";
+    log.push(`Everyone's Green: ${targetName} loses Cylon trait this phase.`);
     helpers.drawCards(
       state.players[playerIndex],
       1,
@@ -2295,7 +2336,9 @@ register("out-of-sight", {
       if (!existing.includes("Scramble")) existing.push("Scramble");
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
-    log.push("Out of Sight: target personnel gains Scramble.");
+    const targetDef = getTargetUnitDef(state, targetId);
+    const targetName = targetDef ? helpers.cardName(targetDef) : "target personnel";
+    log.push(`Out of Sight: ${targetName} gains Scramble this phase.`);
     helpers.drawCards(
       state.players[playerIndex],
       1,
@@ -2315,7 +2358,7 @@ register("unexpected", {
     return getAllUnits(state)
       .filter((u) => {
         const d = getUnitDef(u.stack);
-        return d && d.type === "ship" && hasTrait(d, "Cylon");
+        return d && d.type === "ship" && hasTrait(state, u.instanceId, d, "Cylon");
       })
       .map((u) => u.instanceId);
   },
@@ -2323,12 +2366,15 @@ register("unexpected", {
     if (!targetId) return;
     const owner = findUnitOwner(state, targetId);
     if (owner) {
-      if (!owner.player.temporaryTraitRemovals) owner.player.temporaryTraitRemovals = {};
-      const existing = owner.player.temporaryTraitRemovals[targetId] ?? [];
+      // Turn-scoped: card explicitly says "until the end of the turn"
+      if (!owner.player.turnTraitRemovals) owner.player.turnTraitRemovals = {};
+      const existing = owner.player.turnTraitRemovals[targetId] ?? [];
       if (!existing.includes("Cylon")) existing.push("Cylon");
-      owner.player.temporaryTraitRemovals[targetId] = existing;
+      owner.player.turnTraitRemovals[targetId] = existing;
     }
-    log.push("Unexpected...: target Cylon ship loses Cylon trait.");
+    const targetDef = getTargetUnitDef(state, targetId);
+    const targetName = targetDef ? helpers.cardName(targetDef) : "target";
+    log.push(`Unexpected...: ${targetName} loses Cylon trait until end of turn.`);
   },
 });
 
@@ -2348,7 +2394,7 @@ register("cylons-look-like-humans", {
           const d = cardRegistry[s.cards[0].defId];
           if (
             d &&
-            (hasTrait(d, "Cylon") ||
+            (hasTrait(state, s.cards[0].instanceId, d, "Cylon") ||
               (d.type === "mission" && d.abilityText?.toLowerCase().includes("cylon")))
           ) {
             cylonCount++;
@@ -2386,7 +2432,7 @@ register("double-trouble", {
         // Look for Cylon cards in the stack (not the top)
         for (let i = 1; i < s.cards.length; i++) {
           const d = cardRegistry[s.cards[i].defId];
-          if (d && hasTrait(d, "Cylon") && d.type === "personnel") {
+          if (d && hasTrait(state, s.cards[i].instanceId, d, "Cylon") && d.type === "personnel") {
             targets.push(s.cards[i].instanceId);
           }
         }
@@ -2437,7 +2483,7 @@ register("there-are-many-copies", {
     const targets: string[] = [];
     for (const card of player.discard) {
       const def = cardRegistry[card.defId];
-      if (def && def.type === "personnel" && hasTrait(def, "Cylon")) {
+      if (def && def.type === "personnel" && hasTrait(state, card.instanceId, def, "Cylon")) {
         targets.push(card.instanceId);
       }
     }
@@ -3532,7 +3578,7 @@ registerPendingChoice("network-hacking-choice", {
     const actions: ValidAction[] = [];
     const hasCylon = p.zones.alert.some((s) => {
       const d = getUnitDef(s);
-      return d && hasTrait(d, "Cylon");
+      return d && hasTrait(state, s.cards[0].instanceId, d, "Cylon");
     });
     const hasShip = p.zones.alert.some((s) => {
       const d = getUnitDef(s);
@@ -3550,7 +3596,7 @@ registerPendingChoice("network-hacking-choice", {
     const options: string[] = [];
     const hasCylon = p.zones.alert.some((s) => {
       const d = getUnitDef(s);
-      return d && hasTrait(d, "Cylon");
+      return d && hasTrait(state, s.cards[0].instanceId, d, "Cylon");
     });
     const hasShip = p.zones.alert.some((s) => {
       const d = getUnitDef(s);
@@ -3562,7 +3608,7 @@ registerPendingChoice("network-hacking-choice", {
     if (chosen === "cylon") {
       const cylons = p.zones.alert.filter((s) => {
         const d = getUnitDef(s);
-        return d && hasTrait(d, "Cylon");
+        return d && hasTrait(state, s.cards[0].instanceId, d, "Cylon");
       });
       // Pick which Cylon
       state.pendingChoice = {
@@ -3586,7 +3632,7 @@ registerPendingChoice("network-hacking-choice", {
     const p = state.players[choice.playerIndex];
     const hasCylon = p.zones.alert.some((s) => {
       const d = getUnitDef(s);
-      return d && hasTrait(d, "Cylon");
+      return d && hasTrait(state, s.cards[0].instanceId, d, "Cylon");
     });
     return hasCylon ? 0 : 0;
   },

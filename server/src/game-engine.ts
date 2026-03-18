@@ -305,6 +305,7 @@ function drawCards(
     }
     const card = player.deck.shift()!;
     player.hand.push(card);
+    log.push(`${playerLabel} draws a card.`);
   }
   // Tightening the Noose: fire onDraw hook during execution phase
   if (state && playerIndex !== undefined && state.phase === "execution") {
@@ -674,7 +675,24 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     cylonThreats: state.cylonThreats,
     log: state.log,
     winner: state.winner,
-    traitGrants: { ...you.temporaryTraitGrants, ...opp.temporaryTraitGrants },
+    traitGrants: {
+      ...you.temporaryTraitGrants,
+      ...opp.temporaryTraitGrants,
+      ...you.turnTraitGrants,
+      ...opp.turnTraitGrants,
+    },
+    traitRemovals: {
+      ...you.temporaryTraitRemovals,
+      ...opp.temporaryTraitRemovals,
+      ...you.turnTraitRemovals,
+      ...opp.turnTraitRemovals,
+    },
+    keywordGrants: {
+      ...you.temporaryKeywordGrants,
+      ...opp.temporaryKeywordGrants,
+      ...you.turnKeywordGrants,
+      ...opp.turnKeywordGrants,
+    },
     choicePrompt: state.pendingChoice?.prompt,
     choiceType: state.pendingChoice?.type,
   };
@@ -1043,15 +1061,21 @@ function getChallengeActions(
           const topCard = stack.cards[0];
           if (topCard && topCard.faceUp && !stack.exhausted) {
             const def = getCardDef(topCard.defId);
-            // Check mission-granted keywords (Scramble allows cross-type defense)
+            // Check keywords (Scramble allows cross-type defense)
             const challengerStack = findUnitInAnyZone(
               state.players[challenge.challengerPlayerIndex],
               challenge.challengerInstanceId,
             );
             const missionKws = getMissionKeywordGrants(state, stack, challenge.defenderPlayerIndex);
             const hasScrambleFromMission = missionKws.includes("Scramble" as any);
+            const hasScrambleFromEvent =
+              (defendingPlayer.temporaryKeywordGrants?.[topCard.instanceId]?.includes("Scramble") ??
+                false) ||
+              (defendingPlayer.turnKeywordGrants?.[topCard.instanceId]?.includes("Scramble") ??
+                false);
             const canDefend =
-              canUnitDefend(def, challengerDef) || (hasScrambleFromMission && isUnit(def));
+              canUnitDefend(def, challengerDef) ||
+              ((hasScrambleFromMission || hasScrambleFromEvent) && isUnit(def));
             // Independent Tribunal: units power ≤2 can't defend against this challenger
             const tribunalBlock =
               challengerStack &&
@@ -2049,11 +2073,15 @@ export function applyAction(
         }
         const defDef = findCardDefByInstanceId(s, action.defenderInstanceId);
         s.challenge.defenderInstanceId = action.defenderInstanceId;
+        const defenderLabel = pName(s, s.challenge.defenderPlayerIndex);
         if (handIndex < 0) {
-          log.push(`${pLabel} defends with ${defDef?.title ?? defDef?.subtitle ?? "unknown"}.`);
+          log.push(
+            `${defenderLabel} defends with ${defDef?.title ?? defDef?.subtitle ?? "unknown"}.`,
+          );
         }
       } else {
-        log.push(`${pLabel} declines to defend.`);
+        const declineLabel = pName(s, s.challenge.defenderPlayerIndex);
+        log.push(`${declineLabel} declines to defend.`);
       }
       s.challenge.waitingForDefender = false;
       s.challenge.step = 2;
@@ -2397,10 +2425,15 @@ function startReadyPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
   // Clear once-per-turn tracking and temporary modifiers
   for (const player of s.players) {
     player.oncePerTurnUsed = undefined;
+    // Phase-scoped modifiers (should already be cleared, but ensure clean state)
     player.temporaryTraitGrants = undefined;
     player.temporaryKeywordGrants = undefined;
-    player.temporaryCylonThreatMods = undefined;
     player.temporaryTraitRemovals = undefined;
+    // Turn-scoped modifiers
+    player.turnTraitRemovals = undefined;
+    player.turnTraitGrants = undefined;
+    player.turnKeywordGrants = undefined;
+    player.temporaryCylonThreatMods = undefined;
     player.extraActionsRemaining = undefined;
     player.costReduction = undefined;
   }
@@ -2488,9 +2521,13 @@ function startExecutionPhase(s: GameState, log: LogItem[]): void {
   s.noChallenges = undefined;
   s.politiciansCantDefend = undefined;
   s.effectImmunity = undefined;
+  // Clear phase-scoped player modifiers
   for (const player of s.players) {
     player.consecutivePasses = 0;
     player.hasResolvedMission = false;
+    player.temporaryTraitGrants = undefined;
+    player.temporaryTraitRemovals = undefined;
+    player.temporaryKeywordGrants = undefined;
   }
   log.push({ msg: "Execution phase begins.", d: 0, cat: "phase" });
 }
@@ -2566,6 +2603,12 @@ function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
   s.noChallenges = undefined;
   s.politiciansCantDefend = undefined;
   s.effectImmunity = undefined;
+  // Clear phase-scoped player modifiers
+  for (const p of s.players) {
+    p.temporaryTraitGrants = undefined;
+    p.temporaryTraitRemovals = undefined;
+    p.temporaryKeywordGrants = undefined;
+  }
   // Clear persistent power buffs from execution phase
   for (const p of s.players) {
     for (const zone of [p.zones.alert, p.zones.reserve]) {
@@ -2847,7 +2890,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
       );
       if (challenge.manipulateChosen) {
         if (s.preventInfluenceGain) {
-          log.push("Standoff: influence gain prevented.");
+          log.push(`${s.preventInfluenceGain}: influence gain prevented.`);
         } else {
           const before = attackerPlayer.influence;
           attackerPlayer.influence += undefendedPower;
@@ -3015,6 +3058,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
         phase: s.phase,
         isChallenger: true,
         defenderDef: defenderDefForContext,
+        defenderInstanceId: challenge.defenderInstanceId,
       };
       const atkTotal = logPowerBreakdown(
         log,
@@ -3030,6 +3074,7 @@ function resolveChallenge(s: GameState, log: LogItem[], bases: Record<string, Ba
         phase: s.phase,
         isDefender: true,
         challengerDef: challengerDefForContext,
+        challengerInstanceId: challenge.challengerInstanceId,
       };
       const defTotal = logPowerBreakdown(
         log,
@@ -3244,7 +3289,7 @@ function resolveCylonChallenge(
     // Gain influence (2 in 2-player, 1 in 3+ player)
     const gain = s.players.length === 2 ? 2 : 1;
     if (s.preventInfluenceGain) {
-      log.push("Standoff: influence gain prevented.");
+      log.push(`${s.preventInfluenceGain}: influence gain prevented.`);
     } else {
       const before = attackerPlayer.influence;
       attackerPlayer.influence += gain;
@@ -3760,7 +3805,7 @@ function applyInfluenceLoss(
   bases: Record<string, BaseCardDef>,
 ): void {
   if (s.preventInfluenceLoss) {
-    log.push("Executive Privilege: influence loss prevented.");
+    log.push(`${s.preventInfluenceLoss}: influence loss prevented.`);
     return;
   }
   let adjusted = interceptInfluenceLoss(s, playerIndex, amount, log, bases);

@@ -1145,7 +1145,7 @@ header("Executive Privilege — Prevent influence loss");
 
   const { state: s, played } = playEvent(state, 0, "executive privilege");
   assert(played, "Executive Privilege playable");
-  assert(s.preventInfluenceLoss === true, "preventInfluenceLoss flag set");
+  assert(s.preventInfluenceLoss === "Executive Privilege", "preventInfluenceLoss flag set");
   printLog(s);
 }
 
@@ -1177,7 +1177,7 @@ header("Standoff — Prevent influence gain");
 
   const { state: s, played } = playEvent(state, 0, "standoff");
   assert(played, "Standoff playable");
-  assert(s.preventInfluenceGain === true, "preventInfluenceGain flag set");
+  assert(s.preventInfluenceGain === "Standoff", "preventInfluenceGain flag set");
   printLog(s);
 }
 
@@ -1434,7 +1434,7 @@ header("Unexpected — Cylon ship loses Cylon trait");
   const { state: s, played } = playEvent(state, 0, "unexpected");
   assert(played, "Unexpected playable");
   const raiderId = s.players[0].zones.alert[0]?.cards[0]?.instanceId;
-  const lostCylon = raiderId && s.players[0].temporaryTraitRemovals?.[raiderId]?.includes("Cylon");
+  const lostCylon = raiderId && s.players[0].turnTraitRemovals?.[raiderId]?.includes("Cylon");
   assert(!!lostCylon, "Cylon ship loses Cylon trait");
   printLog(s);
 }

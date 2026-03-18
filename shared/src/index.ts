@@ -260,12 +260,17 @@ export interface PlayerState {
   ragnarExtraAction?: boolean; // Ragnar Anchorage: skip next turn advance
   ragnarResourceOverride?: boolean; // Ragnar Anchorage: next cost → logistics ≥2 becomes 3 of any type
   oncePerTurnUsed?: Record<string, boolean>; // tracks once-per-turn abilities by abilityId
-  temporaryTraitGrants?: Record<string, Trait[]>; // instanceId → granted traits this turn
-  temporaryKeywordGrants?: Record<string, Keyword[]>; // instanceId → granted keywords this turn
+  // Phase-scoped modifiers (cleared at each phase transition — default per rules)
+  temporaryTraitGrants?: Record<string, Trait[]>; // instanceId → granted traits this phase
+  temporaryKeywordGrants?: Record<string, Keyword[]>; // instanceId → granted keywords this phase
+  temporaryTraitRemovals?: Record<string, Trait[]>; // instanceId → removed traits this phase
+  // Turn-scoped modifiers (cleared at start of ready phase — for "until end of turn" effects)
+  turnTraitRemovals?: Record<string, Trait[]>; // instanceId → removed traits until end of turn
+  turnTraitGrants?: Record<string, Trait[]>; // instanceId → granted traits until end of turn
+  turnKeywordGrants?: Record<string, Keyword[]>; // instanceId → granted keywords until end of turn
   temporaryCylonThreatMods?: Record<string, number>; // instanceId → cylon threat modifier this turn
   extraActionsRemaining?: number; // Number Six Agent Provocateur extra actions
   costReduction?: { persuasion?: number; logistics?: number; security?: number }; // Refinery Ship
-  temporaryTraitRemovals?: Record<string, string[]>; // instanceId → removed traits (Everyone's Green, Unexpected)
 }
 
 export interface GameState {
@@ -281,8 +286,8 @@ export interface GameState {
   cylonThreats: CylonThreatCard[];
   log: LogItem[];
   winner: number | null; // player index or null
-  preventInfluenceLoss?: boolean; // Executive Privilege: prevent all influence loss this phase
-  preventInfluenceGain?: boolean; // Standoff: prevent all influence gain this phase
+  preventInfluenceLoss?: string; // card name that prevented influence loss this phase
+  preventInfluenceGain?: string; // card name that prevented influence gain this phase
   noChallenges?: boolean; // Showdown: no challenges rest of phase
   politiciansCantDefend?: boolean; // Martial Law: politicians can't defend this phase
   skipEventDiscard?: boolean; // Top Off the Tank: event doesn't go to discard
@@ -336,6 +341,8 @@ export interface PlayerGameView {
   log: LogItem[];
   winner: number | null;
   traitGrants?: Record<string, Trait[]>; // instanceId → temporary traits granted this turn
+  traitRemovals?: Record<string, Trait[]>; // instanceId → temporary traits removed this turn
+  keywordGrants?: Record<string, Keyword[]>; // instanceId → temporary keywords granted this turn
   choicePrompt?: string; // context-specific header for pending choice UI
   choiceType?: PendingChoiceType; // type of pending choice, for client-side conditional rendering
 }

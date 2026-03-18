@@ -6,8 +6,10 @@ import type {
   UnitStack,
   CardInstance,
   LogItem,
+  Trait,
 } from "@bsg/shared";
 import { registerPendingChoice } from "./pending-choice-registry.js";
+import { unitHasTrait } from "./trait-rules.js";
 
 // ============================================================
 // BSG CCG — Base Ability Registry
@@ -110,14 +112,14 @@ function getCardDef(defId: string): CardDef | undefined {
 
 function findUnitsInZone(
   zone: UnitStack[],
-  filter: (def: CardDef) => boolean,
+  filter: (def: CardDef, instanceId: string) => boolean,
 ): { instanceId: string; def: CardDef }[] {
   const results: { instanceId: string; def: CardDef }[] = [];
   for (const stack of zone) {
     const topCard = stack.cards[0];
     if (topCard && topCard.faceUp && !stack.exhausted) {
       const def = getCardDef(topCard.defId);
-      if (def && filter(def)) {
+      if (def && filter(def, topCard.instanceId)) {
         results.push({ instanceId: topCard.instanceId, def });
       }
     }
@@ -165,6 +167,10 @@ registerBaseAbility("colonial-one", {
     if (!targetId || !targetId.startsWith("player-")) return;
     const targetPlayerIndex = parseInt(targetId.split("-")[1], 10);
     if (isNaN(targetPlayerIndex) || !state.players[targetPlayerIndex]) return;
+    if (state.preventInfluenceGain) {
+      log.push(`${state.preventInfluenceGain}: influence gain prevented.`);
+      return;
+    }
     state.players[targetPlayerIndex].influence += 1;
     log.push(
       `Colonial One: ${state.playerNames[targetPlayerIndex as 0 | 1]} gains 1 influence. (Now ${state.players[targetPlayerIndex].influence})`,
@@ -223,10 +229,10 @@ registerBaseAbility("cylon-base-star", {
   getTargets(state, playerIndex) {
     const player = state.players[playerIndex];
     // Target: face-up Cylon units in own reserve
-    return findUnitsInZone(player.zones.reserve, (def) => {
+    return findUnitsInZone(player.zones.reserve, (def, instanceId) => {
       return (
         (def.type === "personnel" || def.type === "ship") &&
-        (def.traits?.includes("Cylon") ?? false)
+        unitHasTrait(state, instanceId, def, "Cylon" as Trait)
       );
     }).map((u) => u.instanceId);
   },

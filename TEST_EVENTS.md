@@ -847,16 +847,15 @@ __bsg_send({
   scenario: {
     player0: {
       baseId: "BSG1-007",
-      assets: ["BSG1-100", "BSG1-099"],
+      assets: [],
       hand: ["BSG1-044"],
-      alert: [],
+      alert: ["BSG1-127"],
       deck: ["BSG1-098", "BSG1-099"],
       baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-004",
-      alert: ["BSG1-102"],
-      influence: 10,
+      alert: [],
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
     },
     phase: "execution",
@@ -883,6 +882,7 @@ __bsg_send({
       hand: ["BSG2-029"],
       alert: ["BSG1-098"],
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-007",
@@ -910,6 +910,7 @@ __bsg_send({
       hand: ["BSG1-032"],
       alert: ["BSG1-098"],
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-004",
@@ -941,10 +942,11 @@ __bsg_send({
       hand: ["BSG2-008"],
       alert: ["BSG1-146"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100", "BSG1-101"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-007",
-      alert: ["BSG1-102"],
+      alert: ["BSG1-138"],
       influence: 10,
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
     },
@@ -955,7 +957,11 @@ __bsg_send({
 });
 ```
 
-**Test:** Play Boarding Party. Verify Colonial Shuttle gains Scramble, draw 1 card.
+**Test:**
+
+1. Play Boarding Party targeting Colonial Shuttle → log should show "draws a card" and Scramble badge appears on shuttle
+2. Pass — Spectre should challenge Colonial Shuttle with Starbuck (power 4)
+3. Scramble should allow the ship to defend as personnel
 
 ### Cylons on the Brain (Personnel gains Cylon)
 
@@ -968,6 +974,7 @@ __bsg_send({
       hand: ["BSG2-013"],
       alert: ["BSG1-102"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-007",
@@ -995,6 +1002,7 @@ __bsg_send({
       hand: ["BSG2-017"],
       alert: ["BSG1-103"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100", "BSG1-101"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-007",
@@ -1022,6 +1030,7 @@ __bsg_send({
       hand: ["BSG2-041"],
       alert: ["BSG1-172"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-007",
