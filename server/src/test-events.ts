@@ -163,6 +163,23 @@ function playEvent(
   return { state: result.state, played: true };
 }
 
+/** Resolve a pending choice (opponent-choice events) using the AI's preferred option or a specific index. */
+function resolvePendingChoice(state: GameState, choiceIndex?: number): GameState {
+  if (!state.pendingChoice) return state;
+  const pi = state.pendingChoice.playerIndex;
+  const actions = getValidActions(state, pi, bases);
+  const choiceAction = findAction(actions, "makeChoice");
+  if (!choiceAction) return state;
+
+  let idx = choiceIndex;
+  if (idx == null) {
+    // Use AI default (first option)
+    idx = 0;
+  }
+  const result = applyAction(state, pi, { type: "makeChoice", choiceIndex: idx }, bases);
+  return result.state;
+}
+
 /** Resolve a challenge by having both players pass through effects. */
 function resolveChallenge(state: GameState): GameState {
   let s = state;
@@ -1719,11 +1736,197 @@ header("Downed Pilot — Opponent choice");
   addSupply(state, 0, 1);
 
   const oppAlertBefore = state.players[1].zones.alert.length;
-  const { state: s, played } = playEvent(state, 0, "downed pilot");
+  let { state: s, played } = playEvent(state, 0, "downed pilot");
   assert(played, "Downed Pilot playable");
-  // AI should commit the ship
+  assert(!!s.pendingChoice, "Pending choice created for opponent");
+  s = resolvePendingChoice(s); // AI picks commit ship
   assert(s.players[1].zones.alert.length < oppAlertBefore, "Opponent's ship committed");
   assert(s.players[1].zones.reserve.length > 0, "Ship moved to reserve");
+  assert(logContains(s, "commits"), "Log mentions commit");
+  printLog(s);
+}
+
+// --- 39b. Downed Pilot: Opponent has only personnel (no ships) → must sacrifice ---
+header("Downed Pilot — No ships, sacrifice personnel");
+{
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-004",
+        hand: ["BSG1-024"],
+        alert: [],
+        deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      },
+      player1: {
+        baseId: "BSG1-007",
+        alert: ["BSG1-102"], // personnel only, no ships
+        influence: 10,
+        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      },
+      phase: "execution",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+  addSupply(state, 0, 1);
+
+  const oppUnitsBefore =
+    state.players[1].zones.alert.length + state.players[1].zones.reserve.length;
+  let { state: s, played } = playEvent(state, 0, "downed pilot");
+  assert(played, "Downed Pilot playable");
+  assert(!!s.pendingChoice, "Pending choice created");
+  s = resolvePendingChoice(s); // only option is sacrifice
+  const oppUnitsAfter = s.players[1].zones.alert.length + s.players[1].zones.reserve.length;
+  assert(oppUnitsAfter < oppUnitsBefore, "Opponent lost a personnel (sacrificed)");
+  assert(logContains(s, "sacrifices"), "Log mentions sacrifice");
+  printLog(s);
+}
+
+// --- 39c. Downed Pilot: Opponent has no ships or personnel → no effect ---
+header("Downed Pilot — No units, no effect");
+{
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-004",
+        hand: ["BSG1-024"],
+        alert: [],
+        deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      },
+      player1: {
+        baseId: "BSG1-007",
+        alert: [],
+        influence: 10,
+        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      },
+      phase: "execution",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+  addSupply(state, 0, 1);
+
+  const { state: s, played } = playEvent(state, 0, "downed pilot");
+  assert(played, "Downed Pilot playable");
+  assert(!s.pendingChoice, "No pending choice (no valid targets)");
+  assert(logContains(s, "no ships or personnel"), "Log says no ships or personnel");
+  assert(s.players[1].zones.alert.length === 0, "Opponent still has no units");
+  printLog(s);
+}
+
+// --- 39d. Downed Pilot: Ship in reserve doesn't count (only alert ships) ---
+header("Downed Pilot — Ship in reserve only, must sacrifice personnel");
+{
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-004",
+        hand: ["BSG1-024"],
+        alert: [],
+        deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      },
+      player1: {
+        baseId: "BSG1-007",
+        alert: ["BSG1-102"], // personnel in alert
+        reserve: ["BSG1-146"], // ship in reserve (not committable)
+        influence: 10,
+        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      },
+      phase: "execution",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+  addSupply(state, 0, 1);
+
+  let { state: s, played } = playEvent(state, 0, "downed pilot");
+  assert(played, "Downed Pilot playable");
+  assert(!!s.pendingChoice, "Pending choice created");
+  s = resolvePendingChoice(s);
+  assert(
+    logContains(s, "sacrifices"),
+    "Opponent sacrificed personnel (ship in reserve not committable)",
+  );
+  // Reserve ship should still be there
+  const reserveShipStill = s.players[1].zones.reserve.some(
+    (st) => st.cards[0]?.defId === "BSG1-146",
+  );
+  assert(reserveShipStill, "Reserve ship unaffected");
+  printLog(s);
+}
+
+// --- 39e. Downed Pilot: Opponent has ship + personnel, AI prefers commit ship ---
+header("Downed Pilot — Ship + personnel, AI commits ship");
+{
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-004",
+        hand: ["BSG1-024"],
+        alert: [],
+        deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      },
+      player1: {
+        baseId: "BSG1-007",
+        alert: ["BSG1-146", "BSG1-102"], // ship + personnel in alert
+        influence: 10,
+        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      },
+      phase: "execution",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+  addSupply(state, 0, 1);
+
+  let { state: s, played } = playEvent(state, 0, "downed pilot");
+  assert(played, "Downed Pilot playable");
+  assert(!!s.pendingChoice, "Pending choice created");
+  s = resolvePendingChoice(s); // AI prefers ship commit
+  assert(logContains(s, "commits"), "AI chose to commit (prefers ship over sacrifice)");
+  assert(!logContains(s, "sacrifices"), "AI did not sacrifice");
+  const personnelStill = s.players[1].zones.alert.some((st) => st.cards[0]?.defId === "BSG1-102");
+  assert(personnelStill, "Personnel still in alert (ship was committed instead)");
+  printLog(s);
+}
+
+// --- 39f. Downed Pilot: Opponent explicitly sacrifices personnel (choiceIndex targets personnel) ---
+header("Downed Pilot — Explicit sacrifice choice");
+{
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-004",
+        hand: ["BSG1-024"],
+        alert: [],
+        deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      },
+      player1: {
+        baseId: "BSG1-007",
+        alert: ["BSG1-146", "BSG1-102"], // ship + personnel
+        influence: 10,
+        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      },
+      phase: "execution",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+  addSupply(state, 0, 1);
+
+  let { state: s, played } = playEvent(state, 0, "downed pilot");
+  assert(played, "Downed Pilot playable");
+  // Choose index 1 (personnel sacrifice) instead of index 0 (ship commit)
+  s = resolvePendingChoice(s, 1);
+  assert(logContains(s, "sacrifices"), "Opponent sacrificed personnel");
+  assert(!logContains(s, "commits"), "No commit happened");
+  const shipStill = s.players[1].zones.alert.some((st) => st.cards[0]?.defId === "BSG1-146");
+  assert(shipStill, "Ship still in alert (personnel was sacrificed instead)");
   printLog(s);
 }
 

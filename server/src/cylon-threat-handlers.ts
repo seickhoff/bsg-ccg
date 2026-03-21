@@ -128,7 +128,7 @@ registerCylonThreat({
         p.discard.push(card);
       }
     }
-    log.push("  → Each player mills top card.");
+    log.push("  → Each player discards top card from deck.");
   },
 });
 

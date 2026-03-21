@@ -29,6 +29,7 @@ export interface CardRuntimeInfo {
   grantedKeywords?: ScopedMod<Keyword>[];
   exhausted?: boolean;
   stackSize?: number;
+  effectImmunity?: "power" | "all";
 }
 
 let registry: CardRegistry | null = null;
@@ -207,10 +208,14 @@ function renderCardContent(c: CardDef, rt: CardRuntimeInfo | null): string {
     keywordsHtml = `<div class="card-pv-detail">Keywords: ${parts.join(", ")}</div>`;
   }
 
-  // Status line (exhausted, stack size)
+  // Status line (exhausted, stack size, immunity)
   const statusParts: string[] = [];
   if (rt?.exhausted) statusParts.push("Exhausted");
   if (rt?.stackSize && rt.stackSize > 1) statusParts.push(`Stack: ${rt.stackSize} cards`);
+  if (rt?.effectImmunity === "all")
+    statusParts.push('<span class="card-pv-immune">Immune to all effects</span>');
+  else if (rt?.effectImmunity === "power")
+    statusParts.push('<span class="card-pv-immune">Immune to power changes</span>');
   const statusHtml = statusParts.length
     ? `<div class="card-pv-detail card-pv-status">${statusParts.join(" · ")}</div>`
     : "";

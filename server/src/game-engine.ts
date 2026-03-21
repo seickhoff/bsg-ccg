@@ -677,6 +677,7 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     turnTraitRemovals: { ...you.turnTraitRemovals, ...opp.turnTraitRemovals },
     phaseKeywordGrants: { ...you.temporaryKeywordGrants, ...opp.temporaryKeywordGrants },
     turnKeywordGrants: { ...you.turnKeywordGrants, ...opp.turnKeywordGrants },
+    effectImmunity: state.effectImmunity,
     choicePrompt: state.pendingChoice?.prompt,
     choiceType: state.pendingChoice?.type,
   };
@@ -1024,8 +1025,12 @@ function getChallengeActions(
     if (isSniper && !challenge.sniperDefendAccepted) {
       // Step A: defending player decides whether to accept defense
       if (playerIndex === challenge.defenderPlayerIndex) {
-        actions.push({ type: "sniperAccept", description: "Accept defense (opponent picks unit)" });
-        actions.push({ type: "sniperAccept", description: "Decline to defend" });
+        actions.push({
+          type: "sniperAccept",
+          accept: true,
+          description: "Accept defense (opponent picks unit)",
+        });
+        actions.push({ type: "sniperAccept", accept: false, description: "Decline to defend" });
         return actions;
       }
       return actions; // challenger waits

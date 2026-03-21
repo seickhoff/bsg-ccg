@@ -350,6 +350,7 @@ export interface PlayerGameView {
   turnTraitRemovals?: Record<string, Trait[]>;
   phaseKeywordGrants?: Record<string, Keyword[]>;
   turnKeywordGrants?: Record<string, Keyword[]>;
+  effectImmunity?: Record<string, "power" | "all">; // instanceId → immunity type
   choicePrompt?: string; // context-specific header for pending choice UI
   choiceType?: PendingChoiceType; // type of pending choice, for client-side conditional rendering
 }
@@ -415,6 +416,7 @@ export interface ValidAction {
   linkTargetIds?: string[]; // valid link attachment targets for missions
   abilityIndex?: number; // for dual-ability cards (e.g. Baltar VP: 0 or 1)
   targetPrompt?: string; // custom prompt for target selection
+  accept?: boolean; // sniperAccept: whether defender accepts defense
 }
 
 // --- WebSocket Messages ---

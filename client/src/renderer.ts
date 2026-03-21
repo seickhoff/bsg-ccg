@@ -149,6 +149,8 @@ function buildRuntimeInfo(instanceId: string, state: PlayerGameView): CardRuntim
 
   if (stack.exhausted) rt.exhausted = true;
   if (stack.cards.length > 1) rt.stackSize = stack.cards.length;
+  const immunity = state.effectImmunity?.[instanceId];
+  if (immunity) rt.effectImmunity = immunity;
 
   // Only return if there's something to show
   if (Object.keys(rt).length === 0) return undefined;
@@ -463,7 +465,7 @@ export function renderGame(
       <div class="boards">
         <div class="opponent-board">
           <div class="board-label">${escapeHtml(opponentName.toUpperCase())}</div>
-          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals)}
+          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity)}
         </div>
 
         <div class="divider"></div>
@@ -1383,6 +1385,7 @@ function renderOpponentZones(
   traitGrants?: Record<string, Trait[]>,
   keywordGrants?: Record<string, string[]>,
   traitRemovals?: Record<string, Trait[]>,
+  effectImmunity?: Record<string, "power" | "all">,
 ): string {
   return `
     <div class="zone resource-zone">
@@ -1395,14 +1398,14 @@ function renderOpponentZones(
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals)).join("")}
+        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity)).join("")}
         ${opp.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals)).join("")}
+        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity)).join("")}
         ${opp.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1414,14 +1417,14 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals)).join("")}
+        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity)).join("")}
         ${state.you.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals)).join("")}
+        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity)).join("")}
         ${state.you.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1558,6 +1561,7 @@ function renderUnitStack(
   traitGrants?: Record<string, Trait[]>,
   keywordGrants?: Record<string, string[]>,
   traitRemovals?: Record<string, Trait[]>,
+  effectImmunity?: Record<string, "power" | "all">,
 ): string {
   const topCard = stack.cards[0];
   if (!topCard) return "";
@@ -1600,6 +1604,10 @@ function renderUnitStack(
   const keywordBadge = grantedKw?.length
     ? `<div class="keyword-grant-badge" title="${grantedKw.join(", ")}">${grantedKw.join(", ")}</div>`
     : "";
+  const immunity = effectImmunity?.[topCard.instanceId];
+  const immunityBadge = immunity
+    ? `<div class="immunity-badge" title="${immunity === "all" ? "Immune to all effects" : "Immune to power changes"}">${immunity === "all" ? "IMMUNE" : "PWR IMMUNE"}</div>`
+    : "";
 
   if (image) {
     const displayImage = stack.exhausted ? "images/cards/bsgbetback-portrait.jpg" : image;
@@ -1613,6 +1621,7 @@ function renderUnitStack(
         ${traitBadge}
         ${traitRemovalBadge}
         ${keywordBadge}
+        ${immunityBadge}
       </div>
     `;
   }
@@ -1627,6 +1636,7 @@ function renderUnitStack(
         ${traitBadge}
         ${traitRemovalBadge}
         ${keywordBadge}
+        ${immunityBadge}
       </div>
     `;
   }
@@ -1644,6 +1654,7 @@ function renderUnitStack(
       ${traitBadge}
       ${traitRemovalBadge}
       ${keywordBadge}
+      ${immunityBadge}
     </div>
   `;
 }
@@ -2016,8 +2027,7 @@ function handleActionClick(
     }
 
     case "sniperAccept": {
-      const accepted = action.description.startsWith("Accept");
-      onAction({ type: "sniperAccept", accept: accepted });
+      onAction({ type: "sniperAccept", accept: !!action.accept });
       break;
     }
 

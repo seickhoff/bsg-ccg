@@ -2356,12 +2356,17 @@ register("cylons-look-like-humans", {
           }
         }
       }
+      let milled = 0;
       for (let i = 0; i < cylonCount && p.deck.length > 0; i++) {
-        const milled = p.deck.shift()!;
-        p.discard.push(milled);
+        p.discard.push(p.deck.shift()!);
+        milled++;
       }
       if (cylonCount > 0) {
-        log.push(`Cylons Look Like Humans: ${pLabel(pi, state)} mills ${cylonCount} cards.`);
+        log.push(
+          `Cylons Look Like Humans: ${pLabel(pi, state)} has ${cylonCount} Cylon(s), discards ${milled} card(s) from deck.`,
+        );
+      } else {
+        log.push(`Cylons Look Like Humans: ${pLabel(pi, state)} has 0 Cylons, no cards discarded.`);
       }
     }
   },
@@ -2527,9 +2532,9 @@ register("anti-radiation", {
     if (targetId) {
       if (!state.effectImmunity) state.effectImmunity = {};
       state.effectImmunity[targetId] = "power";
-      log.push(
-        "Anti-Radiation Dosage: target unit is immune to power-changing effects this phase.",
-      );
+      const def = getTargetUnitDef(state, targetId);
+      const name = def ? helpers.cardName(def) : "target unit";
+      log.push(`Anti-Radiation Dosage: ${name} is immune to power-changing effects this phase.`);
     }
   },
 });
@@ -2544,7 +2549,9 @@ register("fallout-shelter", {
     if (targetId) {
       if (!state.effectImmunity) state.effectImmunity = {};
       state.effectImmunity[targetId] = "all";
-      log.push("Fallout Shelter: target unit is immune to all effects this phase.");
+      const def = getTargetUnitDef(state, targetId);
+      const name = def ? helpers.cardName(def) : "target unit";
+      log.push(`Fallout Shelter: ${name} is immune to all effects this phase.`);
     }
   },
 });

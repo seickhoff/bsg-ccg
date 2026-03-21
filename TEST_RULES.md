@@ -48,16 +48,193 @@ __bsg_send({
 
 ---
 
+## 2. Sniper Personnel challenges — Scramble Personnel can cross-type defend
+
+P0 has Starbuck, Sharpshooter (Sniper personnel, power 4) in alert.
+P1 has Apollo, Ace Pilot (Scramble personnel, power 2) and Colonial Viper 229 (ship, no keywords, power 2) in alert.
+
+When P0 challenges with the Sniper, P1 should get the accept/decline prompt (Sniper step A).
+If P1 accepts, P0 picks the defender. Both the Scramble personnel AND the ship should be eligible defenders (Scramble lets the personnel defend against a personnel challenger cross-type, but it's already same-type here — this is a control test for the Sniper flow).
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-138"],
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101", "BSG1-102"],
+      influence: 10,
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-098", "BSG1-148"],
+      deck: ["BSG1-103", "BSG1-104", "BSG1-105", "BSG1-106"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// P0 alert: BSG1-138 = Starbuck, Sharpshooter (Personnel, Sniper, power 4)
+// P1 alert: BSG1-098 = Apollo, Ace Pilot (Personnel, Scramble, power 2)
+//           BSG1-148 = Colonial Viper 229 (Ship, no keywords, power 2)
+//
+// Steps:
+//   1. P0 challenges with Starbuck (Sniper) → targets P1
+//   2. P1 sees sniperAccept prompt: "Accept defense" / "Decline to defend"
+//   3. If P1 accepts → P0 picks defender
+//      Expected: Apollo (personnel, same-type match) is eligible
+//      Expected: Colonial Viper 229 is NOT eligible (ship vs personnel challenger, no Scramble)
+//   4. If P1 declines → challenge is undefended, proceed to effects round
+```
+
+---
+
+## 3. Sniper Ship challenges — Scramble Personnel defends cross-type
+
+P0 has Colonial Viper 315 (Sniper ship, power 2) in alert.
+P1 has Apollo, Ace Pilot (Scramble personnel, power 2) and Apollo, Commander Air Group (personnel, no keywords, power 2) in alert.
+
+When P0 challenges with the Sniper ship, only the Scramble personnel should be eligible to defend (cross-type via Scramble). The non-Scramble personnel should NOT be eligible.
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-149"],
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101", "BSG1-102"],
+      influence: 10,
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-098", "BSG1-099"],
+      deck: ["BSG1-103", "BSG1-104", "BSG1-105", "BSG1-106"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// P0 alert: BSG1-149 = Colonial Viper 315 (Ship, Sniper, power 2)
+// P1 alert: BSG1-098 = Apollo, Ace Pilot (Personnel, Scramble, power 2)
+//           BSG1-099 = Apollo, Commander Air Group (Personnel, no keywords, power 2)
+//
+// Steps:
+//   1. P0 challenges with Viper 315 (Sniper ship) → targets P1
+//   2. P1 sees sniperAccept prompt
+//   3. If P1 accepts → P0 picks defender
+//      Expected: Apollo, Ace Pilot IS eligible (Scramble lets personnel defend vs ship)
+//      Expected: Apollo, CAG is NOT eligible (personnel without Scramble can't defend vs ship)
+```
+
+---
+
+## 4. Scramble Ship defends against Sniper Personnel
+
+P0 has Starbuck, Sharpshooter (Sniper personnel, power 4) in alert.
+P1 has Raptor 689 (Scramble ship, power 2) and Colonial Shuttle (ship, no keywords, power 1) in alert.
+
+When P0 challenges with the Sniper personnel, the Scramble ship should be eligible to defend cross-type. The non-Scramble ship should NOT be eligible.
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-138"],
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101", "BSG1-102"],
+      influence: 10,
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-168", "BSG1-146"],
+      deck: ["BSG1-103", "BSG1-104", "BSG1-105", "BSG1-106"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// P0 alert: BSG1-138 = Starbuck, Sharpshooter (Personnel, Sniper, power 4)
+// P1 alert: BSG1-168 = Raptor 689 (Ship, Scramble, power 2)
+//           BSG1-146 = Colonial Shuttle (Ship, no keywords, power 1)
+//
+// Steps:
+//   1. P0 challenges with Starbuck (Sniper personnel) → targets P1
+//   2. P1 sees sniperAccept prompt
+//   3. If P1 accepts → P0 picks defender
+//      Expected: Raptor 689 IS eligible (Scramble lets ship defend vs personnel)
+//      Expected: Colonial Shuttle is NOT eligible (ship without Scramble can't defend vs personnel)
+```
+
+---
+
+## 5. Scramble defends against non-Sniper (normal flow, no Sniper)
+
+P0 has Apollo, Commander Air Group (personnel, no keywords, power 2) in alert.
+P1 has Apollo, Ace Pilot (Scramble personnel, power 2) and Raptor 689 (Scramble ship, power 2) in alert.
+
+Normal challenge (no Sniper) — P1 picks their own defender. The Scramble personnel is same-type (always eligible). The Scramble ship should also be eligible cross-type. P1 also sees "Decline to defend" option.
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-099"],
+      deck: ["BSG1-100", "BSG1-101", "BSG1-102", "BSG1-103"],
+      influence: 10,
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-098", "BSG1-168"],
+      deck: ["BSG1-104", "BSG1-105", "BSG1-106", "BSG1-138"],
+      influence: 10,
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// P0 alert: BSG1-099 = Apollo, Commander Air Group (Personnel, no keywords, power 2)
+// P1 alert: BSG1-098 = Apollo, Ace Pilot (Personnel, Scramble, power 2)
+//           BSG1-168 = Raptor 689 (Ship, Scramble, power 2)
+//
+// Steps:
+//   1. P0 challenges with Apollo, CAG (normal personnel) → targets P1
+//   2. P1 picks defender (no Sniper, so defending player picks)
+//      Expected: Apollo, Ace Pilot IS eligible (same-type personnel vs personnel)
+//      Expected: Raptor 689 IS eligible (Scramble lets ship defend vs personnel)
+//      Expected: "Decline to defend" option IS present (normal flow)
+```
+
+---
+
 ## Card ID Quick Reference
 
-| ID       | Card                      | Type      | Traits         | Cylon Threat |
-| -------- | ------------------------- | --------- | -------------- | ------------ |
-| BSG1-098 | Apollo, Ace Pilot         | Personnel | —              | 0            |
-| BSG1-100 | Apollo, Political Liaison | Personnel | —              | 0            |
-| BSG1-103 | Boomer, Hell Of A Pilot   | Personnel | Cylon, Pilot   | 2            |
-| BSG1-105 | Boomer, Saboteur          | Personnel | Cylon, Pilot   | 4            |
-| BSG1-106 | Centurion Ambusher        | Personnel | Cylon, Machine | 3            |
-| BSG1-157 | Hunting Raider            | Ship      | Cylon, Fighter | 3            |
+| ID       | Card                      | Type      | Keywords | Traits         | Power | Cylon Threat |
+| -------- | ------------------------- | --------- | -------- | -------------- | ----- | ------------ |
+| BSG1-098 | Apollo, Ace Pilot         | Personnel | Scramble | Pilot          | 2     | 2            |
+| BSG1-099 | Apollo, Commander Air Grp | Personnel | —        | Pilot          | 2     | 1            |
+| BSG1-100 | Apollo, Political Liaison | Personnel | —        | —              | 2     | 0            |
+| BSG1-103 | Boomer, Hell Of A Pilot   | Personnel | —        | Cylon, Pilot   | 2     | 2            |
+| BSG1-105 | Boomer, Saboteur          | Personnel | —        | Cylon, Pilot   | 4     | 4            |
+| BSG1-106 | Centurion Ambusher        | Personnel | —        | Cylon, Machine | 2     | 3            |
+| BSG1-108 | Centurion Slayer          | Personnel | Sniper   | Cylon, Machine | 2     | 2            |
+| BSG1-138 | Starbuck, Sharpshooter    | Personnel | Sniper   | Officer        | 4     | 3            |
+| BSG1-146 | Colonial Shuttle          | Ship      | —        | Transport      | 1     | 0            |
+| BSG1-148 | Colonial Viper 229        | Ship      | —        | Fighter        | 2     | 2            |
+| BSG1-149 | Colonial Viper 315        | Ship      | Sniper   | Fighter        | 2     | 3            |
+| BSG1-157 | Hunting Raider            | Ship      | —        | Cylon, Fighter | 3     | 3            |
+| BSG1-168 | Raptor 689                | Ship      | Scramble | Scout          | 2     | 2            |
 
 ## Base ID Quick Reference
 

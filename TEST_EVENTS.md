@@ -1062,6 +1062,7 @@ __bsg_send({
       hand: ["BSG1-020"],
       alert: ["BSG1-103"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100", "BSG1-101", "BSG1-102"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-004",
@@ -1120,6 +1121,7 @@ __bsg_send({
       hand: ["BSG2-018"],
       alert: ["BSG1-098"],
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-004",
@@ -1151,6 +1153,7 @@ __bsg_send({
       hand: ["BSG1-024"],
       alert: [],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+      baseSupplyCards: 1,
     },
     player1: {
       baseId: "BSG1-007",
