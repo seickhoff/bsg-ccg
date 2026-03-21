@@ -381,7 +381,7 @@ function formatNotificationHtml(
     } else if (/All players draw/.test(line)) {
       ensureSection("Ready").items.push(line);
     } else if (
-      /Challenger wins|Defender wins|Challenger total:|Defender total:|Challenger .+: power|Defender .+: power|is defeated|committed\.|Challenge ends\.|Undefended!|── Resolution ──|reveals .+\(mystic value|passes in the challenge|Discourage Pursuit|Dr\. Cottle|exhausted instead/i.test(
+      /Challenger wins|Defender wins|Challenger total:|Defender total:|Challenger .+: power|Defender .+: power|is defeated|Challenge ends\.|Undefended!|── Resolution ──|reveals .+\(mystic value|passes in the challenge|Discourage Pursuit|Dr\. Cottle|exhausted instead/i.test(
         line,
       )
     ) {
@@ -539,12 +539,9 @@ function showActionModal(
     .filter(Boolean)
     .join("");
 
-  // Format notification as structured summary
-  const summaryHtml = formatNotificationHtml(
-    notification.text,
-    playerIndex,
-    notification.cardDefIds,
-  );
+  // Format notification as structured summary — don't restrict linkification
+  // to specific defIds so all card names mentioned in the text are clickable
+  const summaryHtml = formatNotificationHtml(notification.text, playerIndex);
 
   const overlay = document.createElement("div");
   overlay.className = "action-modal-overlay";
@@ -846,6 +843,14 @@ function showPlayerActionModal(
     headerText = `${playerName} — Execution phase${resSummary}`;
   }
 
+  // Override header for Strafe type choice
+  if (validActions.length > 0 && validActions.every((a) => a.type === "strafeChoice")) {
+    const strafeDefId = validActions[0].cardDefId;
+    const strafeDef = strafeDefId ? cardDefs[strafeDefId] : null;
+    const strafeName = strafeDef ? getCardName(strafeDefId!) : "unit";
+    headerText = `Strafe — Challenge as? <span class="notif-card-link" data-def-id="${strafeDefId}">${escapeHtml(strafeName)}</span>`;
+  }
+
   // Override header for pending choices (all-makeChoice actions)
   if (validActions.length > 0 && validActions.every((a) => a.type === "makeChoice")) {
     if (state.choicePrompt) {
@@ -856,7 +861,9 @@ function showPlayerActionModal(
   }
 
   // During execution phase, hide disabled actions and group by card type
-  const isExecution = state.phase === "execution" && !state.challenge;
+  const isStrafeChoice =
+    validActions.length > 0 && validActions.every((a) => a.type === "strafeChoice");
+  const isExecution = state.phase === "execution" && !state.challenge && !isStrafeChoice;
   const displayActions = isExecution ? validActions.filter((a) => !a.disabled) : validActions;
 
   function actionGroupKey(a: ValidAction): string {
@@ -931,7 +938,9 @@ function showPlayerActionModal(
         const thumbHtml = getActionThumbHtml(a);
         // Add resource badge for deploy-to-resource actions or resource stack choices
         let badge = "";
-        if (a.type === "playToResource" && a.cardDefId) {
+        if (a.type === "strafeChoice" && a.selectableInstanceIds?.length === 1) {
+          badge = powerBadgeHtml(a.selectableInstanceIds[0], state.you.zones);
+        } else if (a.type === "playToResource" && a.cardDefId) {
           badge = resourceBadgeHtml(a.cardDefId);
         } else if (a.type === "makeChoice" && a.cardDefId) {
           badge = makeChoiceBadgeHtml(a.cardDefId, state);
@@ -1615,7 +1624,7 @@ function renderUnitStack(
     return `
       <div class="unit-card-img ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
         <img src="${displayImage}" alt="${displayAlt}" class="unit-card-thumb" loading="lazy" />
-        <div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>
+        ${typeClass !== "mission" ? `<div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>` : ""}
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
         ${traitBadge}
@@ -1630,7 +1639,7 @@ function renderUnitStack(
     return `
       <div class="unit-card-img ${exhaustedClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
         <img src="images/cards/bsgbetback-portrait.jpg" alt="Exhausted" class="unit-card-thumb" loading="lazy" />
-        <div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>
+        ${typeClass !== "mission" ? `<div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>` : ""}
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
         ${traitBadge}
@@ -1646,7 +1655,7 @@ function renderUnitStack(
     <div class="card unit-card ${typeClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
       <div class="card-name">${escapeHtml(name)}</div>
       <div class="card-stats">
-        <span class="card-power${buffClass}">${powerDisplay}</span>
+        ${typeClass !== "mission" ? `<span class="card-power${buffClass}">${powerDisplay}</span>` : ""}
         ${cylonThreat > 0 ? `<span class="card-threat">${cylonThreat}</span>` : ""}
       </div>
       ${stackSize > 1 ? `<div class="card-stack-count">x${stackSize}</div>` : ""}
@@ -2329,10 +2338,10 @@ function handleActionClick(
     }
 
     case "strafeChoice":
-      // Strafe: challenge as personnel or ship — description encodes the choice
       onAction({
         type: "strafeChoice",
-        challengeAs: action.description.includes("personnel") ? "personnel" : "ship",
+        challengeAs:
+          action.challengeAs ?? (action.description.includes("personnel") ? "personnel" : "ship"),
       });
       break;
 
@@ -2619,28 +2628,39 @@ function showResourceStackPicker(
 
   // Group stacks by resource type (only types present in the cost)
   const costTypes = Object.entries(cost).filter(([, amt]) => amt > 0) as [string, number][];
-  const stacksByType: Record<
-    string,
-    { index: number; name: string; count: number; defId: string; image: string; isBase: boolean }[]
-  > = {};
+
+  type StackInfo = {
+    index: number;
+    name: string;
+    count: number;
+    defId: string;
+    image: string;
+    isBase: boolean;
+    disabled: boolean;
+  };
+  const stacksByType: Record<string, StackInfo[]> = {};
 
   for (const [resType] of costTypes) {
-    stacksByType[resType] = [];
+    const matching: StackInfo[] = [];
+    const nonMatching: StackInfo[] = [];
     state.you.zones.resourceStacks.forEach((stack, i) => {
       if (stack.exhausted) return;
-      if (getResourceName(stack.topCard.defId) !== resType) return;
       const def = cardDefs[stack.topCard.defId] ?? baseDefs[stack.topCard.defId];
       const name = def?.title ?? stack.topCard.defId;
       const isBase = !!baseDefs[stack.topCard.defId];
-      stacksByType[resType].push({
+      const info: StackInfo = {
         index: i,
         name,
         count: 1 + stack.supplyCards.length,
         defId: stack.topCard.defId,
         image: (cardDefs[stack.topCard.defId]?.image ?? baseDefs[stack.topCard.defId]?.image) || "",
         isBase,
-      });
+        disabled: getResourceName(stack.topCard.defId) !== resType,
+      };
+      if (info.disabled) nonMatching.push(info);
+      else matching.push(info);
     });
+    stacksByType[resType] = [...matching, ...nonMatching];
   }
 
   // Build HTML
@@ -2658,23 +2678,26 @@ function showResourceStackPicker(
   for (const [resType, amount] of costTypes) {
     const stacks = stacksByType[resType] ?? [];
     const resLabel = resType.charAt(0).toUpperCase() + resType.slice(1);
-    const letter = resourceIcon(resType);
 
     let rowsHtml = "";
     for (const s of stacks) {
       const sel = selectedSet.has(s.index) ? " resource-picker-row--selected" : "";
+      const disabledCls = s.disabled ? " resource-picker-row--disabled" : "";
       const thumbClass = s.isBase
         ? "resource-picker-row-thumb card-clip-landscape"
         : "resource-picker-row-thumb";
       const thumbHtml = s.image
         ? `<img src="${s.image}" alt="" class="${thumbClass}" loading="lazy" data-def-id="${s.defId}" />`
         : "";
+      // Show the stack's actual resource type badge
+      const stackResType = getResourceName(s.defId) || resType;
+      const stackLetter = resourceIcon(stackResType);
       rowsHtml += `
-        <div class="resource-picker-row${sel}" data-stack-index="${s.index}" data-res-type="${resType}">
+        <div class="resource-picker-row${sel}${disabledCls}" data-stack-index="${s.index}" data-res-type="${resType}">
           ${thumbHtml}
           <span class="resource-picker-row-name">${escapeHtml(s.name)}</span>
-          <span class="resource-inline-badge resource-inline-badge--${resType}">${s.count}${letter}</span>
-          <span class="resource-picker-toggle"><span class="resource-picker-toggle-check">&#x2713;</span></span>
+          <span class="resource-inline-badge resource-inline-badge--${stackResType}">${s.count}${stackLetter}</span>
+          ${s.disabled ? "" : `<span class="resource-picker-toggle"><span class="resource-picker-toggle-check">&#x2713;</span></span>`}
         </div>
       `;
     }

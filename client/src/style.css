@@ -1016,6 +1016,11 @@ body {
   display: block;
 }
 
+.resource-picker-row--disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .resource-picker-summary {
   margin-top: 0.5rem;
   padding: 0.4rem 0.5rem;
@@ -1514,7 +1519,6 @@ body {
 }
 .log-d2 {
   padding-left: 32px;
-  font-size: 0.85em;
   opacity: 0.85;
 }
 .log-power {

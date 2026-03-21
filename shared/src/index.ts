@@ -45,9 +45,12 @@ export type PendingChoiceType =
   // event-abilities
   | "godfrey-reveal"
   | "act-of-contrition"
+  | "concentrated-firepower-stack"
   | "covering-fire-commit"
   | "distraction-commit"
+  | "distraction-target"
   | "military-coup-exhaust"
+  | "military-coup-target"
   | "painful-recovery-personnel"
   | "suicide-bomber-cylon"
   | "suicide-bomber-target2"
@@ -238,6 +241,7 @@ export interface ChallengeState {
   tighXoReadied?: string; // instanceId of Tigh readied by challenge trigger
   challengeEndTriggersChecked?: boolean; // optional end-of-challenge triggers already resolved
   sniperDefendAccepted?: boolean; // Sniper two-step: defender accepted, now challenger picks unit
+  challengeAs?: "personnel" | "ship"; // Strafe: challenger's effective type for defender matching
 }
 
 export interface CylonThreatCard {
@@ -305,6 +309,7 @@ export interface GameState {
   cylonThreatImmunity?: { threatIndex: number; playerIndex: number }; // threat text skips this player for this threat
   cylonPhaseResumeNeeded?: boolean; // cylon phase paused for player choice, needs resume after
   fleetJumpPending?: boolean; // fleet jump sacrifice in progress — discard threats + end phase after
+  pendingStrafeChallenge?: { challengerInstanceId: string; playerIndex: number }; // Strafe: waiting for type choice
 }
 
 // --- Player View (what the client sees) ---
@@ -417,6 +422,7 @@ export interface ValidAction {
   abilityIndex?: number; // for dual-ability cards (e.g. Baltar VP: 0 or 1)
   targetPrompt?: string; // custom prompt for target selection
   accept?: boolean; // sniperAccept: whether defender accepts defense
+  challengeAs?: "personnel" | "ship"; // strafeChoice: which type to challenge as
 }
 
 // --- WebSocket Messages ---

@@ -268,8 +268,8 @@ register("fire-support", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Fire Support: target unit gets +2 power.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -286,8 +286,8 @@ register("fury", {
     const def = getUnitDef(owner.stack);
     if (!def) return;
     const x = def.mysticValue ?? 0;
-    helpers.applyPowerBuff(state, targetId, x, log);
     log.push(`Fury: target unit gets +${x} power (mystic value).`);
+    helpers.applyPowerBuff(state, targetId, x, log);
   },
 });
 
@@ -305,8 +305,8 @@ register("cylon-missile-battery", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Cylon Missile Battery: target Cylon unit gets +2 power.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -319,8 +319,8 @@ register("power-of-prayer", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const mystic = helpers.revealMysticValue(state, playerIndex, log);
-    helpers.applyPowerBuff(state, targetId, mystic, log);
     log.push(`Power of Prayer: target unit gets +${mystic} power.`);
+    helpers.applyPowerBuff(state, targetId, mystic, log);
   },
 });
 
@@ -337,8 +337,8 @@ register("presidential-candidate", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Presidential Candidate: defending Politician gets +2 power.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -356,8 +356,8 @@ register("winning-hand", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Winning Hand: challenging personnel gets +2 power.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -375,8 +375,8 @@ register("you-gave-yourself-over", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("You Gave Yourself Over: target Civilian unit gets +2 power.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -389,12 +389,16 @@ register("concentrated-firepower", {
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
     const player = state.players[playerIndex];
-    let maxSupply = 0;
-    for (const stack of player.zones.resourceStacks) {
-      if (stack.supplyCards.length > maxSupply) maxSupply = stack.supplyCards.length;
-    }
-    helpers.applyPowerBuff(state, targetId, maxSupply, log);
-    log.push(`Concentrated Firepower: target unit gets +${maxSupply} power.`);
+    // "target resource stack you control" — player chooses which stack
+    // "target resource stack you control" — player always chooses
+    const stacks = player.zones.resourceStacks;
+    state.pendingChoice = {
+      type: "concentrated-firepower-stack",
+      playerIndex,
+      cards: stacks.map((s) => s.topCard),
+      context: { targetId, supplyCounts: stacks.map((s) => s.supplyCards.length) },
+      prompt: "Concentrated Firepower — choose a resource stack",
+    };
   },
 });
 
@@ -449,8 +453,8 @@ register("cylon-surprise", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Cylon Surprise: target Cylon Machine gets +2 power.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -462,8 +466,8 @@ register("lest-we-forget", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Lest We Forget: target unit gets +2 power vs Cylon threat.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
     helpers.drawCards(
       state.players[playerIndex],
       1,
@@ -489,6 +493,7 @@ register("special-delivery", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
+    log.push("Special Delivery: target personnel gets +1 power and Scramble.");
     helpers.applyPowerBuff(state, targetId, 1, log);
     // Grant Scramble keyword
     const owner = findUnitOwner(state, targetId);
@@ -498,7 +503,6 @@ register("special-delivery", {
       if (!existing.includes("Scramble")) existing.push("Scramble");
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
-    log.push("Special Delivery: target personnel gets +1 power and Scramble.");
     helpers.drawCards(
       state.players[playerIndex],
       1,
@@ -524,6 +528,7 @@ register("strafing-run", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
+    log.push("Strafing Run: target ship gets +1 power and Strafe.");
     helpers.applyPowerBuff(state, targetId, 1, log);
     const owner = findUnitOwner(state, targetId);
     if (owner) {
@@ -532,7 +537,6 @@ register("strafing-run", {
       if (!existing.includes("Strafe")) existing.push("Strafe");
       owner.player.temporaryKeywordGrants[targetId] = existing;
     }
-    log.push("Strafing Run: target ship gets +1 power and Strafe.");
     helpers.drawCards(
       state.players[playerIndex],
       1,
@@ -566,8 +570,8 @@ register("strange-wingman", {
       if (d && d.type === "ship" && hasTrait(state, stack.cards[0].instanceId, d, "Cylon"))
         cylonShips++;
     }
-    helpers.applyPowerBuff(state, targetId, cylonShips, log);
     log.push(`Strange Wingman: target Fighter gets +${cylonShips} power.`);
+    helpers.applyPowerBuff(state, targetId, cylonShips, log);
   },
 });
 
@@ -585,8 +589,8 @@ register("swearing-in", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, 2, log);
     log.push("Swearing In: target Politician gets +2 power.");
+    helpers.applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -608,8 +612,8 @@ register("outmaneuvered", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, -2, log);
     log.push("Outmaneuvered: target ship gets -2 power.");
+    helpers.applyPowerBuff(state, targetId, -2, log);
   },
 });
 
@@ -627,8 +631,8 @@ register("vision-of-serpents", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, -2, log);
     log.push("Vision of Serpents: target personnel gets -2 power.");
+    helpers.applyPowerBuff(state, targetId, -2, log);
   },
 });
 
@@ -643,8 +647,8 @@ register("wounded-in-action", {
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
-    helpers.applyPowerBuff(state, targetId, -2, log);
     log.push("Wounded in Action: undefended challenger gets -2 power.");
+    helpers.applyPowerBuff(state, targetId, -2, log);
   },
 });
 
@@ -665,8 +669,8 @@ register("vulnerable-supplies", {
     for (const stack of owner.player.zones.resourceStacks) {
       if (stack.supplyCards.length === 0) bareAssets++; // just the asset, no supply cards
     }
-    helpers.applyPowerBuff(state, targetId, -bareAssets, log);
     log.push(`Vulnerable Supplies: target unit gets -${bareAssets} power.`);
+    helpers.applyPowerBuff(state, targetId, -bareAssets, log);
   },
 });
 
@@ -742,18 +746,12 @@ register("distraction", {
       return d && d.type === "personnel" && !s.exhausted;
     });
   },
-  getTargets(state) {
-    return getAllUnits(state)
-      .filter((u) => u.zone === "alert")
-      .map((u) => u.instanceId);
-  },
-  resolve(state, playerIndex, targetId, log) {
-    if (!targetId) return;
+  resolve(state, playerIndex) {
     const player = state.players[playerIndex];
-    // Find eligible personnel to commit (not the target)
+    // Pick your own personnel to commit first, then pick a target
     const personnel = player.zones.alert.filter((s) => {
       const d = getUnitDef(s);
-      return d && d.type === "personnel" && !s.exhausted && s.cards[0]?.instanceId !== targetId;
+      return d && d.type === "personnel" && !s.exhausted;
     });
     if (personnel.length === 0) return;
     const cards = personnel.map((s) => s.cards[0]);
@@ -761,7 +759,6 @@ register("distraction", {
       type: "distraction-commit",
       playerIndex,
       cards,
-      context: { targetId },
       prompt: "Distraction — choose a personnel to commit",
     };
   },
@@ -782,20 +779,9 @@ register("military-coup", {
       })
     );
   },
-  getTargets(state, playerIndex) {
-    const opp = 1 - playerIndex;
-    return getAllUnits(state)
-      .filter((u) => u.playerIndex === opp && !u.stack.exhausted)
-      .filter((u) => {
-        const d = getUnitDef(u.stack);
-        return d && d.type === "personnel";
-      })
-      .map((u) => u.instanceId);
-  },
-  resolve(state, playerIndex, targetId, log) {
-    if (!targetId) return;
+  resolve(state, playerIndex) {
     const player = state.players[playerIndex];
-    // Find eligible own personnel to exhaust
+    // Pick your own personnel to exhaust first, then pick opponent's target
     const ownPersonnel = [...player.zones.alert, ...player.zones.reserve].filter((s) => {
       const d = getUnitDef(s);
       return d && d.type === "personnel" && !s.exhausted;
@@ -806,8 +792,7 @@ register("military-coup", {
       type: "military-coup-exhaust",
       playerIndex,
       cards,
-      context: { targetId },
-      prompt: "Military Coup — choose a personnel to exhaust",
+      prompt: "Military Coup — choose your personnel to exhaust",
     };
   },
 });
@@ -2761,6 +2746,55 @@ registerPendingChoice("act-of-contrition", {
   },
 });
 
+// --- Concentrated Firepower: Pick which resource stack for +X ---
+registerPendingChoice("concentrated-firepower-stack", {
+  getActions(choice) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const supplyCounts = (ctx.supplyCounts as number[]) ?? [];
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const defId = choice.cards[i].defId;
+      const baseDef = helpers.bases[defId];
+      const cardDef = baseDef ? null : helpers.getCardDef(defId);
+      const name = baseDef?.title ?? (cardDef ? helpers.cardName(cardDef) : defId);
+      const count = supplyCounts[i] ?? 0;
+      actions.push({
+        type: "makeChoice",
+        description: `${name} (+${count})`,
+        cardDefId: choice.cards[i].defId,
+      });
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const targetId = ctx.targetId as string;
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard || !targetId) return;
+    // Find the resource stack matching the chosen top card
+    const stack = player.zones.resourceStacks.find(
+      (s) => s.topCard.instanceId === chosenCard.instanceId,
+    );
+    const x = stack ? stack.supplyCards.length : 0;
+    log.push(`Concentrated Firepower: target unit gets +${x} power.`);
+    helpers.applyPowerBuff(state, targetId, x, log);
+  },
+  aiDecide(choice) {
+    // AI picks stack with most supply cards
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const supplyCounts = (ctx.supplyCounts as number[]) ?? [];
+    let bestIdx = 0;
+    let bestCount = 0;
+    for (let i = 0; i < supplyCounts.length; i++) {
+      if (supplyCounts[i] > bestCount) {
+        bestCount = supplyCounts[i];
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  },
+});
+
 registerPendingChoice("covering-fire-commit", {
   getActions(choice) {
     const actions: ValidAction[] = [];
@@ -2819,24 +2853,24 @@ registerPendingChoice("distraction-commit", {
     }
     return actions;
   },
-  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
-    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
     helpers.commitUnit(player, chosenCard.instanceId, log);
-    const targetId = ctx.targetId as string;
-    if (targetId) {
-      for (const p of state.players) {
-        const found = findUnitInAnyZone(p, targetId);
-        if (found && found.zone === "alert") {
-          p.zones.alert.splice(found.index, 1);
-          found.stack.exhausted = true;
-          p.zones.reserve.push(found.stack);
-          log.push("Distraction: target unit committed and exhausted.");
-          break;
-        }
+    // Now pick the target unit to commit and exhaust
+    const targets: CardInstance[] = [];
+    for (const p of state.players) {
+      for (const s of p.zones.alert) {
+        targets.push(s.cards[0]);
       }
     }
+    if (targets.length === 0) return;
+    state.pendingChoice = {
+      type: "distraction-target",
+      playerIndex,
+      cards: targets,
+      prompt: "Distraction — choose a unit to commit and exhaust",
+    };
   },
   aiDecide(_choice, choiceActions) {
     let bestIdx = 0;
@@ -2847,6 +2881,56 @@ registerPendingChoice("distraction-commit", {
         const def = cardRegistry[defId];
         const pow = def?.power ?? 0;
         if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+// --- Distraction: Pick target unit to commit and exhaust ---
+registerPendingChoice("distraction-target", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Commit & exhaust ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    for (const p of state.players) {
+      const found = findUnitInAnyZone(p, chosenCard.instanceId);
+      if (found && found.zone === "alert") {
+        p.zones.alert.splice(found.index, 1);
+        found.stack.exhausted = true;
+        p.zones.reserve.push(found.stack);
+        const def = helpers.getCardDef(chosenCard.defId);
+        log.push(`Distraction: ${def ? helpers.cardName(def) : "target"} committed and exhausted.`);
+        break;
+      }
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI targets highest-power opponent unit
+    let bestIdx = 0;
+    let bestPow = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow > bestPow) {
           bestPow = pow;
           bestIdx = i;
         }
@@ -2871,25 +2955,29 @@ registerPendingChoice("military-coup-exhaust", {
     }
     return actions;
   },
-  resolve(choice, choiceIndex, state, player, _playerIndex, log) {
-    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+  resolve(choice, choiceIndex, state, player, playerIndex, log) {
     const chosenCard = choice.cards[choiceIndex];
     if (!chosenCard) return;
     const found = findUnitInAnyZone(player, chosenCard.instanceId);
     if (found) found.stack.exhausted = true;
     const ownDef = helpers.getCardDef(chosenCard.defId);
     log.push(`Military Coup: ${helpers.cardName(ownDef)} exhausted.`);
-    const targetId = ctx.targetId as string;
-    if (targetId) {
-      for (const p of state.players) {
-        const tgt = findUnitInAnyZone(p, targetId);
-        if (tgt) {
-          tgt.stack.exhausted = true;
-          log.push("Military Coup: target opponent personnel exhausted.");
-          break;
-        }
-      }
-    }
+    // Now pick opponent's personnel to exhaust
+    const opp = 1 - playerIndex;
+    const oppPersonnel = [
+      ...state.players[opp].zones.alert,
+      ...state.players[opp].zones.reserve,
+    ].filter((s) => {
+      const d = getUnitDef(s);
+      return d && d.type === "personnel" && !s.exhausted;
+    });
+    if (oppPersonnel.length === 0) return;
+    state.pendingChoice = {
+      type: "military-coup-target",
+      playerIndex,
+      cards: oppPersonnel.map((s) => s.cards[0]),
+      prompt: "Military Coup — choose opponent's personnel to exhaust",
+    };
   },
   aiDecide(_choice, choiceActions) {
     let bestIdx = 0;
@@ -2900,6 +2988,52 @@ registerPendingChoice("military-coup-exhaust", {
         const def = cardRegistry[defId];
         const pow = def?.power ?? 0;
         if (pow < bestPow) {
+          bestPow = pow;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  },
+});
+
+// --- Military Coup: Pick opponent's personnel to exhaust ---
+registerPendingChoice("military-coup-target", {
+  getActions(choice) {
+    const actions: ValidAction[] = [];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const def = helpers.getCardDef(choice.cards[i].defId);
+      if (def) {
+        actions.push({
+          type: "makeChoice",
+          description: `Exhaust ${helpers.cardName(def)}`,
+          cardDefId: def.id,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const opp = 1 - playerIndex;
+    const tgt = findUnitInAnyZone(state.players[opp], chosenCard.instanceId);
+    if (tgt) {
+      tgt.stack.exhausted = true;
+      const def = helpers.getCardDef(chosenCard.defId);
+      log.push(`Military Coup: ${def ? helpers.cardName(def) : "target"} exhausted.`);
+    }
+  },
+  aiDecide(_choice, choiceActions) {
+    // AI targets highest-power opponent personnel
+    let bestIdx = 0;
+    let bestPow = -1;
+    for (let i = 0; i < choiceActions.length; i++) {
+      const defId = choiceActions[i].cardDefId;
+      if (defId) {
+        const def = cardRegistry[defId];
+        const pow = def?.power ?? 0;
+        if (pow > bestPow) {
           bestPow = pow;
           bestIdx = i;
         }

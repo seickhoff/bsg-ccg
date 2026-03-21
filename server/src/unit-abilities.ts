@@ -451,8 +451,8 @@ register("helo-buff", {
     );
   },
   resolve(state, _pi, _sid, targetId, log) {
-    if (!targetId || !state.challenge) return;
-    applyChallengePowerBuff(state, targetId, 2, log);
+    if (!targetId) return;
+    getHelpers().applyPowerBuff(state, targetId, 2, log);
   },
 });
 

@@ -373,7 +373,7 @@ function hasHumanViewer(room: GameRoom): boolean {
  *
  *  Captures gameGeneration at start and exits cleanly if the room
  *  is reset or destroyed while this loop is awaiting. */
-async function processAITurns(room: GameRoom): Promise<void> {
+async function processAITurns(room: GameRoom, logStartFrom?: number): Promise<void> {
   if (!room.gameState) return;
 
   const gen = room.gameGeneration;
@@ -381,6 +381,12 @@ async function processAITurns(room: GameRoom): Promise<void> {
 
   let iterations = 0;
   const MAX_ITERATIONS = 200; // higher for ai-vs-ai which runs full games
+
+  // Accumulate log entries across AI iterations so the popup shows
+  // everything the AI did (e.g. committed cards + pass) in one view.
+  // logStartFrom lets callers include log entries from the preceding human action.
+  let accumulatedLogStart = logStartFrom ?? room.gameState.log.length;
+  let accumulatedCardDefIds: string[] = [];
 
   while (room.gameState && room.gameState.phase !== "gameOver" && iterations < MAX_ITERATIONS) {
     // Find an AI player that can act
@@ -413,7 +419,7 @@ async function processAITurns(room: GameRoom): Promise<void> {
 
     // Resolve card IDs before applying action (card may leave hand after)
     const cardDefIds = resolveActionCardIds(room.gameState, aiIdx, decision);
-    const logLenBefore = room.gameState.log.length;
+    accumulatedCardDefIds.push(...cardDefIds);
 
     try {
       const result = applyAction(room.gameState, aiIdx, decision, bases);
@@ -432,13 +438,39 @@ async function processAITurns(room: GameRoom): Promise<void> {
 
     iterations++;
 
-    // Build notification from new log entries
-    const newEntries = room.gameState.log.slice(logLenBefore);
-    const notificationText = newEntries.map((e) => (typeof e === "string" ? e : e.msg)).join("\n");
+    // Check if there are more AI actions coming — if so, keep accumulating
+    let moreAiActions = false;
+    if (room.gameState.phase !== "gameOver") {
+      for (let i = 0; i < 2; i++) {
+        if (room.players[i].type !== "ai") continue;
+        if (!canPlayerAct(room.gameState, i)) continue;
+        try {
+          const actions = getValidActions(room.gameState, i, bases);
+          if (actions.length > 0) {
+            moreAiActions = true;
+            break;
+          }
+        } catch {
+          // ignore — will be caught on next iteration
+        }
+      }
+    }
+
+    if (moreAiActions) {
+      // More AI actions coming — keep accumulating, just broadcast state
+      broadcastGameState(room);
+      continue;
+    }
+
+    // No more AI actions — show accumulated notification
+    const allNewEntries = room.gameState.log.slice(accumulatedLogStart);
+    const notificationText = allNewEntries
+      .map((e) => (typeof e === "string" ? e : e.msg))
+      .join("\n");
 
     if (room.gameState.phase !== "setup" && notificationText && hasHumanViewer(room)) {
       // Show modal and wait for human to click Continue
-      room.pendingNotification = { text: notificationText, cardDefIds };
+      room.pendingNotification = { text: notificationText, cardDefIds: accumulatedCardDefIds };
       broadcastGameState(room);
       await waitForContinue(room);
       room.pendingNotification = null;
@@ -448,6 +480,10 @@ async function processAITurns(room: GameRoom): Promise<void> {
     } else {
       broadcastGameState(room);
     }
+
+    // Reset accumulation for next batch
+    accumulatedLogStart = room.gameState.log.length;
+    accumulatedCardDefIds = [];
   }
 
   // Only clean up if we're still the active generation
@@ -862,8 +898,9 @@ wss.on("connection", (ws) => {
               });
             } else {
               broadcastGameState(room);
-              // Process AI turns after human acts
-              processAITurns(room).catch(aiErrorHandler);
+              // Process AI turns after human acts — pass logLenBefore so the
+              // popup includes log entries from the human action (e.g. committed cards)
+              processAITurns(room, logLenBefore).catch(aiErrorHandler);
             }
           } catch (err) {
             const errMsg = err instanceof Error ? err.message : "Unknown error";

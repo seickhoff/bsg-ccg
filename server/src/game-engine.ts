@@ -555,11 +555,15 @@ export function createDebugGame(
             ),
             exhausted: false,
           },
-          ...(setup.assets ?? []).map((id: string) => ({
-            topCard: makeCardInstance(id),
-            supplyCards: [] as CardInstance[],
-            exhausted: false,
-          })),
+          ...(setup.assets ?? []).map((a: string | { id: string; supplyCards?: number }) => {
+            const id = typeof a === "string" ? a : a.id;
+            const supplyCount = typeof a === "string" ? 0 : (a.supplyCards ?? 0);
+            return {
+              topCard: makeCardInstance(id),
+              supplyCards: Array.from({ length: supplyCount }, () => makeCardInstance(id)),
+              exhausted: false,
+            };
+          }),
         ],
       },
       hand,
@@ -769,6 +773,27 @@ export function getValidActions(
 
   // --- Execution phase ---
   if (state.phase === "execution" && isActive) {
+    // Strafe type choice pending
+    if (state.pendingStrafeChallenge && playerIndex === state.pendingStrafeChallenge.playerIndex) {
+      const strafeId = state.pendingStrafeChallenge.challengerInstanceId;
+      const strafeDef = findCardDefByInstanceId(state, strafeId);
+      actions.push({
+        type: "strafeChoice",
+        description: "As personnel",
+        challengeAs: "personnel",
+        cardDefId: strafeDef?.id,
+        selectableInstanceIds: [strafeId],
+      });
+      actions.push({
+        type: "strafeChoice",
+        description: "As ship",
+        challengeAs: "ship",
+        cardDefId: strafeDef?.id,
+        selectableInstanceIds: [strafeId],
+      });
+      return actions;
+    }
+
     // Play a card from hand (affordable = active, unaffordable = disabled)
     for (let i = 0; i < player.hand.length; i++) {
       const def = getCardDef(player.hand[i].defId);
@@ -1042,7 +1067,12 @@ function getChallengeActions(
       : challenge.defenderPlayerIndex;
 
     if (playerIndex === selectorPlayerIndex) {
-      const challengerDef = findCardDefByInstanceId(state, challenge.challengerInstanceId);
+      const challengerDefRaw = findCardDefByInstanceId(state, challenge.challengerInstanceId);
+      // Strafe override: use challengeAs type for defender matching
+      const challengerDef =
+        challengerDefRaw && challenge.challengeAs
+          ? { ...challengerDefRaw, type: challenge.challengeAs }
+          : challengerDefRaw;
       if (challengerDef) {
         // Always search the DEFENDING player's board for eligible units
         const defendingPlayer = state.players[challenge.defenderPlayerIndex];
@@ -1962,6 +1992,16 @@ export function applyAction(
       const challengerDef = findCardDefByInstanceId(s, challengerInstanceId);
       if (!challengerDef) break;
 
+      // Strafe check: if challenger has Strafe (native or granted), prompt for type choice
+      const challengerHasStrafe =
+        hasKeyword(challengerDef, "Strafe") ||
+        (player.temporaryKeywordGrants?.[challengerInstanceId]?.includes("Strafe") ?? false) ||
+        (player.turnKeywordGrants?.[challengerInstanceId]?.includes("Strafe") ?? false);
+      if (challengerHasStrafe) {
+        s.pendingStrafeChallenge = { challengerInstanceId, playerIndex };
+        break;
+      }
+
       // Difference of Opinion: pay resource cost for challenging
       const challengeCost = getMissionChallengeCost(s, playerIndex, 1 - playerIndex);
       if (challengeCost > 0) {
@@ -2017,6 +2057,76 @@ export function applyAction(
         } else {
           // Who picks the defender: Sniper → challenger, otherwise → defending player
           s.activePlayerIndex = selector === "challenger" ? playerIndex : 1 - playerIndex;
+        }
+      }
+      break;
+    }
+
+    // --- Strafe: challenger picks personnel or ship ---
+    case "strafeChoice": {
+      if (!s.pendingStrafeChallenge) break;
+      const strafeChallengerId = s.pendingStrafeChallenge.challengerInstanceId;
+      const strafeChallengerDef = findCardDefByInstanceId(s, strafeChallengerId);
+      if (!strafeChallengerDef) break;
+
+      const chosenType = action.challengeAs;
+      s.pendingStrafeChallenge = undefined;
+
+      // Difference of Opinion: pay resource cost for challenging
+      const strafeCost = getMissionChallengeCost(s, playerIndex, 1 - playerIndex);
+      if (strafeCost > 0) {
+        spendAnyResources(player, strafeCost, log);
+      }
+
+      const strafeSelector = getDefenderSelector(strafeChallengerDef);
+      log.push({
+        msg: `${pLabel} challenges with ${cardName(strafeChallengerDef)} as ${chosenType}.`,
+        d: 0,
+        p: playerIndex,
+        cat: "flow",
+      });
+
+      s.challenge = {
+        challengerInstanceId: strafeChallengerId,
+        challengerPlayerIndex: playerIndex,
+        defenderInstanceId: null,
+        defenderPlayerIndex: 1 - playerIndex,
+        step: 1,
+        challengerMysticValue: null,
+        defenderMysticValue: null,
+        waitingForDefender: true,
+        defenderSelector: strafeSelector,
+        consecutivePasses: 0,
+        isCylonChallenge: false,
+        challengeAs: chosenType,
+      };
+
+      resetConsecutivePasses(s);
+      player.consecutivePasses = 0;
+
+      // Fire onChallengeInit triggers
+      const ch = s.challenge!;
+      fireOnChallengeInit(s, playerIndex, strafeChallengerId, log);
+
+      // Check for Agro Ship / Flattop trigger on the defending player
+      const strafeDefenderIdx = 1 - playerIndex;
+      const strafeTrigger = getOnChallengedTrigger(s, strafeDefenderIdx, bases);
+      if (strafeTrigger) {
+        ch.pendingTrigger = { abilityId: strafeTrigger.abilityId, playerIndex: strafeDefenderIdx };
+        ch.waitingForDefender = false;
+        s.activePlayerIndex = strafeDefenderIdx;
+      } else {
+        const tigh = findReserveTighXO(s.players[strafeDefenderIdx]);
+        if (tigh) {
+          ch.pendingTrigger = {
+            abilityId: "tigh-xo",
+            playerIndex: strafeDefenderIdx,
+            sourceInstanceId: tigh.instanceId,
+          };
+          ch.waitingForDefender = false;
+          s.activePlayerIndex = strafeDefenderIdx;
+        } else {
+          s.activePlayerIndex = strafeSelector === "challenger" ? playerIndex : 1 - playerIndex;
         }
       }
       break;
