@@ -461,8 +461,14 @@ register("cylon-surprise", {
 // BSG2-023 Lest We Forget: Target unit +2 vs Cylon threat + draw 1
 register("lest-we-forget", {
   playableIn: ["cylon-challenge"],
+  targetPrompt: "Select target personnel or ship",
   getTargets(state) {
-    return getAllUnits(state).map((u) => u.instanceId);
+    return getAllUnits(state)
+      .filter((u) => {
+        const d = getUnitDef(u.stack);
+        return d && (d.type === "personnel" || d.type === "ship");
+      })
+      .map((u) => u.instanceId);
   },
   resolve(state, playerIndex, targetId, log) {
     if (!targetId) return;
