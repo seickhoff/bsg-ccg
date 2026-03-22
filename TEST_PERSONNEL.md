@@ -653,8 +653,6 @@ __bsg_send({
 
 ### Dr. Baltar, Vice President — "Commit: Toggle mission alert/reserve"
 
-TODO - continue from here
-
 ```js
 __bsg_send({
   type: "debugSetup",
@@ -687,7 +685,12 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: ["BSG1-098", "BSG1-099"], alert: ["BSG1-130"] },
+    player0: {
+      baseId: "BSG1-004",
+      hand: ["BSG1-101", "BSG1-102"],
+      alert: ["BSG1-130"],
+      assets: ["BSG1-101", "BSG1-101", "BSG1-101", "BSG1-101"],
+    },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
@@ -695,6 +698,8 @@ __bsg_send({
   },
 });
 // BSG1-130 = Six Agent Provocateur. Use ability, then take 2 extra actions
+// BSG1-101 = Billy Presidential Aide (persuasion 3), BSG1-102 = Billy Press Secretary (persuasion 2)
+// 4 BSG1-101 assets = 5 total persuasion (with base). Play BSG1-102 (cost 2) then BSG1-101 (cost 3)
 ```
 
 ---

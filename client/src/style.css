@@ -874,6 +874,19 @@ body {
   opacity: 0.35;
 }
 
+.extra-action-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #1a1a1a;
+  background: #ffd54f;
+  line-height: 1;
+  border-radius: 3px;
+  padding: 2px 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
 /* --- Resource Stack Picker --- */
 
 .resource-picker-card-header {

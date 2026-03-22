@@ -274,6 +274,7 @@ export interface PlayerState {
   turnKeywordGrants?: Record<string, Keyword[]>; // instanceId → granted keywords until end of turn
   temporaryCylonThreatMods?: Record<string, number>; // instanceId → cylon threat modifier this turn
   extraActionsRemaining?: number; // Number Six Agent Provocateur extra actions
+  extraActionsTotal?: number; // total extra actions granted (for UI display)
   costReduction?: { persuasion?: number; logistics?: number; security?: number }; // Refinery Ship
 }
 
@@ -358,6 +359,8 @@ export interface PlayerGameView {
   effectImmunity?: Record<string, "power" | "all">; // instanceId → immunity type
   choicePrompt?: string; // context-specific header for pending choice UI
   choiceType?: PendingChoiceType; // type of pending choice, for client-side conditional rendering
+  extraActionsRemaining?: number; // extra actions left (e.g. Number Six Agent Provocateur)
+  extraActionsTotal?: number; // total extra actions granted this turn
 }
 
 // --- Game Actions (client → server) ---

@@ -949,7 +949,13 @@ function showPlayerActionModal(
       : "CYLON ATTACK — No units available";
   } else if (state.phase === "execution") {
     const resSummary = buildResourceSummaryHtml(state.you.zones.resourceStacks);
-    headerText = `${playerName} — Execution phase${resSummary}`;
+    const total = state.extraActionsTotal ?? 0;
+    const remaining = state.extraActionsRemaining ?? 0;
+    const extraBadge =
+      total > 0
+        ? ` <span class="extra-action-badge">Extra Action ${total - remaining} of ${total}</span>`
+        : "";
+    headerText = `${playerName} — Execution phase${extraBadge}${resSummary}`;
   }
 
   // Override header for Strafe type choice

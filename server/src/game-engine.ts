@@ -703,6 +703,8 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     effectImmunity: state.effectImmunity,
     choicePrompt: state.pendingChoice?.prompt,
     choiceType: state.pendingChoice?.type,
+    extraActionsRemaining: you.extraActionsRemaining,
+    extraActionsTotal: you.extraActionsTotal,
   };
 }
 
@@ -2545,6 +2547,7 @@ function startReadyPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
     player.turnKeywordGrants = undefined;
     player.temporaryCylonThreatMods = undefined;
     player.extraActionsRemaining = undefined;
+    player.extraActionsTotal = undefined;
     player.costReduction = undefined;
   }
   // Clear False Peace phase tracking
@@ -2654,6 +2657,8 @@ function advanceExecutionTurn(s: GameState): void {
     current.extraActionsRemaining--;
     return; // stay on same player
   }
+  // Clear extra action tracking when all extra actions are consumed
+  current.extraActionsTotal = undefined;
   // Clear Ragnar resource override if it wasn't used during the extra action
   current.ragnarResourceOverride = false;
   s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;

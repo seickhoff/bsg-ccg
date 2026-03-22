@@ -1292,8 +1292,9 @@ register("six-agent", {
   activation: { cost: "commit-sacrifice", usableIn: ["execution"] },
   getTargets: () => null,
   resolve(state, playerIndex, _sid, _tid, log) {
-    state.players[playerIndex].extraActionsRemaining =
-      (state.players[playerIndex].extraActionsRemaining ?? 0) + 2;
+    const player = state.players[playerIndex];
+    player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 2;
+    player.extraActionsTotal = (player.extraActionsTotal ?? 0) + 2;
     log.push("Number Six: Take 2 extra actions.");
   },
 });
@@ -2170,6 +2171,7 @@ register("refinery-extra-action", {
   resolve(state, playerIndex, _sid, _tid, log) {
     const player = state.players[playerIndex];
     player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+    player.extraActionsTotal = (player.extraActionsTotal ?? 0) + 1;
     player.costReduction = { persuasion: 1, logistics: 1, security: 1 };
     log.push("Refinery Ship: Extra action granted. Next card cost reduced by 1.");
   },

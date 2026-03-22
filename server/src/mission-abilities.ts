@@ -1628,6 +1628,7 @@ register("critical-component", {
         // Only one option — exhaust it directly
         player.zones.resourceStacks[eligible[0].stackIndex].exhausted = true;
         player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+        player.extraActionsTotal = (player.extraActionsTotal ?? 0) + 1;
         player.costReduction = { persuasion: 2, logistics: 2, security: 2 };
         log.push("Critical Component: extra action granted, next card costs 2 less.");
       } else {
@@ -1937,6 +1938,7 @@ register("rudimentary-still", {
         }
       }
       player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+      player.extraActionsTotal = (player.extraActionsTotal ?? 0) + 1;
       player.costReduction = { persuasion: 1, logistics: 1, security: 1 };
       log.push("Rudimentary Still: extra action granted, next card costs 1 less.");
     },
@@ -3362,6 +3364,7 @@ registerPendingChoice("critical-component-stack", {
       player.zones.resourceStacks[stackIdx].exhausted = true;
     }
     player.extraActionsRemaining = (player.extraActionsRemaining ?? 0) + 1;
+    player.extraActionsTotal = (player.extraActionsTotal ?? 0) + 1;
     player.costReduction = { persuasion: 2, logistics: 2, security: 2 };
     log.push("Critical Component: extra action granted, next card costs 2 less.");
   },
