@@ -63,7 +63,7 @@ function sendAction(action: GameAction): void {
 function newGame(): void {
   // Remove modals attached to document.body
   document
-    .querySelectorAll(".action-modal-overlay, .player-action-overlay, .log-modal-overlay")
+    .querySelectorAll(".player-action-overlay, .log-modal-overlay")
     .forEach((el) => el.remove());
   // Clear old room and start fresh
   fullLog = [];
@@ -291,7 +291,7 @@ function connect(): void {
       case "deckRequired":
         fullLog = [];
         document
-          .querySelectorAll(".action-modal-overlay, .player-action-overlay, .log-modal-overlay")
+          .querySelectorAll(".player-action-overlay, .log-modal-overlay")
           .forEach((el) => el.remove());
         if (currentRegistry) {
           renderDeckBuilder(app, currentRegistry, handleDeckSubmit);

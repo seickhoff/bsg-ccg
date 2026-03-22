@@ -449,7 +449,6 @@ export function renderGame(
             <span class="zoom-label" id="zoom-label">${boardZoomPercent}%</span>
             <button class="zoom-btn" id="zoom-in">+</button>
           </div>
-          <button class="header-btn" id="actions-fab" style="display:none">Actions</button>
           <button class="header-btn" id="log-btn">Log</button>
           <button class="header-btn" id="new-game-btn">New Game</button>
         </div>
@@ -505,7 +504,6 @@ export function renderGame(
   if (newBoards) newBoards.scrollTop = scrollToRestore;
 
   // Dismiss stale overlays before showing new ones
-  document.querySelector(".action-modal-overlay")?.remove();
   document.querySelector(".player-action-overlay")?.remove();
 
   // Show action notification modal for AI actions
@@ -523,7 +521,6 @@ function showActionModal(
   playerIndex: number,
 ): void {
   // Remove any existing modals (both notification and player-action)
-  document.querySelector(".action-modal-overlay")?.remove();
   document.querySelector(".player-action-overlay")?.remove();
 
   // Build thumbnail HTML from card def IDs
@@ -544,9 +541,12 @@ function showActionModal(
   const summaryHtml = formatNotificationHtml(notification.text, playerIndex);
 
   const overlay = document.createElement("div");
-  overlay.className = "action-modal-overlay";
+  overlay.className = "player-action-overlay";
   overlay.innerHTML = `
     <div class="action-modal">
+      <div class="action-modal-drag-handle" style="cursor:grab;user-select:none;padding:8px 1rem;background:#222;border-bottom:1px solid #444;border-radius:8px 8px 0 0;color:#e0e0e0;font-size:0.9rem;">
+        Action Summary
+      </div>
       <div class="action-modal-top">
         <div class="action-modal-text">${summaryHtml}</div>
         ${thumbsHtml ? `<div class="action-modal-thumbs">${thumbsHtml}</div>` : ""}
@@ -556,6 +556,8 @@ function showActionModal(
   `;
 
   document.body.appendChild(overlay);
+
+  attachModalDragBehavior(overlay);
 
   // Wire thumbnail clicks → card preview
   overlay.querySelectorAll(".action-modal-thumb").forEach((thumb) => {
@@ -804,6 +806,113 @@ function getActionThumbHtml(action: ValidAction): string {
   return `<img src="${image}" alt="" class="action-row-thumb${isBase ? " card-clip-landscape" : ""}" data-def-id="${action.cardDefId}" />`;
 }
 
+/** Shared drag/collapse/position behavior for all action modals.
+ *  Expects the overlay to contain .action-modal > .action-modal-drag-handle + .action-modal-top */
+function attachModalDragBehavior(overlay: HTMLElement): void {
+  const modal = overlay.querySelector(".action-modal") as HTMLElement;
+  const dragHandle = overlay.querySelector(".action-modal-drag-handle") as HTMLElement;
+  const modalBody = overlay.querySelector(".action-modal-top") as HTMLElement;
+  if (!modal || !dragHandle || !modalBody) return;
+
+  // Restore saved position if available
+  if (savedModalPosition) {
+    modal.style.top = savedModalPosition.top + "px";
+    modal.style.left = savedModalPosition.left + "px";
+    modal.style.transform = "none";
+    modal.style.maxHeight = window.innerHeight - savedModalPosition.top + "px";
+  }
+
+  let dragged = false;
+
+  function dragTo(newTop: number, newLeft: number) {
+    const handleH = dragHandle.offsetHeight;
+    const modalW = modal.offsetWidth;
+    const maxTop = window.innerHeight - handleH;
+    const maxLeft = window.innerWidth - modalW;
+    const clampedTop = Math.max(0, Math.min(newTop, maxTop));
+    const clampedLeft = Math.max(0, Math.min(newLeft, maxLeft));
+    modal.style.top = clampedTop + "px";
+    modal.style.left = clampedLeft + "px";
+    modal.style.transform = "none";
+    modal.style.maxHeight = window.innerHeight - clampedTop + "px";
+  }
+
+  function toggleCollapse() {
+    const hidden = modalBody.style.display === "none";
+    modalBody.style.display = hidden ? "" : "none";
+    if (hidden) {
+      const top = modal.getBoundingClientRect().top;
+      modal.style.maxHeight = window.innerHeight - top + "px";
+    }
+  }
+
+  function savePosition() {
+    savedModalPosition = {
+      top: modal.getBoundingClientRect().top,
+      left: modal.getBoundingClientRect().left,
+    };
+  }
+
+  // Desktop: drag in any direction (mouse)
+  dragHandle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    dragged = false;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const rect = modal.getBoundingClientRect();
+    const startTop = rect.top;
+    const startLeft = rect.left;
+    if (modal.style.transform !== "none") {
+      modal.style.left = startLeft + "px";
+      modal.style.transform = "none";
+    }
+    const onMouseMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragged = true;
+      if (dragged) dragTo(startTop + dy, startLeft + dx);
+    };
+    const onMouseUp = () => {
+      dragHandle.style.cursor = "grab";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      if (dragged) {
+        savePosition();
+      } else {
+        toggleCollapse();
+      }
+    };
+    dragHandle.style.cursor = "grabbing";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+
+  // Mobile: vertical drag only (touch)
+  dragHandle.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    dragged = false;
+    const startY = e.touches[0].clientY;
+    const rect = modal.getBoundingClientRect();
+    const startTop = rect.top;
+    const startLeft = rect.left;
+    const onTouchMove = (ev: TouchEvent) => {
+      if (Math.abs(ev.touches[0].clientY - startY) > DRAG_THRESHOLD) dragged = true;
+      if (dragged) dragTo(startTop + (ev.touches[0].clientY - startY), startLeft);
+    };
+    const onTouchEnd = () => {
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+      if (dragged) {
+        savePosition();
+      } else {
+        toggleCollapse();
+      }
+    };
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", onTouchEnd);
+  });
+}
+
 function showPlayerActionModal(
   validActions: ValidAction[],
   state: PlayerGameView,
@@ -1003,113 +1112,7 @@ function showPlayerActionModal(
 
   document.body.appendChild(overlay);
 
-  const modal = overlay.querySelector(".action-modal") as HTMLElement;
-
-  // Restore saved position if available
-  if (savedModalPosition) {
-    modal.style.top = savedModalPosition.top + "px";
-    modal.style.left = savedModalPosition.left + "px";
-    modal.style.transform = "none";
-    modal.style.maxHeight = window.innerHeight - savedModalPosition.top + "px";
-  }
-
-  // Drag handle: drag to reposition, click/tap to minimize/expand
-  const dragHandle = overlay.querySelector(".action-modal-drag-handle") as HTMLElement;
-  const modalBody = overlay.querySelector(".action-modal-top") as HTMLElement;
-  let dragged = false;
-
-  /** Move modal, shrinking if dragged past bottom edge. */
-  function dragTo(newTop: number, newLeft: number) {
-    const handleH = dragHandle.offsetHeight;
-    const modalW = modal.offsetWidth;
-    const maxTop = window.innerHeight - handleH;
-    const maxLeft = window.innerWidth - modalW;
-    const clampedTop = Math.max(0, Math.min(newTop, maxTop));
-    const clampedLeft = Math.max(0, Math.min(newLeft, maxLeft));
-    modal.style.top = clampedTop + "px";
-    modal.style.left = clampedLeft + "px";
-    modal.style.transform = "none";
-    // Shrink if bottom would exceed viewport, restore when dragged back up
-    modal.style.maxHeight = window.innerHeight - clampedTop + "px";
-  }
-
-  /** Toggle collapse: header stays put, body expands downward with maxHeight capped to screen. */
-  function toggleCollapse() {
-    const hidden = modalBody.style.display === "none";
-    modalBody.style.display = hidden ? "" : "none";
-    if (hidden) {
-      // Expanding — cap maxHeight so content doesn't overflow past screen bottom
-      const top = modal.getBoundingClientRect().top;
-      modal.style.maxHeight = window.innerHeight - top + "px";
-    }
-  }
-
-  function savePosition() {
-    savedModalPosition = {
-      top: modal.getBoundingClientRect().top,
-      left: modal.getBoundingClientRect().left,
-    };
-  }
-
-  // Desktop: drag in any direction (mouse)
-  dragHandle.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    dragged = false;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const rect = modal.getBoundingClientRect();
-    const startTop = rect.top;
-    const startLeft = rect.left;
-    // Ensure we're in absolute positioning mode
-    if (modal.style.transform !== "none") {
-      modal.style.left = startLeft + "px";
-      modal.style.transform = "none";
-    }
-    const onMouseMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - startX;
-      const dy = ev.clientY - startY;
-      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragged = true;
-      if (dragged) dragTo(startTop + dy, startLeft + dx);
-    };
-    const onMouseUp = () => {
-      dragHandle.style.cursor = "grab";
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-      if (dragged) {
-        savePosition();
-      } else {
-        toggleCollapse();
-      }
-    };
-    dragHandle.style.cursor = "grabbing";
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-  });
-
-  // Mobile: vertical drag only (touch)
-  dragHandle.addEventListener("touchstart", (e) => {
-    e.preventDefault();
-    dragged = false;
-    const startY = e.touches[0].clientY;
-    const rect = modal.getBoundingClientRect();
-    const startTop = rect.top;
-    const startLeft = rect.left;
-    const onTouchMove = (ev: TouchEvent) => {
-      if (Math.abs(ev.touches[0].clientY - startY) > DRAG_THRESHOLD) dragged = true;
-      if (dragged) dragTo(startTop + (ev.touches[0].clientY - startY), startLeft);
-    };
-    const onTouchEnd = () => {
-      document.removeEventListener("touchmove", onTouchMove);
-      document.removeEventListener("touchend", onTouchEnd);
-      if (dragged) {
-        savePosition();
-      } else {
-        toggleCollapse();
-      }
-    };
-    document.addEventListener("touchmove", onTouchMove, { passive: true });
-    document.addEventListener("touchend", onTouchEnd);
-  });
+  attachModalDragBehavior(overlay);
 
   // Wire action buttons
   overlay.querySelectorAll(".action-modal-btn").forEach((btn) => {
@@ -1185,11 +1188,10 @@ function showPromptModal(
   overlay.className = "player-action-overlay";
   overlay.innerHTML = `
     <div class="action-modal">
+      <div class="action-modal-drag-handle" style="cursor:grab;user-select:none;padding:8px 1rem;background:#222;border-bottom:1px solid #444;border-radius:8px 8px 0 0;color:#e0e0e0;font-size:0.9rem;">
+        ${escapeHtml(prompt)}
+      </div>
       <div class="action-modal-top">
-        <div class="action-modal-header-row">
-          <div class="action-modal-text">${escapeHtml(prompt)}</div>
-          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
-        </div>
         <div class="player-action-buttons">${buttonsHtml}</div>
       </div>
     </div>
@@ -1197,20 +1199,7 @@ function showPromptModal(
 
   document.body.appendChild(overlay);
 
-  const modal = overlay.querySelector(".action-modal") as HTMLElement;
-  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
-  const headerFab = document.getElementById("actions-fab");
-
-  toggle.addEventListener("click", () => {
-    modal.style.display = "none";
-    if (headerFab) {
-      headerFab.style.display = "";
-      headerFab.onclick = () => {
-        modal.style.display = "";
-        headerFab.style.display = "none";
-      };
-    }
-  });
+  attachModalDragBehavior(overlay);
 
   overlay.querySelectorAll("[data-btn-index]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1289,11 +1278,10 @@ function showSelectModal(
   overlay.className = "player-action-overlay";
   overlay.innerHTML = `
     <div class="action-modal">
+      <div class="action-modal-drag-handle" style="cursor:grab;user-select:none;padding:8px 1rem;background:#222;border-bottom:1px solid #444;border-radius:8px 8px 0 0;color:#e0e0e0;font-size:0.9rem;">
+        ${escapeHtml(prompt)}
+      </div>
       <div class="action-modal-top">
-        <div class="action-modal-header-row">
-          <div class="action-modal-text">${escapeHtml(prompt)}</div>
-          <button class="action-modal-toggle" title="Hide to review cards">&#x25BC;</button>
-        </div>
         <div class="select-rows-container">${rowsHtml}</div>
         <div class="player-action-buttons">
           <button class="action-modal-btn select-confirm-btn" disabled>Confirm</button>
@@ -1305,21 +1293,9 @@ function showSelectModal(
 
   document.body.appendChild(overlay);
 
-  const modal = overlay.querySelector(".action-modal") as HTMLElement;
-  const toggle = overlay.querySelector(".action-modal-toggle") as HTMLElement;
-  const headerFab = document.getElementById("actions-fab");
-  const confirmBtn = overlay.querySelector(".select-confirm-btn") as HTMLButtonElement;
+  attachModalDragBehavior(overlay);
 
-  toggle.addEventListener("click", () => {
-    modal.style.display = "none";
-    if (headerFab) {
-      headerFab.style.display = "";
-      headerFab.onclick = () => {
-        modal.style.display = "";
-        headerFab.style.display = "none";
-      };
-    }
-  });
+  const confirmBtn = overlay.querySelector(".select-confirm-btn") as HTMLButtonElement;
 
   // Row selection
   overlay.querySelectorAll(".select-row").forEach((row) => {

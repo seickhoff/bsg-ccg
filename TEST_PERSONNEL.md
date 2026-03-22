@@ -75,7 +75,7 @@ __bsg_send({
     },
     player1: {
       baseId: "BSG1-007",
-      alert: ["BSG1-102"],
+      alert: ["BSG1-136"],
       influence: 10,
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
     },
@@ -84,7 +84,9 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// Challenge with Apollo (BSG1-098, Pilot), then use Helo's ability
+// In execution phase, commit Helo to use his ability
+// Should offer both Apollo (BSG1-098, own Pilot) and Starbuck (BSG1-136, opponent Pilot) as targets
+// Verify you can select your own Apollo
 ```
 
 ### Ellen Tigh, Power Behind the XO — "Commit: Target Officer gets +2 power"
@@ -650,6 +652,8 @@ __bsg_send({
 ## Dual / Complex Abilities
 
 ### Dr. Baltar, Vice President — "Commit: Toggle mission alert/reserve"
+
+TODO - continue from here
 
 ```js
 __bsg_send({

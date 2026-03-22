@@ -1553,16 +1553,6 @@ body {
 
 /* --- Action Notification Modal --- */
 
-.action-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  z-index: 150;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .action-modal {
   background: #1a1a1a;
   border: 1px solid #333;
@@ -1859,30 +1849,6 @@ body {
   50% {
     border-color: #e8c547;
   }
-}
-
-.action-modal-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  cursor: grab;
-  user-select: none;
-}
-
-.action-modal-toggle {
-  background: none;
-  border: none;
-  color: #666;
-  font-size: 1rem;
-  cursor: pointer;
-  padding: 0.25rem;
-  line-height: 1;
-  transition: color 0.15s;
-}
-
-.action-modal-toggle:hover {
-  color: #e0e0e0;
 }
 
 .player-action-buttons {
