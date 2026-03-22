@@ -375,7 +375,12 @@ export type GameAction =
       targetInstanceId?: string;
       selectedStackIndices?: number[];
     }
-  | { type: "playAbility"; sourceInstanceId: string; targetInstanceId?: string }
+  | {
+      type: "playAbility";
+      sourceInstanceId: string;
+      targetInstanceId?: string;
+      abilityIndex?: number;
+    }
   | {
       type: "resolveMission";
       missionInstanceId: string;
@@ -415,6 +420,7 @@ export interface ValidAction {
   selectableInstanceIds?: string[]; // board card instance IDs
   selectableStackIndices?: number[]; // resource stack indices
   selectableThreatIndices?: number[]; // cylon threat indices
+  selectablePlayerIndices?: number[]; // player indices for target-player picker
   sourceInstanceId?: string; // pre-selected source for ability actions (e.g. linked mission unit)
   targetInstanceId?: string; // pre-selected target for ability actions
   missionTargetIds?: string[]; // valid resolve-time targets for missions
@@ -438,8 +444,11 @@ export interface DebugPlayerSetup {
   baseId: string;
   hand?: string[]; // card defIds to place in hand
   alert?: string[]; // card defIds to place in alert zone (each as a single-card UnitStack)
+  alertExhausted?: string[]; // card defIds to place in alert zone, already exhausted
   reserve?: string[]; // card defIds to place in reserve zone
+  reserveExhausted?: string[]; // card defIds to place in reserve zone, already exhausted
   deck?: string[]; // card defIds to place in deck (top-first order)
+  discard?: string[]; // card defIds to place in discard pile
   assets?: string[]; // card defIds to add as extra resource stacks (assets)
   baseSupplyCards?: number; // number of supply cards to add under the base stack
   influence?: number; // override starting influence

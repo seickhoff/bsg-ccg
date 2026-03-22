@@ -73,6 +73,19 @@ export interface UnitAbilityHandler {
   /** Get valid target instanceIds. null = no target, [] = need target but none available */
   getTargets?(state: GameState, playerIndex: number, sourceId: string): string[] | null;
 
+  /** Split into multiple action rows in the UI, each with its own description, targets, and resolve */
+  subAbilities?: {
+    description: string;
+    getTargets(state: GameState, playerIndex: number, sourceId: string): string[] | null;
+    resolve(
+      state: GameState,
+      playerIndex: number,
+      sourceId: string,
+      targetId: string | undefined,
+      log: LogItem[],
+    ): void;
+  }[];
+
   /** Apply the effect */
   resolve?(
     state: GameState,
@@ -365,18 +378,9 @@ function drawCards(
 // "Commit: Choose target other unit. If that unit is challenging, it gets +2 power."
 for (const [id] of [["crashdown-buff"], ["danna-buff"], ["adama-commit"]] as const) {
   register(id, {
-    activation: { cost: "commit", usableIn: ["execution", "challenge", "cylon-challenge"] },
-    getTargets(state, playerIndex, sourceId) {
-      // Target: any other face-up alert unit (any player) that is currently challenging
-      if (!state.challenge) {
-        // During execution, target any other alert unit (buff applies when they challenge)
-        return findTargetUnits(
-          state,
-          playerIndex,
-          (def) => def.type === "personnel" || def.type === "ship",
-          { excludeSourceId: sourceId },
-        );
-      }
+    activation: { cost: "commit", usableIn: ["challenge", "cylon-challenge"] },
+    getTargets(state, _playerIndex, sourceId) {
+      if (!state.challenge) return [];
       // During challenge, only target the challenger
       const targets: string[] = [];
       if (state.challenge.challengerInstanceId !== sourceId) {
@@ -480,8 +484,8 @@ register("ellen-buff", {
     );
   },
   resolve(state, _pi, _sid, targetId, log) {
-    if (!targetId || !state.challenge) return;
-    applyChallengePowerBuff(state, targetId, 2, log);
+    if (!targetId) return;
+    getHelpers().applyPowerBuff(state, targetId, 2, log);
   },
 });
 
@@ -717,8 +721,8 @@ register("cottle-debuff", {
     });
   },
   resolve(state, _pi, _sid, targetId, log) {
-    if (!targetId || !state.challenge) return;
-    applyChallengePowerBuff(state, targetId, -2, log);
+    if (!targetId) return;
+    getHelpers().applyPowerBuff(state, targetId, -2, log);
   },
 });
 
@@ -1043,14 +1047,15 @@ register("starbuck-bounce", {
 // Starbuck Resistance Fighter: "Commit and exhaust: Exhaust target resource stack."
 register("starbuck-sabotage", {
   activation: { cost: "commit-exhaust", usableIn: ["execution"] },
-  getTargets(state, playerIndex) {
-    // Target opponent's resource stacks
-    const oppIndex = 1 - playerIndex;
+  getTargets(state) {
+    // Target any player's non-exhausted resource stacks
     const targets: string[] = [];
-    const opp = state.players[oppIndex];
-    for (let i = 0; i < opp.zones.resourceStacks.length; i++) {
-      if (!opp.zones.resourceStacks[i].exhausted) {
-        targets.push(`rstack-${oppIndex}-${i}`);
+    for (let p = 0; p < state.players.length; p++) {
+      const player = state.players[p];
+      for (let i = 0; i < player.zones.resourceStacks.length; i++) {
+        if (!player.zones.resourceStacks[i].exhausted) {
+          targets.push(`rstack-${p}-${i}`);
+        }
       }
     }
     return targets;
@@ -1106,14 +1111,8 @@ register("baltar-boost", {
       excludeSourceId: sourceId,
     });
   },
-  resolve(state, _pi, _sid, targetId, log) {
-    // targetId is the committed unit. Self gets +1 power.
-    // Power buff handled via challenge state if in challenge
-    if (state.challenge) {
-      // Apply to the source unit — but we need the source instanceId
-      // The engine handles committing the other unit as cost
-      log.push("Dr. Baltar gets +1 power.");
-    }
+  resolve() {
+    // Power buff is applied by the engine when processing commit-other cost
   },
 });
 
@@ -1235,36 +1234,57 @@ register("apollo-dismiss", {
 // --- Dr. Baltar Vice President (DUAL ability) ---
 register("baltar-vp", {
   activation: { cost: "commit", usableIn: ["execution"] },
-  getTargets(state, playerIndex) {
-    // Two abilities: move mission to reserve OR ready mission
-    // Return missions in alert (to commit to reserve) and missions in reserve (to ready)
-    const player = state.players[playerIndex];
-    const targets: string[] = [];
-    for (const stack of player.zones.alert) {
-      const def = getCardDef(stack.cards[0]?.defId);
-      if (def?.type === "mission") targets.push(stack.cards[0].instanceId);
-    }
-    for (const stack of player.zones.reserve) {
-      const def = getCardDef(stack.cards[0]?.defId);
-      if (def?.type === "mission") targets.push(stack.cards[0].instanceId);
-    }
-    return targets;
-  },
-  resolve(state, playerIndex, _sid, targetId, log) {
-    if (!targetId) return;
-    const player = state.players[playerIndex];
-    // Check if target is in alert → commit to reserve
-    const alertFound = findUnitInZone(player.zones.alert, targetId);
-    if (alertFound) {
-      const [stack] = player.zones.alert.splice(alertFound.index, 1);
-      player.zones.reserve.push(stack);
-      const def = getCardDef(stack.cards[0].defId);
-      log.push(`Dr. Baltar moves ${def ? cardName(def) : "mission"} to reserve.`);
-      return;
-    }
-    // Check if target is in reserve → ready (move to alert)
-    readyUnit(player, targetId, log);
-  },
+  subAbilities: [
+    {
+      description: "Commit: Move target mission to its owner's reserve area.",
+      getTargets(state) {
+        const targets: string[] = [];
+        for (const player of state.players) {
+          for (const stack of player.zones.alert) {
+            const def = getCardDef(stack.cards[0]?.defId);
+            if (def?.type === "mission") targets.push(stack.cards[0].instanceId);
+          }
+        }
+        return targets;
+      },
+      resolve(state, _playerIndex, _sid, targetId, log) {
+        if (!targetId) return;
+        for (const player of state.players) {
+          const alertFound = findUnitInZone(player.zones.alert, targetId);
+          if (alertFound) {
+            const [stack] = player.zones.alert.splice(alertFound.index, 1);
+            player.zones.reserve.push(stack);
+            const def = getCardDef(stack.cards[0].defId);
+            log.push(`Dr. Baltar moves ${def ? cardName(def) : "mission"} to reserve.`);
+            return;
+          }
+        }
+      },
+    },
+    {
+      description: "Commit: Ready target mission.",
+      getTargets(state) {
+        const targets: string[] = [];
+        for (const player of state.players) {
+          for (const stack of player.zones.reserve) {
+            const def = getCardDef(stack.cards[0]?.defId);
+            if (def?.type === "mission") targets.push(stack.cards[0].instanceId);
+          }
+        }
+        return targets;
+      },
+      resolve(state, _playerIndex, _sid, targetId, log) {
+        if (!targetId) return;
+        for (const player of state.players) {
+          const reserveFound = findUnitInZone(player.zones.reserve, targetId);
+          if (reserveFound) {
+            readyUnit(player, targetId, log);
+            return;
+          }
+        }
+      },
+    },
+  ],
 });
 
 // --- Number Six Agent Provocateur: "Vision + Commit and sacrifice: 2 extra actions." ---
@@ -2305,6 +2325,39 @@ export function getUnitAbilityActions(
   const sourceDef = findDefByInstanceIdFromPlayers(state, sourceInstanceId);
   if (!sourceDef) return [];
 
+  // Sub-abilities: return separate action rows for each
+  if (handler.subAbilities) {
+    const actions: ValidAction[] = [];
+    for (const sub of handler.subAbilities) {
+      let subTargets = sub.getTargets(state, playerIndex, sourceInstanceId);
+      if (subTargets === null) {
+        actions.push({
+          type: "playAbility",
+          description: `${cardName(sourceDef)}: ${sub.description}`,
+          cardDefId: sourceDef.id,
+          selectableInstanceIds: [sourceInstanceId],
+          abilityIndex: handler.subAbilities.indexOf(sub),
+        });
+      } else {
+        if (state.effectImmunity) {
+          subTargets = subTargets.filter((id) => state.effectImmunity?.[id] !== "all");
+        }
+        if (subTargets.length > 0) {
+          actions.push({
+            type: "playAbility",
+            description: `${cardName(sourceDef)}: ${sub.description}`,
+            cardDefId: sourceDef.id,
+            sourceInstanceId,
+            selectableInstanceIds: subTargets,
+            targetPrompt: `Select target for ${cardName(sourceDef)}`,
+            abilityIndex: handler.subAbilities.indexOf(sub),
+          });
+        }
+      }
+    }
+    return actions;
+  }
+
   let targets = handler.getTargets?.(state, playerIndex, sourceInstanceId) ?? null;
 
   // Filter out units with "all" effect immunity (Fallout Shelter)
@@ -2317,7 +2370,7 @@ export function getUnitAbilityActions(
     return [
       {
         type: "playAbility",
-        description: `${cardName(sourceDef)}: ${sourceDef.abilityText.split("\n").pop()!.split(".")[0]}`,
+        description: `${cardName(sourceDef)}: ${sourceDef.abilityText.split("\n").pop()!.trimEnd()}`,
         cardDefId: sourceDef.id,
         selectableInstanceIds: [sourceInstanceId],
       },
@@ -2326,21 +2379,17 @@ export function getUnitAbilityActions(
 
   if (targets.length === 0) return [];
 
-  const actions: ValidAction[] = [];
-  for (const targetId of targets) {
-    const targetDef = findDefByInstanceIdFromPlayers(state, targetId);
-    const ownerIdx = findOwnerIndexFromPlayers(state, targetId);
-    const ownerTag = ownerIdx !== null && ownerIdx !== playerIndex ? "(opponent's) " : "";
-    const targetLabel = targetDef ? cardName(targetDef) : targetId;
-    actions.push({
+  const abilityDesc = sourceDef.abilityText.split("\n").pop()!.trimEnd();
+  return [
+    {
       type: "playAbility",
-      description: `${cardName(sourceDef)}: → ${ownerTag}${targetLabel}`,
+      description: `${cardName(sourceDef)}: ${abilityDesc}`,
       cardDefId: sourceDef.id,
-      selectableInstanceIds: [sourceInstanceId],
-      targetInstanceId: targetId,
-    });
-  }
-  return actions;
+      sourceInstanceId: sourceInstanceId,
+      selectableInstanceIds: targets,
+      targetPrompt: `Select target for ${cardName(sourceDef)}`,
+    },
+  ];
 }
 
 /** Resolve a unit ability effect (cost already paid by engine). */
@@ -2351,6 +2400,7 @@ export function resolveUnitAbility(
   sourceInstanceId: string,
   targetInstanceId: string | undefined,
   log: LogItem[],
+  abilityIndex?: number,
 ): void {
   const handler = registry.get(abilityId);
   if (!handler) {
@@ -2366,7 +2416,18 @@ export function resolveUnitAbility(
     state.players[playerIndex].oncePerTurnUsed![abilityId] = true;
   }
 
-  handler.resolve?.(state, playerIndex, sourceInstanceId, targetInstanceId, log);
+  // Dispatch to sub-ability if applicable
+  if (handler.subAbilities && abilityIndex !== undefined) {
+    handler.subAbilities[abilityIndex]?.resolve(
+      state,
+      playerIndex,
+      sourceInstanceId,
+      targetInstanceId,
+      log,
+    );
+  } else {
+    handler.resolve?.(state, playerIndex, sourceInstanceId, targetInstanceId, log);
+  }
 }
 
 /** Get the activation cost type for a unit ability. */
@@ -2865,15 +2926,6 @@ function findDefByInstanceId(state: GameState, instanceId: string): CardDef | nu
 
 function findDefByInstanceIdFromPlayers(state: GameState, instanceId: string): CardDef | null {
   return findDefByInstanceId(state, instanceId);
-}
-
-function findOwnerIndexFromPlayers(state: GameState, instanceId: string): number | null {
-  const idx = state.players.findIndex((p) =>
-    [...p.zones.alert, ...p.zones.reserve].some((stack) =>
-      stack.cards.some((c) => c.instanceId === instanceId),
-    ),
-  );
-  return idx === -1 ? null : idx;
 }
 
 function applyChallengePowerBuff(

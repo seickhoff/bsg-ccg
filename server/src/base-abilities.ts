@@ -500,20 +500,28 @@ export function getBaseAbilityActions(
   // Targets needed but none available
   if (targets.length === 0) return [];
 
-  // Generate one action per target
+  // Player targets — single action with player picker
+  const playerTargets = targets.filter((t) => t.startsWith("player-"));
+  if (playerTargets.length > 0 && playerTargets.length === targets.length) {
+    const playerIndices = playerTargets.map((t) => parseInt(t.split("-")[1], 10));
+    return [
+      {
+        type: "playAbility",
+        description: `${baseDef.title}: ${baseDef.abilityText.split(".")[0]}`,
+        cardDefId: baseDef.id,
+        selectableInstanceIds: [baseStack.topCard.instanceId],
+        selectablePlayerIndices: playerIndices,
+      },
+    ];
+  }
+
+  // Generate one action per non-player target
   const actions: ValidAction[] = [];
   for (const targetId of targets) {
-    let ownerTag = "";
-    let targetLabel: string;
-    if (targetId.startsWith("player-")) {
-      const idx = parseInt(targetId.split("-")[1], 10);
-      targetLabel = idx === playerIndex ? "yourself" : state.playerNames[idx as 0 | 1];
-    } else {
-      const targetDef = findChallengeUnitDef(state, targetId);
-      const ownerIdx = findOwnerIndex(state, targetId);
-      ownerTag = ownerIdx !== null && ownerIdx !== playerIndex ? "(opponent's) " : "";
-      targetLabel = targetDef ? cardName(targetDef) : "unit";
-    }
+    const targetDef = findChallengeUnitDef(state, targetId);
+    const ownerIdx = findOwnerIndex(state, targetId);
+    const ownerTag = ownerIdx !== null && ownerIdx !== playerIndex ? "(opponent's) " : "";
+    const targetLabel = targetDef ? cardName(targetDef) : "unit";
     actions.push({
       type: "playAbility",
       description: `${baseDef.title}: ${baseDef.abilityText.split(".")[0]} → ${ownerTag}${targetLabel}`,

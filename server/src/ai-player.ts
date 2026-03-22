@@ -381,8 +381,20 @@ function decideChallengeEffects(
     if (buffOwn) {
       return resolveAction(buffOwn, state, playerIndex, registry);
     }
-    // Otherwise use any base ability available
-    return resolveAction(baseAbilityActions[0], state, playerIndex, registry);
+    // Only use player-targeting base abilities if they help us (e.g. skip Galactica self-damage)
+    const beneficial = baseAbilityActions.find((a) => {
+      if (!a.cardDefId) return false;
+      const baseDef = registry.bases[a.cardDefId];
+      if (!baseDef) return false;
+      const text = baseDef.abilityText.toLowerCase();
+      // Skip negative effects (lose influence, etc.) — those should target opponent, not be used blindly
+      if (text.includes("loses") || text.includes("lose")) return false;
+      return true;
+    });
+    if (beneficial) {
+      return resolveAction(beneficial, state, playerIndex, registry);
+    }
+    // Don't blindly fire harmful base abilities during challenges
   }
 
   // Priority 2: Use unit abilities that buff our unit or debuff opponent
@@ -796,10 +808,27 @@ function resolveAction(
 
     case "playAbility":
       if (action.selectableInstanceIds?.length) {
+        // Player-targeting base abilities: pick opponent for negative effects, self for positive
+        let targetId = action.targetInstanceId;
+        if (!targetId && action.selectablePlayerIndices?.length) {
+          const opponentIndex = playerIndex === 0 ? 1 : 0;
+          const defId = action.cardDefId;
+          const text = defId
+            ? (
+                registry.bases[defId]?.abilityText ??
+                registry.cards[defId]?.abilityText ??
+                ""
+              ).toLowerCase()
+            : "";
+          const isNegative = text.includes("loses") || text.includes("lose");
+          const preferredTarget = isNegative ? opponentIndex : playerIndex;
+          targetId = `player-${action.selectablePlayerIndices.includes(preferredTarget) ? preferredTarget : action.selectablePlayerIndices[0]}`;
+        }
         return {
           type: "playAbility",
           sourceInstanceId: action.selectableInstanceIds[0],
-          targetInstanceId: action.targetInstanceId,
+          targetInstanceId: targetId,
+          abilityIndex: action.abilityIndex,
         };
       }
       return { type: "pass" };
@@ -918,12 +947,13 @@ function pickEventTarget(
     if (isDebuff && oppUnitId && targets.includes(oppUnitId)) return oppUnitId;
   }
 
-  // Outside challenge: for buffs, pick our strongest alert unit
+  // Outside challenge: for buffs, pick our strongest unit (alert or reserve)
   if (isBuff) {
     let bestId: string | undefined;
     let bestPow = -1;
+    const ownZones = [...player.zones.alert, ...player.zones.reserve];
     for (const id of targets) {
-      for (const stack of player.zones.alert) {
+      for (const stack of ownZones) {
         if (stack.cards[0]?.instanceId === id) {
           const d = registry.cards[stack.cards[0].defId];
           const pow = d?.power ?? 0;
@@ -958,8 +988,8 @@ function pickEventTarget(
     if (bestId) return bestId;
   }
 
-  // For debuffs with no opponent target found, don't target own units
-  if (isDebuff) return undefined;
+  // For buffs/debuffs with no appropriate target found, don't help the opponent
+  if (isBuff || isDebuff) return undefined;
 
   // Fallback: first target
   return targets[0];

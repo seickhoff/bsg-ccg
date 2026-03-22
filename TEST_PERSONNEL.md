@@ -174,12 +174,12 @@ __bsg_send({
     player0: {
       baseId: "BSG1-004",
       hand: [],
-      alert: ["BSG1-098"],
+      alert: ["BSG2-114", "BSG1-098"],
       deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
     },
     player1: {
       baseId: "BSG1-007",
-      alert: ["BSG2-114", "BSG1-102"],
+      alert: ["BSG1-126"],
       influence: 10,
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
     },
@@ -217,14 +217,14 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-090", "BSG1-144"] },
+    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-090"], alertExhausted: ["BSG1-144"] },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// Exhaust the ship first (manually or through another action), then use Cally to restore
+// Astral Queen starts exhausted — Cally can restore it
 ```
 
 ### Simon, Caring Doctor — "Commit: Restore target personnel"
@@ -233,14 +233,14 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-124", "BSG1-098"] },
+    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-124"], alertExhausted: ["BSG1-098"] },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG2-124 = Simon. Need to exhaust Apollo first, then use Simon to restore
+// Apollo starts exhausted — Simon can restore him
 ```
 
 ### Doral, Tour Guide — "Commit: Exhaust target ship"
@@ -282,13 +282,13 @@ __bsg_send({
   type: "debugSetup",
   scenario: {
     player0: { baseId: "BSG1-004", hand: [], alert: ["BSG1-118", "BSG1-132"] },
-    player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
+    player1: { baseId: "BSG1-007", alertExhausted: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG1-118 = Baltar Science Advisor. Use Six to exhaust target first, then Baltar to defeat
+// Opponent's personnel starts exhausted — Baltar can defeat it directly
 ```
 
 ### Centurion Harasser — "Commit: Commit target personnel"
@@ -313,14 +313,15 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-116"], reserve: ["BSG1-009"] },
+    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-116"], reserve: ["BSG1-056"] },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG2-116 = Roslin Instigator. BSG1-009 = mission in reserve
+// BSG2-116 = Roslin Instigator. BSG1-056 = Accused (mission in reserve)
+// Roslin commits → mission "Accused" moves from reserve to alert
 ```
 
 ---
@@ -433,14 +434,15 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG1-111"] },
+    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG1-111"], discard: ["BSG1-098"] },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// Play a card first to get something in discard, or test from existing discard
+// BSG1-111 = Crashdown Sensor Operator. BSG1-098 = Apollo Ace Pilot (in discard)
+// Crashdown commits+exhausts → recovers Apollo from discard to hand
 ```
 
 ### Starbuck, Maverick — "C+E: Return target alert personnel to hand"
@@ -653,14 +655,26 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG1-119", "BSG1-009"] },
-    player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG1-119", "BSG1-056"],
+      reserve: ["BSG1-057"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-102", "BSG1-058"],
+      reserve: ["BSG1-059"],
+      influence: 10,
+    },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG1-119 = Baltar VP. Move mission between alert and reserve
+// BSG1-119 = Baltar VP. BSG1-056 = Accused (mission in alert). BSG1-057 = Alert Five (mission in reserve)
+// BSG1-058 = Arrow Of Apollo (AI alert mission). BSG1-059 = Article 23 (AI reserve mission)
+// Baltar commits → pick Accused to move alert→reserve, OR pick Alert Five to ready reserve→alert
 ```
 
 ### Number Six, Agent Provocateur — "Commit+Sacrifice: 2 extra actions"

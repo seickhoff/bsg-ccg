@@ -1262,7 +1262,7 @@ function showSelectModal(
   // Build selectable rows HTML
   let rowsHtml = "";
   for (const [groupLabel, groupItems] of groups) {
-    if (groupLabel && groups.size > 1) {
+    if (groupLabel) {
       rowsHtml += `<div class="select-group-label">${escapeHtml(groupLabel)}</div>`;
     }
     for (const item of groupItems) {
@@ -2115,19 +2115,21 @@ function handleActionClick(
     }
 
     case "playAbility": {
-      // Linked mission activations: sourceInstanceId is pre-set, selectableInstanceIds are targets
+      // sourceInstanceId is pre-set: unit abilities with targets, linked missions
       if (action.sourceInstanceId) {
         const targets = action.selectableInstanceIds ?? [];
         if (targets.length > 0) {
+          const abilityIdx = action.abilityIndex;
           enterSelectModeInstance(
             container,
-            "Select target for ability",
+            action.targetPrompt ?? "Select target for ability",
             targets,
             (targetId) => {
               onAction!({
                 type: "playAbility",
                 sourceInstanceId: action.sourceInstanceId!,
                 targetInstanceId: targetId,
+                abilityIndex: abilityIdx,
               });
             },
             validActions,
@@ -2137,6 +2139,7 @@ function handleActionClick(
           onAction({
             type: "playAbility",
             sourceInstanceId: action.sourceInstanceId,
+            abilityIndex: action.abilityIndex,
           });
         }
         break;
@@ -2144,6 +2147,27 @@ function handleActionClick(
 
       const sources = action.selectableInstanceIds ?? [];
       if (sources.length === 1) {
+        // Player target picker (e.g. base abilities targeting a player)
+        if (action.selectablePlayerIndices && action.selectablePlayerIndices.length > 0) {
+          const items = action.selectablePlayerIndices.map((idx: number) => ({
+            label: idx === state.you.playerIndex ? "Yourself" : state.playerNames[idx as 0 | 1],
+            selectValue: `player-${idx}`,
+            onClick: () => {},
+          }));
+          items.push({
+            label: "Cancel",
+            onClick: () => dismissPlayerActionModal(),
+            cancel: true,
+          } as (typeof items)[0]);
+          showSelectModal(action.description, items, (selectedValue) => {
+            onAction!({
+              type: "playAbility",
+              sourceInstanceId: sources[0],
+              targetInstanceId: selectedValue,
+            });
+          });
+          break;
+        }
         // If the server already provided a target, use it directly
         if (action.targetInstanceId) {
           onAction({
@@ -2468,35 +2492,59 @@ function enterSelectModeInstance(
     collectIds(state.opponent.zones, oppIds);
   }
 
-  const hasMultipleOwners =
-    selectableIds.some((id) => yourIds.has(id)) && selectableIds.some((id) => oppIds.has(id));
+  const hasAnyOwner =
+    selectableIds.some((id) => yourIds.has(id)) || selectableIds.some((id) => oppIds.has(id));
 
   for (const instId of selectableIds) {
     // Find card def from either player's zones
     let defId = "";
+    let isYours: boolean | null = null;
     if (state) {
-      const stack =
-        findUnitStack(state.you.zones, instId) ?? findUnitStack(state.opponent.zones, instId);
-      if (stack) {
-        defId = stack.cards[0]?.defId ?? "";
+      // Check resource stack synthetic IDs (rstack-playerIdx-stackIdx)
+      const rstackMatch = instId.match(/^rstack-(\d+)-(\d+)$/);
+      if (rstackMatch) {
+        const pIdx = parseInt(rstackMatch[1], 10);
+        const sIdx = parseInt(rstackMatch[2], 10);
+        const zones = pIdx === state.you.playerIndex ? state.you.zones : state.opponent.zones;
+        const rstack = zones.resourceStacks[sIdx];
+        if (rstack) {
+          defId = rstack.topCard.defId;
+        }
+        isYours = pIdx === state.you.playerIndex;
       } else {
-        // Check linked missions and persistent missions
-        const findLinked = (zones: PlayerZones): string => {
-          for (const s of [...zones.alert, ...zones.reserve]) {
-            const linked = s.linkedMissions?.find((m) => m.instanceId === instId);
-            if (linked) return linked.defId;
+        const stack =
+          findUnitStack(state.you.zones, instId) ?? findUnitStack(state.opponent.zones, instId);
+        if (stack) {
+          defId = stack.cards[0]?.defId ?? "";
+        } else {
+          // Check discard piles
+          const discardCard =
+            state.you.discard.find((c) => c.instanceId === instId) ??
+            state.opponent.discard.find((c) => c.instanceId === instId);
+          if (discardCard) {
+            defId = discardCard.defId;
+          } else {
+            // Check linked missions and persistent missions
+            const findLinked = (zones: PlayerZones): string => {
+              for (const s of [...zones.alert, ...zones.reserve]) {
+                const linked = s.linkedMissions?.find((m) => m.instanceId === instId);
+                if (linked) return linked.defId;
+              }
+              const pm = zones.persistentMissions?.find((m) => m.instanceId === instId);
+              if (pm) return pm.defId;
+              return "";
+            };
+            defId = findLinked(state.you.zones) || findLinked(state.opponent.zones);
           }
-          const pm = zones.persistentMissions?.find((m) => m.instanceId === instId);
-          if (pm) return pm.defId;
-          return "";
-        };
-        defId = findLinked(state.you.zones) || findLinked(state.opponent.zones);
+        }
       }
     }
 
     const name = defId ? getCardName(defId) : instId;
     let group = "";
-    if (hasMultipleOwners) {
+    if (isYours !== null) {
+      group = isYours ? "Your cards" : "Opponent cards";
+    } else if (hasAnyOwner) {
       group = yourIds.has(instId) ? "Your cards" : "Opponent cards";
     }
 

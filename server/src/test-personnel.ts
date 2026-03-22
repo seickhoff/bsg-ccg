@@ -29,8 +29,9 @@ function toGameAction(va: VA, index?: number): GA {
     case "playAbility":
       return {
         type: "playAbility",
-        sourceInstanceId: va.selectableInstanceIds![0],
-        targetInstanceId: va.targetInstanceId,
+        sourceInstanceId: va.sourceInstanceId ?? va.selectableInstanceIds![0],
+        targetInstanceId:
+          va.targetInstanceId ?? (va.sourceInstanceId ? va.selectableInstanceIds?.[0] : undefined),
       };
     case "playCard":
       return { type: "playCard", cardIndex: va.selectableCardIndices![0] };
@@ -490,7 +491,8 @@ header("Cally, Cheerful Mechanic — Commit: Restore target ship");
       player0: {
         baseId: "BSG1-004",
         hand: [],
-        alert: ["BSG2-090", "BSG1-144"], // Cally + Astral Queen
+        alert: ["BSG2-090"], // Cally
+        alertExhausted: ["BSG1-144"], // Astral Queen (exhausted)
       },
       player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
       phase: "execution",
@@ -499,10 +501,6 @@ header("Cally, Cheerful Mechanic — Commit: Restore target ship");
     },
     registry,
   );
-
-  // Exhaust the ship first
-  const shipStack = state.players[0].zones.alert.find((s) => s.cards[0].defId === "BSG1-144");
-  if (shipStack) shipStack.exhausted = true;
 
   const ability = findAbility(getValidActions(state, 0, bases), "cally");
   assert(!!ability, "Cally restore ability available for exhausted ship");
@@ -525,7 +523,8 @@ header("Simon, Caring Doctor — Commit: Restore target personnel");
       player0: {
         baseId: "BSG1-004",
         hand: [],
-        alert: ["BSG2-124", "BSG1-098"], // Simon + Apollo
+        alert: ["BSG2-124"], // Simon
+        alertExhausted: ["BSG1-098"], // Apollo (exhausted)
       },
       player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
       phase: "execution",
@@ -534,10 +533,6 @@ header("Simon, Caring Doctor — Commit: Restore target personnel");
     },
     registry,
   );
-
-  // Exhaust Apollo
-  const apolloStack = state.players[0].zones.alert.find((s) => s.cards[0].defId === "BSG1-098");
-  if (apolloStack) apolloStack.exhausted = true;
 
   const ability = findAbility(getValidActions(state, 0, bases), "simon");
   assert(!!ability, "Simon restore ability available for exhausted personnel");
@@ -624,17 +619,13 @@ header("Dr. Baltar, Science Advisor — Commit: Defeat target exhausted personne
         hand: [],
         alert: ["BSG1-118"], // Baltar Science Advisor
       },
-      player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
+      player1: { baseId: "BSG1-007", alertExhausted: ["BSG1-102"], influence: 10 },
       phase: "execution",
       turn: 3,
       activePlayerIndex: 0,
     },
     registry,
   );
-
-  // Exhaust opponent's personnel first
-  const targetStack = state.players[1].zones.alert.find((s) => s.cards[0].defId === "BSG1-102");
-  if (targetStack) targetStack.exhausted = true;
 
   const ability = findAbility(getValidActions(state, 0, bases), "baltar");
   assert(!!ability, "Baltar defeat ability available for exhausted target");

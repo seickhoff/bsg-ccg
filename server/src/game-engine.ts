@@ -518,17 +518,36 @@ export function createDebugGame(
     const baseInstance = makeCardInstance(baseDef.id);
 
     const hand = (setup.hand ?? []).map((id: string) => makeCardInstance(id));
-    const alert: UnitStack[] = (setup.alert ?? []).map((id: string) => ({
-      cards: [makeCardInstance(id)],
-      exhausted: false,
-    }));
-    const reserve: UnitStack[] = (setup.reserve ?? []).map((id: string) => ({
-      cards: [makeCardInstance(id)],
-      exhausted: false,
-    }));
+    const alert: UnitStack[] = [
+      ...(setup.alert ?? []).map((id: string) => ({
+        cards: [makeCardInstance(id)],
+        exhausted: false,
+      })),
+      ...(setup.alertExhausted ?? []).map((id: string) => ({
+        cards: [makeCardInstance(id)],
+        exhausted: true,
+      })),
+    ];
+    const reserve: UnitStack[] = [
+      ...(setup.reserve ?? []).map((id: string) => ({
+        cards: [makeCardInstance(id)],
+        exhausted: false,
+      })),
+      ...(setup.reserveExhausted ?? []).map((id: string) => ({
+        cards: [makeCardInstance(id)],
+        exhausted: true,
+      })),
+    ];
 
     // Deck: use provided list, or fall back to generated deck minus cards already placed
-    const placedIds = [...(setup.hand ?? []), ...(setup.alert ?? []), ...(setup.reserve ?? [])];
+    const placedIds = [
+      ...(setup.hand ?? []),
+      ...(setup.alert ?? []),
+      ...(setup.alertExhausted ?? []),
+      ...(setup.reserve ?? []),
+      ...(setup.reserveExhausted ?? []),
+      ...(setup.discard ?? []),
+    ];
     let deckDefIds: string[];
     if (setup.deck) {
       deckDefIds = setup.deck;
@@ -568,7 +587,7 @@ export function createDebugGame(
       },
       hand,
       deck,
-      discard: [],
+      discard: (setup.discard ?? []).map((id: string) => makeCardInstance(id)),
       influence: setup.influence ?? baseDef.startingInfluence,
       hasMulliganed: true,
       hasPlayedResource: false,
@@ -1761,24 +1780,15 @@ export function applyAction(
                 }
               }
             }
-            // For commit-other/sacrifice-other, the source unit stays in play
-            // but the self-buff is applied via challenge state
-            if (s.challenge && s.challenge.challengerInstanceId === sourceInstanceId) {
+            // For commit-other/sacrifice-other, the source unit gets a power buff
+            {
               const buffAmount =
                 costType === "sacrifice-other"
                   ? 3
                   : def.abilityId
                     ? getCommitOtherPowerBuff(def.abilityId)
                     : 1;
-              s.challenge.challengerPowerBuff = (s.challenge.challengerPowerBuff ?? 0) + buffAmount;
-            } else if (s.challenge && s.challenge.defenderInstanceId === sourceInstanceId) {
-              const buffAmount =
-                costType === "sacrifice-other"
-                  ? 3
-                  : def.abilityId
-                    ? getCommitOtherPowerBuff(def.abilityId)
-                    : 1;
-              s.challenge.defenderPowerBuff = (s.challenge.defenderPowerBuff ?? 0) + buffAmount;
+              applyPowerBuff(s, sourceInstanceId, buffAmount, log);
             }
           }
 
@@ -1790,6 +1800,7 @@ export function applyAction(
             sourceInstanceId,
             targetInstanceId,
             log,
+            action.abilityIndex,
           );
 
           resetConsecutivePasses(s);

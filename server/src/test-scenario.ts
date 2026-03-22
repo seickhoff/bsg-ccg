@@ -30,8 +30,14 @@ function toGameAction(va: VA, index?: number): GA {
     case "playAbility":
       return {
         type: "playAbility",
-        sourceInstanceId: va.selectableInstanceIds![0],
-        targetInstanceId: va.targetInstanceId,
+        sourceInstanceId: va.sourceInstanceId ?? va.selectableInstanceIds![0],
+        targetInstanceId:
+          va.targetInstanceId ??
+          (va.sourceInstanceId ? va.selectableInstanceIds?.[0] : undefined) ??
+          (va.selectablePlayerIndices?.length
+            ? `player-${va.selectablePlayerIndices[0]}`
+            : undefined),
+        abilityIndex: va.abilityIndex,
       };
     case "playCard":
       return { type: "playCard", cardIndex: va.selectableCardIndices![0] };
