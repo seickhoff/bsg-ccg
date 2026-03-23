@@ -204,6 +204,10 @@ function broadcastGameState(room: GameRoom): void {
   const newLogEntries = room.gameState.log.slice(room.lastBroadcastLogLen);
   room.lastBroadcastLogLen = room.gameState.log.length;
 
+  // Filter log entries by player — entries with p set are private to that player
+  const filterLogForPlayer = (entries: typeof newLogEntries, playerIndex: number) =>
+    entries.filter((e) => typeof e === "string" || e.p === undefined || e.p === playerIndex);
+
   for (let i = 0; i < 2; i++) {
     const slot = room.players[i];
     if (slot.type === "human" && slot.ws) {
@@ -215,13 +219,27 @@ function broadcastGameState(room: GameRoom): void {
         console.error(`getValidActions failed for player ${i} in ${room.id}:`, err);
         validActions = [];
       }
+      // Build per-player notification if log range is available (filters private entries)
+      let notification = room.pendingNotification || undefined;
+      if (
+        notification?.logStart !== undefined &&
+        notification?.logEnd !== undefined &&
+        room.gameState
+      ) {
+        const filtered = filterLogForPlayer(
+          room.gameState.log.slice(notification.logStart, notification.logEnd),
+          i,
+        );
+        const text = filtered.map((e) => (typeof e === "string" ? e : e.msg)).join("\n");
+        notification = { ...notification, text };
+      }
       sendToPlayer(slot.ws, {
         type: "gameState",
         state: view,
         validActions,
-        log: newLogEntries,
+        log: filterLogForPlayer(newLogEntries, i),
         aiActing: room.aiProcessing || undefined,
-        notification: room.pendingNotification || undefined,
+        notification,
       });
     }
   }
@@ -233,7 +251,7 @@ function broadcastGameState(room: GameRoom): void {
       type: "gameState",
       state: view,
       validActions: [],
-      log: newLogEntries,
+      log: filterLogForPlayer(newLogEntries, 0),
       aiActing: room.aiProcessing || undefined,
       notification: room.pendingNotification || undefined,
     });
@@ -470,7 +488,12 @@ async function processAITurns(room: GameRoom, logStartFrom?: number): Promise<vo
 
     if (room.gameState.phase !== "setup" && notificationText && hasHumanViewer(room)) {
       // Show modal and wait for human to click Continue
-      room.pendingNotification = { text: notificationText, cardDefIds: accumulatedCardDefIds };
+      room.pendingNotification = {
+        text: notificationText,
+        cardDefIds: accumulatedCardDefIds,
+        logStart: accumulatedLogStart,
+        logEnd: room.gameState.log.length,
+      };
       broadcastGameState(room);
       await waitForContinue(room);
       room.pendingNotification = null;
@@ -888,7 +911,12 @@ wss.on("connection", (ws) => {
               // Show challenge resolution modal and wait for Continue
               const newEntries = room.gameState.log.slice(logLenBefore);
               const text = newEntries.map((e) => (typeof e === "string" ? e : e.msg)).join("\n");
-              room.pendingNotification = { text, cardDefIds: challengeCardDefIds };
+              room.pendingNotification = {
+                text,
+                cardDefIds: challengeCardDefIds,
+                logStart: logLenBefore,
+                logEnd: room.gameState.log.length,
+              };
               broadcastGameState(room);
               waitForContinue(room).then(() => {
                 if (room.gameGeneration !== gen) return;

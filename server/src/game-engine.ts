@@ -44,6 +44,7 @@ import {
   getUnitAbilityCost,
   canUnitAbilityChallenge,
   computePassivePowerBreakdown,
+  computePassivePowerModifier,
   computeFleetDefenseModifiers,
   computeCylonThreatBonus,
   fireOnEnterPlay,
@@ -79,6 +80,7 @@ import {
   getMissionCategory,
   getLinkTargetType,
   computeMissionPowerBreakdown,
+  computeMissionPowerModifier,
   computeMissionFleetDefenseModifier,
   computeMissionCylonThreatBonus,
   getMissionKeywordGrants,
@@ -641,6 +643,51 @@ export function createDebugGame(
 // Get Player View
 // ============================================================
 
+/** Compute passive power modifiers for all units on the board (for client display). */
+function computeAllPassivePowerBuffs(state: GameState): Record<string, number> | undefined {
+  const buffs: Record<string, number> = {};
+  const ch = state.challenge;
+  // Pre-resolve challenger/defender defs for context-sensitive passives
+  const challengerDef = ch?.challengerInstanceId
+    ? findCardDefByInstanceId(state, ch.challengerInstanceId)
+    : undefined;
+  const defenderDef = ch?.defenderInstanceId
+    ? findCardDefByInstanceId(state, ch.defenderInstanceId)
+    : undefined;
+
+  for (let pIdx = 0; pIdx < state.players.length; pIdx++) {
+    const player = state.players[pIdx];
+    for (const zone of [player.zones.alert, player.zones.reserve]) {
+      for (const stack of zone) {
+        const topCard = stack.cards[0];
+        if (!topCard?.faceUp) continue;
+        const context: {
+          phase?: string;
+          isChallenger?: boolean;
+          isDefender?: boolean;
+          challengerDef?: CardDef;
+          defenderDef?: CardDef;
+          challengerInstanceId?: string;
+          defenderInstanceId?: string;
+        } = { phase: state.phase };
+        if (ch) {
+          context.isChallenger = topCard.instanceId === ch.challengerInstanceId;
+          context.isDefender = topCard.instanceId === ch.defenderInstanceId;
+          if (challengerDef) context.challengerDef = challengerDef;
+          if (defenderDef) context.defenderDef = defenderDef;
+          if (ch.challengerInstanceId) context.challengerInstanceId = ch.challengerInstanceId;
+          if (ch.defenderInstanceId) context.defenderInstanceId = ch.defenderInstanceId;
+        }
+        const mod =
+          computePassivePowerModifier(state, stack, pIdx, context) +
+          computeMissionPowerModifier(state, stack, pIdx, context);
+        if (mod !== 0) buffs[topCard.instanceId] = mod;
+      }
+    }
+  }
+  return Object.keys(buffs).length > 0 ? buffs : undefined;
+}
+
 export function getPlayerView(state: GameState, playerIndex: number): PlayerGameView {
   const you = state.players[playerIndex];
   const opp = state.players[1 - playerIndex];
@@ -672,6 +719,8 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     firstPlayerIndex: state.firstPlayerIndex,
     activePlayerIndex: state.activePlayerIndex,
     fleetDefenseLevel: state.fleetDefenseLevel,
+    fleetDefenseModifier:
+      computeFleetDefenseModifiers(state) + computeMissionFleetDefenseModifier(state) || undefined,
     challenge: state.challenge,
     cylonThreats: state.cylonThreats,
     log: state.log,
@@ -700,6 +749,7 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     turnTraitRemovals: { ...you.turnTraitRemovals, ...opp.turnTraitRemovals },
     phaseKeywordGrants: { ...you.temporaryKeywordGrants, ...opp.temporaryKeywordGrants },
     turnKeywordGrants: { ...you.turnKeywordGrants, ...opp.turnKeywordGrants },
+    passivePowerBuffs: computeAllPassivePowerBuffs(state),
     effectImmunity: state.effectImmunity,
     choicePrompt: state.pendingChoice?.prompt,
     choiceType: state.pendingChoice?.type,

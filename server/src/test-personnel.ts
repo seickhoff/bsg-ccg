@@ -1375,14 +1375,14 @@ header("Apollo, Commander Air Group — Passive: Other Pilots get +1 power");
       player0: {
         baseId: "BSG1-004",
         hand: [],
-        alert: ["BSG1-099", "BSG1-098"], // Apollo CAG + Apollo Ace Pilot (both Pilots)
+        alert: ["BSG1-099", "BSG1-136"], // Apollo CAG + Starbuck Hotshot Pilot (both Pilots, different titles)
         deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
       },
       player1: {
         baseId: "BSG1-007",
         alert: ["BSG1-102"],
         influence: 10,
-        deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+        deck: ["BSG1-100", "BSG1-101"],
       },
       phase: "execution",
       turn: 3,
@@ -1391,14 +1391,18 @@ header("Apollo, Commander Air Group — Passive: Other Pilots get +1 power");
     registry,
   );
 
-  // Apollo Ace Pilot base power = 2, with CAG buff = 3. Undefended → opponent loses 3.
-  const s = challengeUndefended(state, 0, 1, "BSG1-098");
+  // Starbuck Hotshot Pilot base power = 2, +1 from her own ability (1 other Pilot),
+  // +1 from Apollo CAG buff = 4. Undefended → opponent loses 4.
+  const s = challengeUndefended(state, 0, 1, "BSG1-136");
   if (s) {
     state = s;
     const infLoss = 10 - state.players[1].influence;
-    assert(infLoss === 3, `Opponent lost 3 influence (2 base + 1 CAG buff) — lost ${infLoss}`);
+    assert(
+      infLoss === 4,
+      `Opponent lost 4 influence (2 base + 1 own + 1 CAG buff) — lost ${infLoss}`,
+    );
   } else {
-    assert(false, "Could not challenge with Ace Pilot");
+    assert(false, "Could not challenge with Starbuck");
   }
   printLog(state);
 }

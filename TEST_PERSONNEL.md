@@ -708,6 +708,8 @@ __bsg_send({
 
 ### Apollo, Commander Air Group — "All other Pilots +1 power"
 
+**You challenge (verify buff on your Pilots):**
+
 ```js
 __bsg_send({
   type: "debugSetup",
@@ -715,24 +717,56 @@ __bsg_send({
     player0: {
       baseId: "BSG1-004",
       hand: [],
-      alert: ["BSG1-099", "BSG1-098"],
-      deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
+      alert: ["BSG1-099", "BSG1-136", "BSG1-103"],
+      deck: ["BSG1-101", "BSG1-102"],
     },
     player1: {
       baseId: "BSG1-007",
-      alert: ["BSG1-102"],
+      alert: ["BSG1-104"],
       influence: 10,
-      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      deck: ["BSG1-100", "BSG1-101"],
     },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG1-099 = Apollo CAG, BSG1-098 = Apollo Ace Pilot (Pilot, power 2 + 1 = 3)
+// BSG1-099 = Apollo CAG (Pilot, power 2) — buff source, should NOT buff itself
+// BSG1-136 = Starbuck Hotshot Pilot (Pilot, power 2 → should show 4: +1 own ability, +1 CAG)
+// BSG1-103 = Boomer Hell Of A Pilot (Pilot, power 2 → should show 3: +1 CAG)
+// BSG1-104 = Boomer Raptor Pilot (opponent's Pilot, power 2 → should NOT be buffed)
+```
+
+**AI challenges (verify buff on AI's Pilots):**
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG1-104"],
+      influence: 10,
+      deck: ["BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-099", "BSG1-136", "BSG1-103"],
+      deck: ["BSG1-101", "BSG1-102"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI has Apollo CAG + Starbuck + Boomer. AI challenges — verify combat log shows buffed power.
+// Your Boomer Raptor Pilot (power 2) should NOT be buffed by AI's Apollo CAG.
 ```
 
 ### Billy Keikeya, Press Secretary — "While defending, +2 power"
+
+**You challenge, AI defends with Billy:**
 
 ```js
 __bsg_send({
@@ -748,17 +782,45 @@ __bsg_send({
       baseId: "BSG1-007",
       alert: ["BSG1-102"],
       influence: 10,
-      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      deck: ["BSG1-100", "BSG1-101"],
     },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG1-102 = Billy (power 1 + 2 defending = 3). Challenge and opponent defends.
+// You challenge with Apollo Ace Pilot (power 2). AI defends with Billy (power 1 + 2 = 3). Billy wins.
+```
+
+**AI challenges, you defend with Billy:**
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-098"],
+      deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI challenges with Apollo Ace Pilot (power 2). You defend with Billy (power 1 + 2 = 3). Billy wins.
 ```
 
 ### Cylon Centurion — "While challenging, +2 power"
+
+**You challenge with Centurion:**
 
 ```js
 __bsg_send({
@@ -774,7 +836,7 @@ __bsg_send({
       baseId: "BSG1-007",
       alert: ["BSG1-102"],
       influence: 10,
-      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      deck: ["BSG1-100", "BSG1-101"],
     },
     phase: "execution",
     turn: 3,
@@ -784,7 +846,35 @@ __bsg_send({
 // BSG1-112 = Cylon Centurion (power 2 + 2 = 4 when challenging)
 ```
 
+**AI challenges with Centurion:**
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-112"],
+      deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI challenges with Centurion (power 2 + 2 = 4). You can defend with Billy (power 1 + 2 = 3).
+```
+
 ### William Adama, The Old Man — "+2 with another alert personnel"
+
+**You challenge with Adama:**
 
 ```js
 __bsg_send({
@@ -800,17 +890,45 @@ __bsg_send({
       baseId: "BSG1-007",
       alert: ["BSG1-102"],
       influence: 10,
-      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      deck: ["BSG1-100", "BSG1-101"],
     },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG1-143 = Adama Old Man (power 2 + 2 = 4)
+// BSG1-143 = Adama Old Man (power 2 + 2 = 4 with Apollo also in alert)
+```
+
+**AI challenges with Adama:**
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-143", "BSG1-098"],
+      deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI has Adama Old Man (power 4) + Apollo. AI challenges — verify combat log shows power 4.
 ```
 
 ### D'Anna, Reporter — "Cannot challenge"
+
+**You have D'Anna (no challenge option):**
 
 ```js
 __bsg_send({
@@ -826,7 +944,25 @@ __bsg_send({
 // BSG1-114 = D'Anna Reporter. No challenge actions should appear.
 ```
 
+**AI has D'Anna (AI should not challenge with her):**
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG1-102"], influence: 10 },
+    player1: { baseId: "BSG1-007", alert: ["BSG1-114"], deck: ["BSG1-100", "BSG1-101"] },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI has D'Anna Reporter — should pass (no valid challenge). Verify AI doesn't challenge.
+```
+
 ### Starbuck, Hotshot Pilot — "+1 power per other Pilot"
+
+**You challenge with Starbuck:**
 
 ```js
 __bsg_send({
@@ -835,21 +971,48 @@ __bsg_send({
     player0: {
       baseId: "BSG1-004",
       hand: [],
-      alert: ["BSG1-136", "BSG1-098", "BSG1-099"],
+      alert: ["BSG1-136", "BSG1-098", "BSG1-103"],
       deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
     },
     player1: {
       baseId: "BSG1-007",
       alert: ["BSG1-102"],
       influence: 10,
-      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+      deck: ["BSG1-100", "BSG1-101"],
     },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// BSG1-136 = Starbuck Hotshot (power 2 + 2 Pilots = 4)
+// BSG1-136 = Starbuck Hotshot (power 2 + 2 other Pilots = 4)
+// BSG1-098 = Apollo Ace Pilot, BSG1-103 = Boomer Hell Of A Pilot (different titles)
+```
+
+**AI challenges with Starbuck:**
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-136", "BSG1-098", "BSG1-103"],
+      deck: ["BSG1-100", "BSG1-101", "BSG1-102"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI has Starbuck Hotshot (power 2 + 2 other Pilots = 4). AI challenges — verify in combat log.
 ```
 
 ### Anders, Resistance Leader — "All other Civilians +1 power"
@@ -930,15 +1093,23 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: ["BSG1-101"], alert: [], influence: 10 },
+    player0: {
+      baseId: "BSG1-004",
+      hand: ["BSG1-101"],
+      alert: [],
+      influence: 10,
+      baseSupplyCards: 2,
+    },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// Play Billy from hand — should gain 1 influence
+// Colonial One base (1 persuasion) + 2 supply cards = 3 persuasion. Play Billy (cost 3 persuasion) — should gain 1 influence
 ```
+
+TODO - start here
 
 ### Boomer, Raptor Pilot — "ETB: Draw a card"
 
@@ -947,9 +1118,10 @@ __bsg_send({
   type: "debugSetup",
   scenario: {
     player0: {
-      baseId: "BSG1-004",
+      baseId: "BSG1-006",
       hand: ["BSG1-104"],
       alert: [],
+      baseSupplyCards: 2,
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
     },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
@@ -958,7 +1130,7 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// Play Boomer — should draw a card
+// Flattop base (1 logistics) + 2 supply cards = 3 logistics. Play Boomer Raptor Pilot (cost 3 logistics) — should draw a card
 ```
 
 ### Tom Zarek, Political Prisoner — "ETB: Defeat target personnel"

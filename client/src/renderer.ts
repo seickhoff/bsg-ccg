@@ -121,6 +121,8 @@ function buildRuntimeInfo(instanceId: string, state: PlayerGameView): CardRuntim
 
   const rt: CardRuntimeInfo = {};
   if (stack.powerBuff) rt.powerBuff = stack.powerBuff;
+  const passiveBuff = state.passivePowerBuffs?.[instanceId] ?? 0;
+  if (passiveBuff) rt.passivePowerBuff = passiveBuff;
   if (challengeBuff) rt.challengeBuff = challengeBuff;
 
   // Build scoped trait grants
@@ -204,12 +206,16 @@ function costBadgeHtml(cost: CardDef["cost"]): string {
     .join(" ");
 }
 
-function powerBadgeHtml(instanceId: string, zones: PlayerZones): string {
+function powerBadgeHtml(
+  instanceId: string,
+  zones: PlayerZones,
+  passiveBuffs?: Record<string, number>,
+): string {
   const stack = findUnitStack(zones, instanceId);
   if (!stack) return "";
   const def = getCardDef(stack.cards[0]?.defId ?? "");
   const basePower = def?.power ?? 0;
-  const buff = stack.powerBuff ?? 0;
+  const buff = (stack.powerBuff ?? 0) + (passiveBuffs?.[instanceId] ?? 0);
   const total = basePower + buff;
   const buffStr = buff > 0 ? `+${buff}` : buff < 0 ? `${buff}` : "";
   const label = buff !== 0 ? `${basePower}${buffStr}=${total}` : `${total}`;
@@ -440,7 +446,7 @@ export function renderGame(
           <span class="info-item">T${state.turn}</span>
           <span class="info-item phase">${formatPhase(state.phase, state.readyStep)}</span>
           <span class="info-item ${isYourTurn ? "your-turn" : "opp-turn"}">${isYourTurn ? "YOU" : "OPP"}</span>
-          <span class="info-item">Fleet: ${state.fleetDefenseLevel}</span>
+          <span class="info-item">Fleet: ${state.fleetDefenseLevel + (state.fleetDefenseModifier ?? 0)}${state.fleetDefenseModifier ? ` (${state.fleetDefenseLevel}${state.fleetDefenseModifier > 0 ? "+" : ""}${state.fleetDefenseModifier})` : ""}</span>
           <span class="info-item threat-level">Threat: ${computeThreatLevel(state)}</span>
         </div>
         <div class="info-bar-right">
@@ -464,7 +470,7 @@ export function renderGame(
       <div class="boards">
         <div class="opponent-board">
           <div class="board-label">${escapeHtml(opponentName.toUpperCase())}</div>
-          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity)}
+          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs)}
         </div>
 
         <div class="divider"></div>
@@ -1025,7 +1031,11 @@ function showPlayerActionModal(
         const def = a.cardDefId ? cardDefs[a.cardDefId] : null;
         let badge = "";
         if (a.type === "challenge" && a.selectableInstanceIds?.length === 1) {
-          badge = powerBadgeHtml(a.selectableInstanceIds[0], state.you.zones);
+          badge = powerBadgeHtml(
+            a.selectableInstanceIds[0],
+            state.you.zones,
+            state.passivePowerBuffs,
+          );
         } else if (a.type === "makeChoice" && a.cardDefId) {
           badge = makeChoiceBadgeHtml(a.cardDefId, state);
         } else if (def) {
@@ -1054,7 +1064,11 @@ function showPlayerActionModal(
         // Add resource badge for deploy-to-resource actions or resource stack choices
         let badge = "";
         if (a.type === "strafeChoice" && a.selectableInstanceIds?.length === 1) {
-          badge = powerBadgeHtml(a.selectableInstanceIds[0], state.you.zones);
+          badge = powerBadgeHtml(
+            a.selectableInstanceIds[0],
+            state.you.zones,
+            state.passivePowerBuffs,
+          );
         } else if (a.type === "playToResource" && a.cardDefId) {
           badge = resourceBadgeHtml(a.cardDefId);
         } else if (a.type === "makeChoice" && a.cardDefId) {
@@ -1091,7 +1105,7 @@ function showPlayerActionModal(
     } else {
       cylonSummaryHtml = `
         <div class="cylon-status-summary">
-          <div class="cylon-summary-line">Threat ${threatLevel} vs Fleet Defense ${state.fleetDefenseLevel} — <strong>Cylons broke through!</strong></div>
+          <div class="cylon-summary-line">Threat ${threatLevel} vs Fleet Defense ${state.fleetDefenseLevel + (state.fleetDefenseModifier ?? 0)} — <strong>Cylons broke through!</strong></div>
           <div class="cylon-summary-line">${state.cylonThreats.length} threat${state.cylonThreats.length > 1 ? "s" : ""} active: ${threatList}</div>
           <div class="cylon-summary-hint">Defeat threats with your units, or stand down and lose 1 influence.</div>
         </div>
@@ -1377,26 +1391,27 @@ function renderOpponentZones(
   keywordGrants?: Record<string, string[]>,
   traitRemovals?: Record<string, Trait[]>,
   effectImmunity?: Record<string, "power" | "all">,
+  passivePowerBuffs?: Record<string, number>,
 ): string {
   return `
     <div class="zone resource-zone">
       <div class="zone-label">Resource</div>
       <div class="zone-cards">
         ${opp.zones.resourceStacks.map((stack) => renderResourceStack(stack, false)).join("")}
-        ${(opp.zones.persistentMissions ?? []).map((mc) => renderPersistentMission(mc)).join("")}
+        ${opp.zones.persistentMissions?.length ? `<div class="persistent-area"><div class="persistent-area-label">Persistent</div>${opp.zones.persistentMissions.map((mc) => renderPersistentMission(mc)).join("")}</div>` : ""}
       </div>
     </div>
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity)).join("")}
+        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity, passivePowerBuffs)).join("")}
         ${opp.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity)).join("")}
+        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity, passivePowerBuffs)).join("")}
         ${opp.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1408,14 +1423,14 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity)).join("")}
+        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs)).join("")}
         ${state.you.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity)).join("")}
+        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs)).join("")}
         ${state.you.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1423,7 +1438,7 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
       <div class="zone-label">Resource</div>
       <div class="zone-cards">
         ${state.you.zones.resourceStacks.map((stack, i) => renderResourceStack(stack, true, i)).join("")}
-        ${(state.you.zones.persistentMissions ?? []).map((mc) => renderPersistentMission(mc)).join("")}
+        ${state.you.zones.persistentMissions?.length ? `<div class="persistent-area"><div class="persistent-area-label">Persistent</div>${state.you.zones.persistentMissions.map((mc) => renderPersistentMission(mc)).join("")}</div>` : ""}
       </div>
     </div>
   `;
@@ -1448,7 +1463,7 @@ function renderPersistentMission(card: CardInstance): string {
   const image = def?.image;
   return `
     <div class="board-card persistent-mission" data-instance-id="${card.instanceId}" data-def-id="${card.defId}">
-      ${image ? `<img src="${image}" alt="${name}" class="card-image" />` : `<div class="card-text-fallback mission"><div class="card-name">${name}</div><div class="card-type">Persistent</div></div>`}
+      ${image ? `<img src="${image}" alt="${name}" class="resource-card-img" />` : `<div class="card-text-fallback mission"><div class="card-name">${name}</div><div class="card-type">Persistent</div></div>`}
     </div>
   `;
 }
@@ -1553,6 +1568,7 @@ function renderUnitStack(
   keywordGrants?: Record<string, string[]>,
   traitRemovals?: Record<string, Trait[]>,
   effectImmunity?: Record<string, "power" | "all">,
+  passivePowerBuffs?: Record<string, number>,
 ): string {
   const topCard = stack.cards[0];
   if (!topCard) return "";
@@ -1560,6 +1576,7 @@ function renderUnitStack(
   const name = def ? getCardName(topCard.defId) : topCard.defId;
   const basePower = def?.power ?? 0;
   const stackBuff = stack.powerBuff ?? 0;
+  const passiveBuff = passivePowerBuffs?.[topCard.instanceId] ?? 0;
   // Include temporary challenge power buff if this unit is the challenger or defender
   let challengeBuff = 0;
   if (challenge && topCard.instanceId === challenge.challengerInstanceId) {
@@ -1567,7 +1584,7 @@ function renderUnitStack(
   } else if (challenge && topCard.instanceId === challenge.defenderInstanceId) {
     challengeBuff = challenge.defenderPowerBuff ?? 0;
   }
-  const buff = stackBuff + challengeBuff;
+  const buff = stackBuff + passiveBuff + challengeBuff;
   const totalPower = basePower + buff;
   const buffClass = buff > 0 ? " power-buffed" : "";
   const powerDisplay =
@@ -2283,7 +2300,11 @@ function handleActionClick(
         const stack = findUnitStack(state.you.zones, unitId);
         const defId = stack?.cards[0]?.defId ?? "";
         const name = defId ? getCardName(defId) : unitId;
-        const power = stack ? (getCardDef(defId)?.power ?? 0) + (stack.powerBuff ?? 0) : 0;
+        const power = stack
+          ? (getCardDef(defId)?.power ?? 0) +
+            (stack.powerBuff ?? 0) +
+            (state.passivePowerBuffs?.[unitId] ?? 0)
+          : 0;
         return {
           label: `${name} (${power})`,
           cardDefId: defId,
@@ -2696,7 +2717,7 @@ function showResourceStackPicker(
   // Build HTML
   const cardHeaderHtml = `
     <div class="resource-picker-card-header">
-      ${cardImage ? `<img src="${cardImage}" alt="" class="resource-picker-card-thumb" />` : ""}
+      ${cardImage ? `<img src="${cardImage}" alt="" class="resource-picker-card-thumb" data-def-id="${cardDefId}" style="cursor:pointer" />` : ""}
       <div class="resource-picker-card-info">
         <div class="resource-picker-card-name">${escapeHtml(cardLabel)}</div>
         <div class="resource-picker-card-cost">Cost: ${costBadgeHtml(cost)}</div>
@@ -2849,13 +2870,15 @@ function showResourceStackPicker(
   });
 
   // Thumbnail → card preview
-  overlay.querySelectorAll(".resource-picker-row-thumb").forEach((thumb) => {
-    thumb.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const defId = (thumb as HTMLElement).dataset.defId;
-      if (defId) showCardPreview(defId);
+  overlay
+    .querySelectorAll(".resource-picker-row-thumb, .resource-picker-card-thumb")
+    .forEach((thumb) => {
+      thumb.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const defId = (thumb as HTMLElement).dataset.defId;
+        if (defId) showCardPreview(defId);
+      });
     });
-  });
 
   const confirmBtn = overlay.querySelector("[data-picker-confirm]") as HTMLButtonElement;
   const cancelBtn = overlay.querySelector("[data-picker-cancel]") as HTMLElement;

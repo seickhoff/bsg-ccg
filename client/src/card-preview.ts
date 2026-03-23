@@ -23,6 +23,7 @@ export interface ScopedMod<T> {
 /** Runtime info overlay for units on the board (power buffs, granted traits, etc.) */
 export interface CardRuntimeInfo {
   powerBuff?: number; // execution-phase buff (scope always "phase")
+  passivePowerBuff?: number; // passive aura buff (Apollo CAG, Galactica, etc.)
   challengeBuff?: number; // challenge buff (scope always "challenge")
   grantedTraits?: ScopedMod<Trait>[];
   removedTraits?: ScopedMod<Trait>[];
@@ -146,11 +147,16 @@ function renderCardContent(c: CardDef, rt: CardRuntimeInfo | null): string {
   if (c.power != null) {
     const basePower = c.power;
     const phaseBuff = rt?.powerBuff ?? 0;
+    const passiveBuff = rt?.passivePowerBuff ?? 0;
     const challBuff = rt?.challengeBuff ?? 0;
-    const buff = phaseBuff + challBuff;
+    const buff = phaseBuff + passiveBuff + challBuff;
     const total = basePower + buff;
     if (buff !== 0) {
       const parts: string[] = [`base ${basePower}`];
+      if (passiveBuff)
+        parts.push(
+          `${passiveBuff > 0 ? "+" : ""}${passiveBuff} <span class="card-pv-scope">passive</span>`,
+        );
       if (phaseBuff)
         parts.push(
           `${phaseBuff > 0 ? "+" : ""}${phaseBuff} <span class="card-pv-scope">this phase</span>`,

@@ -342,6 +342,7 @@ export interface PlayerGameView {
   firstPlayerIndex: number;
   activePlayerIndex: number;
   fleetDefenseLevel: number;
+  fleetDefenseModifier?: number; // bonus from units (Hadrian) + missions (Coming Out To Fight, etc.)
   challenge: ChallengeState | null;
   cylonThreats: CylonThreatCard[];
   log: LogItem[];
@@ -356,6 +357,7 @@ export interface PlayerGameView {
   turnTraitRemovals?: Record<string, Trait[]>;
   phaseKeywordGrants?: Record<string, Keyword[]>;
   turnKeywordGrants?: Record<string, Keyword[]>;
+  passivePowerBuffs?: Record<string, number>; // instanceId → passive power modifier (Apollo CAG, Starbuck Hotshot, auras, etc.)
   effectImmunity?: Record<string, "power" | "all">; // instanceId → immunity type
   choicePrompt?: string; // context-specific header for pending choice UI
   choiceType?: PendingChoiceType; // type of pending choice, for client-side conditional rendering
@@ -439,6 +441,8 @@ export interface ValidAction {
 export interface ActionNotification {
   text: string;
   cardDefIds: string[];
+  logStart?: number; // log range for per-player filtering
+  logEnd?: number;
 }
 
 // --- Debug / Test Scenario ---

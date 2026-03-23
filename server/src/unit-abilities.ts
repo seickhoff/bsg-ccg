@@ -1534,6 +1534,7 @@ register("anders-leader", {
 
 // Boomer Human-Lover: "While you control an alert Helo, +1 power."
 register("boomer-helo", {
+  selfOnly: true,
   getPowerModifier(state, _unitStack, ownerIndex) {
     return hasAlertUnitWithTitle(state.players[ownerIndex], "Helo") ? 1 : 0;
   },
@@ -1588,15 +1589,15 @@ register("billy-etb", {
 register("boomer-etb", {
   trigger: "onEnterPlay",
   resolve(state, playerIndex, _sid, _tid, log) {
-    drawCards(
-      state.players[playerIndex],
-      1,
-      log,
-      `${state.playerNames[playerIndex as 0 | 1]}`,
-      state,
-      playerIndex,
-    );
-    log.push("Boomer: Draw a card.");
+    const player = state.players[playerIndex];
+    const deckTop = player.deck[0];
+    const drawnName = deckTop ? cardName(getCardDef(deckTop.defId)) : null;
+    drawCards(player, 1, log, `${state.playerNames[playerIndex as 0 | 1]}`, state, playerIndex);
+    if (drawnName) {
+      log.push({ msg: `Boomer: Drew ${drawnName}.`, p: playerIndex });
+    } else {
+      log.push("Boomer: No cards to draw.");
+    }
   },
 });
 
