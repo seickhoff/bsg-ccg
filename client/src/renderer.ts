@@ -2155,9 +2155,9 @@ function handleActionClick(
           }));
           items.push({
             label: "Cancel",
+            selectValue: "cancel",
             onClick: () => dismissPlayerActionModal(),
-            cancel: true,
-          } as (typeof items)[0]);
+          });
           showSelectModal(action.description, items, (selectedValue) => {
             onAction!({
               type: "playAbility",

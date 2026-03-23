@@ -1591,7 +1591,8 @@ register("boomer-etb", {
   resolve(state, playerIndex, _sid, _tid, log) {
     const player = state.players[playerIndex];
     const deckTop = player.deck[0];
-    const drawnName = deckTop ? cardName(getCardDef(deckTop.defId)) : null;
+    const def = deckTop ? getCardDef(deckTop.defId) : undefined;
+    const drawnName = def ? cardName(def) : null;
     drawCards(player, 1, log, `${state.playerNames[playerIndex as 0 | 1]}`, state, playerIndex);
     if (drawnName) {
       log.push({ msg: `Boomer: Drew ${drawnName}.`, p: playerIndex });
