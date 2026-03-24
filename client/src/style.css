@@ -1993,6 +1993,20 @@ body {
   pointer-events: none;
 }
 
+/* Card-type left border accents */
+.action-modal-btn--personnel {
+  border-left: 3px solid #c04040;
+}
+.action-modal-btn--ship {
+  border-left: 3px solid #4080c0;
+}
+.action-modal-btn--event {
+  border-left: 3px solid #c9a227;
+}
+.action-modal-btn--mission {
+  border-left: 3px solid #888;
+}
+
 .action-row--disabled .action-row-thumb {
   pointer-events: auto;
   opacity: 1;

@@ -2119,7 +2119,6 @@ export function applyAction(
       log.push({
         msg: `${pLabel} challenges with ${cardName(challengerDef)}.`,
         d: 0,
-        p: playerIndex,
         cat: "flow",
       });
 
@@ -2194,7 +2193,6 @@ export function applyAction(
       log.push({
         msg: `${pLabel} challenges with ${cardName(strafeChallengerDef)} as ${chosenType}.`,
         d: 0,
-        p: playerIndex,
         cat: "flow",
       });
 
@@ -2387,7 +2385,6 @@ export function applyAction(
       log.push({
         msg: `${pLabel} challenges Cylon threat (power ${threat.power}) with ${challengerDef ? cardName(challengerDef) : "unknown"}.`,
         d: 0,
-        p: playerIndex,
         cat: "flow",
       });
 

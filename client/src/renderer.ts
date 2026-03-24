@@ -619,8 +619,8 @@ const CHALLENGE_KEYWORDS = [
   "declines to defend",
   "flash plays",
   "during challenge",
-  "wins!",
   "Undefended!",
+  "wins!",
 ];
 
 function extractChallengeLogEntries(): { text: string; isSub: boolean }[] {
@@ -995,28 +995,49 @@ function showPlayerActionModal(
   const isExecution = state.phase === "execution" && !state.challenge && !isStrafeChoice;
   const displayActions = isExecution ? validActions.filter((a) => !a.disabled) : validActions;
 
+  function cardTypeClass(a: ValidAction): string {
+    const defId = a.cardDefId;
+    if (!defId) return "";
+    // For challenges, look up the unit type from the instance on board
+    if (a.type === "challenge" && a.selectableInstanceIds?.length) {
+      for (const zone of [state.you.zones.alert, state.you.zones.reserve]) {
+        for (const stack of zone) {
+          if (stack.cards[0]?.instanceId === a.selectableInstanceIds[0]) {
+            const def = cardDefs[stack.cards[0].defId];
+            if (def) return `action-modal-btn--${def.type}`;
+          }
+        }
+      }
+    }
+    const def = cardDefs[defId];
+    if (!def) return "";
+    // For abilities, use the source card's type
+    return `action-modal-btn--${def.type}`;
+  }
+
   function actionGroupKey(a: ValidAction): string {
-    if (a.type === "pass" || a.type === "challengePass") return "zzz_pass"; // sort last
-    if (a.type === "challenge") return "zz_challenge";
-    if (a.type === "sacrificeFromStack") return "zy_sacrifice";
-    if (a.type === "makeChoice") return "zx_other";
-    if (!a.cardDefId) return "zx_other";
-    if (baseDefs[a.cardDefId]) return "aa_base";
-    const def = cardDefs[a.cardDefId];
-    if (!def) return "zx_other";
-    return def.type; // "personnel" | "ship" | "event" | "mission"
+    if (a.type === "pass" || a.type === "challengePass") return "z_pass";
+    if (a.type === "challenge") return "e_challenge";
+    if (a.type === "sacrificeFromStack") return "d_sacrifice";
+    if (a.type === "makeChoice") return "f_other";
+    // Play from hand (has selectableCardIndices) vs use ability on in-play card
+    if (a.type === "playCard" && a.cardDefId) {
+      const def = cardDefs[a.cardDefId];
+      if (def?.type === "event") return "b_event";
+      return "a_deploy"; // personnel, ship, mission from hand
+    }
+    if (!a.cardDefId) return "f_other";
+    return "c_ability"; // base abilities, unit abilities, mission abilities
   }
 
   const groupLabels: Record<string, string> = {
-    personnel: "Personnel",
-    ship: "Ships",
-    event: "Events",
-    mission: "Missions",
-    aa_base: "Base Ability",
-    zy_sacrifice: "Sacrifice",
-    zz_challenge: "Challenge",
-    zzz_pass: "",
-    zx_other: "",
+    a_deploy: "Deploy",
+    b_event: "Events",
+    c_ability: "Abilities",
+    d_sacrifice: "Sacrifice",
+    e_challenge: "Challenge",
+    f_other: "",
+    z_pass: "",
   };
 
   const hasOwnerGroups = displayActions.some((a) => a.ownerIndex !== undefined);
@@ -1033,6 +1054,19 @@ function showPlayerActionModal(
       groups.get(key)!.push({ action: a, origIdx: i });
     }
     const sortedKeys = [...groups.keys()].sort();
+    // Sort within each group: highest cost/power first, then alphabetical
+    for (const entries of groups.values()) {
+      entries.sort((a, b) => {
+        const aDef = a.action.cardDefId ? cardDefs[a.action.cardDefId] : null;
+        const bDef = b.action.cardDefId ? cardDefs[b.action.cardDefId] : null;
+        const aCost = aDef?.cost ? Object.values(aDef.cost).reduce((s, v) => s + (v ?? 0), 0) : 0;
+        const bCost = bDef?.cost ? Object.values(bDef.cost).reduce((s, v) => s + (v ?? 0), 0) : 0;
+        const aVal = Math.max(aCost, aDef?.power ?? 0);
+        const bVal = Math.max(bCost, bDef?.power ?? 0);
+        if (aVal !== bVal) return bVal - aVal;
+        return (a.action.description ?? "").localeCompare(b.action.description ?? "");
+      });
+    }
     const parts: string[] = [];
     for (const key of sortedKeys) {
       const label = groupLabels[key] ?? key;
@@ -1053,13 +1087,14 @@ function showPlayerActionModal(
           badge = costBadgeHtml(def.cost);
         }
         const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
+        const typeCls = cardTypeClass(a);
         if (thumbHtml) {
           parts.push(
-            `<div class="action-row"><button class="action-modal-btn action-modal-btn--with-thumb" data-action-index="${origIdx}">${labelHtml}</button>${thumbHtml}</div>`,
+            `<div class="action-row"><button class="action-modal-btn action-modal-btn--with-thumb${typeCls ? ` ${typeCls}` : ""}" data-action-index="${origIdx}">${labelHtml}</button>${thumbHtml}</div>`,
           );
         } else {
           parts.push(
-            `<button class="action-modal-btn" data-action-index="${origIdx}">${labelHtml}</button>`,
+            `<button class="action-modal-btn${typeCls ? ` ${typeCls}` : ""}" data-action-index="${origIdx}">${labelHtml}</button>`,
           );
         }
       }
@@ -1083,10 +1118,11 @@ function showPlayerActionModal(
         badge = makeChoiceBadgeHtml(a.cardDefId, state);
       }
       const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
+      const typeCls = cardTypeClass(a);
       if (thumbHtml) {
-        return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${labelHtml}</button>${thumbHtml}</div>`;
+        return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}${typeCls ? ` ${typeCls}` : ""}" data-action-index="${i}">${labelHtml}</button>${thumbHtml}</div>`;
       }
-      return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${labelHtml}</button>`;
+      return `<button class="action-modal-btn${disabledClass}${typeCls ? ` ${typeCls}` : ""}" data-action-index="${i}">${labelHtml}</button>`;
     }
 
     if (hasOwnerGroups) {
@@ -1116,6 +1152,28 @@ function showPlayerActionModal(
       }
       buttonsHtml = parts.join("");
     } else {
+      // Sort resource deployment list: assets grouped by resource type, then supply-only, then Pass
+      const isResourceDeploy =
+        state.phase === "ready" &&
+        state.readyStep === 4 &&
+        displayActions.some((a) => a.type === "playToResource");
+      if (isResourceDeploy) {
+        const resourceOrder: Record<string, number> = {
+          security: 0,
+          logistics: 1,
+          persuasion: 2,
+        };
+        displayActions.sort((a, b) => {
+          if (a.type === "passResource") return 1;
+          if (b.type === "passResource") return -1;
+          const aRes = a.cardDefId ? cardDefs[a.cardDefId]?.resource : null;
+          const bRes = b.cardDefId ? cardDefs[b.cardDefId]?.resource : null;
+          const aOrder = aRes ? (resourceOrder[aRes] ?? 3) : 4;
+          const bOrder = bRes ? (resourceOrder[bRes] ?? 3) : 4;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+          return (a.description ?? "").localeCompare(b.description ?? "");
+        });
+      }
       buttonsHtml = displayActions.map((a) => renderActionBtn(a)).join("");
     }
   }
