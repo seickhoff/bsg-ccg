@@ -86,6 +86,9 @@ export interface UnitAbilityHandler {
     ): void;
   }[];
 
+  /** Number of targets to select (> 1 uses multi-select checkboxes in UI) */
+  targetCount?: number;
+
   /** Apply the effect */
   resolve?(
     state: GameState,
@@ -93,6 +96,7 @@ export interface UnitAbilityHandler {
     sourceId: string,
     targetId: string | undefined,
     log: LogItem[],
+    targetIds?: string[],
   ): void;
 
   /** Passive power modifier */
@@ -2118,6 +2122,7 @@ register("freighter-recover", {
 // Astral Queen, Platform for Revolution: "Commit and exhaust: Exhaust two target personnel."
 register("astral-queen-exhaust2", {
   activation: { cost: "commit-exhaust", usableIn: ["execution"] },
+  targetCount: 2,
   getTargets(state, _pi) {
     // Target any face-up non-exhausted personnel (any player)
     const targets: string[] = [];
@@ -2130,38 +2135,20 @@ register("astral-queen-exhaust2", {
         }
       }
     }
-    return targets.length > 0 ? targets : [];
+    return targets.length >= 2 ? targets : [];
   },
-  resolve(state, playerIndex, _sid, targetId, log) {
-    if (!targetId) return;
-    // Exhaust the primary target
-    for (const p of state.players) {
-      const found = findUnitInZone(p.zones.alert, targetId);
-      if (found && !found.stack.exhausted) {
-        found.stack.exhausted = true;
-        const def = getCardDef(found.stack.cards[0].defId);
-        log.push(`${def ? cardName(def) : "Personnel"} exhausted.`);
-        break;
-      }
-    }
-    // Collect remaining eligible personnel for second target
-    const secondTargets: import("@bsg/shared").CardInstance[] = [];
-    for (const p of state.players) {
-      for (const stack of p.zones.alert) {
-        const tc = stack.cards[0];
-        if (tc?.faceUp && !stack.exhausted && tc.instanceId !== targetId) {
-          const def = getCardDef(tc.defId);
-          if (def?.type === "personnel") secondTargets.push(tc);
+  resolve(state, _playerIndex, _sid, _targetId, log, targetIds) {
+    const ids = targetIds ?? (_targetId ? [_targetId] : []);
+    for (const id of ids) {
+      for (const p of state.players) {
+        const found = findUnitInZone(p.zones.alert, id);
+        if (found && !found.stack.exhausted) {
+          found.stack.exhausted = true;
+          const def = getCardDef(found.stack.cards[0].defId);
+          log.push(`${def ? cardName(def) : "Personnel"} exhausted.`);
+          break;
         }
       }
-    }
-    if (secondTargets.length > 0) {
-      state.pendingChoice = {
-        type: "astral-queen-second",
-        playerIndex,
-        cards: secondTargets,
-        prompt: "Astral Queen — choose a second personnel to exhaust",
-      };
     }
   },
 });
@@ -2238,22 +2225,14 @@ register("doomed-liner-bounce", {
 register("scouting-raider-etb", {
   trigger: "onEnterPlay",
   resolve(state, playerIndex, _sid, _tid, log) {
-    const opponentIndex = 1 - playerIndex;
-    const opponent = state.players[opponentIndex];
-    if (opponent.deck.length > 0) {
-      const topCard = opponent.deck[0];
-      const def = getCardDef(topCard.defId);
-      // Log privately — only the controlling player sees the actual card
-      // In the shared log, we just note the action happened
-      log.push(
-        `Scouting Raider: ${state.playerNames[playerIndex as 0 | 1]} looks at top of opponent's deck.`,
-      );
-      // The actual card info is only useful in the log for the controlling player
-      // Since we can't do private logs easily, we include it (both players see the game log)
-      log.push(`  → ${def ? cardName(def) : "unknown card"}`);
-    } else {
-      log.push("Scouting Raider: Opponent's deck is empty.");
-    }
+    // "Look at the top card of target deck" — player chooses which deck
+    log.push("Scouting Raider enters play.");
+    state.pendingChoice = {
+      type: "scouting-raider-deck",
+      playerIndex,
+      cards: [],
+      prompt: "Scouting Raider — choose a deck to look at the top card",
+    };
   },
 });
 
@@ -2269,6 +2248,7 @@ register("skirmishing-raider-sacrifice", {
 // Colonial Viper 762: "Each time this ship challenges, may commit target Pilot for +3 power."
 register("viper762-pilot", {
   trigger: "onChallengeInit",
+  isChallengePendingTrigger: true,
 });
 
 // --- Triggered: Challenge-Win (1 ship) ---
@@ -2391,7 +2371,10 @@ export function getUnitAbilityActions(
       cardDefId: sourceDef.id,
       sourceInstanceId: sourceInstanceId,
       selectableInstanceIds: targets,
-      targetPrompt: `Select target for ${cardName(sourceDef)}`,
+      targetPrompt: `Select target${handler.targetCount && handler.targetCount > 1 ? "s" : ""} for ${cardName(sourceDef)}`,
+      ...(handler.targetCount && handler.targetCount > 1
+        ? { multiTargetCount: handler.targetCount }
+        : {}),
     },
   ];
 }
@@ -2405,6 +2388,7 @@ export function resolveUnitAbility(
   targetInstanceId: string | undefined,
   log: LogItem[],
   abilityIndex?: number,
+  targetInstanceIds?: string[],
 ): void {
   const handler = registry.get(abilityId);
   if (!handler) {
@@ -2430,7 +2414,14 @@ export function resolveUnitAbility(
       log,
     );
   } else {
-    handler.resolve?.(state, playerIndex, sourceInstanceId, targetInstanceId, log);
+    handler.resolve?.(
+      state,
+      playerIndex,
+      sourceInstanceId,
+      targetInstanceId,
+      log,
+      targetInstanceIds,
+    );
   }
 }
 
@@ -2740,25 +2731,22 @@ export function fireOnChallengeInit(
   const handler = registry.get(challengerDef.abilityId);
   if (handler?.trigger !== "onChallengeInit") return;
 
-  // Viper 762: may commit target Pilot for +3 power
-  if (challengerDef.abilityId === "viper762-pilot") {
-    // Find first alert Pilot to commit
-    for (const stack of player.zones.alert) {
+  // Viper 762: may commit target Pilot for +3 power — set up trigger prompt
+  if (challengerDef.abilityId === "viper762-pilot" && state.challenge) {
+    // Check if any eligible Pilot exists
+    const hasPilot = player.zones.alert.some((stack) => {
       const tc = stack.cards[0];
-      if (tc?.faceUp && tc.instanceId !== challengerInstanceId) {
-        const def = getCardDef(tc.defId);
-        if (
-          def?.type === "personnel" &&
-          unitHasTrait(state, tc.instanceId, def, "Pilot" as Trait)
-        ) {
-          commitUnit(player, tc.instanceId, log);
-          if (state.challenge) {
-            state.challenge.challengerPowerBuff = (state.challenge.challengerPowerBuff ?? 0) + 3;
-          }
-          log.push(`Viper 762 gets +3 power.`);
-          return;
-        }
-      }
+      if (!tc?.faceUp || tc.instanceId === challengerInstanceId) return false;
+      const def = getCardDef(tc.defId);
+      return def?.type === "personnel" && unitHasTrait(state, tc.instanceId, def, "Pilot" as Trait);
+    });
+    if (hasPilot) {
+      state.challenge.pendingTrigger = {
+        abilityId: "viper762-pilot",
+        playerIndex,
+        sourceInstanceId: challengerInstanceId,
+      };
+      state.activePlayerIndex = playerIndex;
     }
   }
 }
@@ -2781,22 +2769,41 @@ export function fireOnChallengeWin(
 
   // Nuclear-Armed Raider: defeat target asset with no supply cards
   if (winnerDef.abilityId === "nuclear-raider-win") {
-    // Find first opponent asset with no supply cards
-    const opponentIndex = 1 - winnerPlayerIndex;
-    const opponent = state.players[opponentIndex];
-    for (let i = 1; i < opponent.zones.resourceStacks.length; i++) {
-      const rStack = opponent.zones.resourceStacks[i];
-      if (rStack.supplyCards.length === 0 && !rStack.exhausted) {
-        // Defeat (remove) the asset
-        const assetCard = rStack.topCard;
-        opponent.discard.push(assetCard);
-        opponent.zones.resourceStacks.splice(i, 1);
-        const def = getCardDef(assetCard.defId);
+    // Collect eligible assets from all players (non-base, no supply cards)
+    const eligible: { card: import("@bsg/shared").CardInstance; ownerIndex: number }[] = [];
+    for (let pi = 0; pi < state.players.length; pi++) {
+      const p = state.players[pi];
+      for (let i = 1; i < p.zones.resourceStacks.length; i++) {
+        const rStack = p.zones.resourceStacks[i];
+        if (rStack.supplyCards.length === 0) {
+          eligible.push({ card: rStack.topCard, ownerIndex: pi });
+        }
+      }
+    }
+    if (eligible.length === 1) {
+      // Only one target — auto-defeat
+      const { card, ownerIndex } = eligible[0];
+      const owner = state.players[ownerIndex];
+      const idx = owner.zones.resourceStacks.findIndex(
+        (s) => s.topCard.instanceId === card.instanceId,
+      );
+      if (idx >= 1) {
+        owner.discard.push(card);
+        owner.zones.resourceStacks.splice(idx, 1);
+        const def = getCardDef(card.defId);
         log.push(
           `Nuclear-Armed Raider defeats ${def ? cardName(def) : "asset"} (no supply cards).`,
         );
-        return;
       }
+    } else if (eligible.length > 1) {
+      // Multiple targets — player chooses
+      state.pendingChoice = {
+        type: "nuclear-raider-target",
+        playerIndex: winnerPlayerIndex,
+        cards: eligible.map((e) => e.card),
+        prompt: "You win! Nuclear-Armed Raider — choose an asset to defeat",
+        context: { owners: eligible.map((e) => e.ownerIndex) },
+      };
     }
   }
 }
@@ -2983,6 +2990,92 @@ export function canInterceptInfluenceLoss(abilityId: string): boolean {
 // Pending Choice Handlers
 // ============================================================
 
+registerPendingChoice("nuclear-raider-target", {
+  getActions(choice, state) {
+    const actions: ValidAction[] = [];
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const owners = ctx.owners as number[];
+    for (let i = 0; i < choice.cards.length; i++) {
+      const card = choice.cards[i];
+      const def = getCardDef(card.defId);
+      if (def) {
+        const resLabel = def.resource
+          ? ` (${def.resource.charAt(0).toUpperCase()}${def.resource.slice(1)})`
+          : "";
+        actions.push({
+          type: "makeChoice",
+          description: `Defeat ${cardName(def)}${resLabel}`,
+          cardDefId: def.id,
+          ownerIndex: owners[i],
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const chosenCard = choice.cards[choiceIndex];
+    if (!chosenCard) return;
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const owners = ctx.owners as number[];
+    const ownerIdx = owners[choiceIndex];
+    const owner = state.players[ownerIdx];
+    const stackIdx = owner.zones.resourceStacks.findIndex(
+      (s) => s.topCard.instanceId === chosenCard.instanceId,
+    );
+    if (stackIdx >= 1) {
+      owner.discard.push(chosenCard);
+      owner.zones.resourceStacks.splice(stackIdx, 1);
+      const def = getCardDef(chosenCard.defId);
+      log.push(`Nuclear-Armed Raider defeats ${def ? cardName(def) : "asset"} (no supply cards).`);
+    }
+  },
+  aiDecide(choice, _choiceActions, state, playerIndex) {
+    // AI prefers opponent's assets
+    const ctx = (choice.context ?? {}) as Record<string, unknown>;
+    const owners = ctx.owners as number[];
+    const oppIdx = owners.findIndex((o) => o !== playerIndex);
+    return oppIdx >= 0 ? oppIdx : 0;
+  },
+});
+
+registerPendingChoice("scouting-raider-deck", {
+  getActions(choice, state) {
+    const pi = choice.playerIndex;
+    const actions: ValidAction[] = [];
+    // Offer both decks (yours and opponent's)
+    for (let i = 0; i < state.players.length; i++) {
+      if (state.players[i].deck.length > 0) {
+        const label = i === pi ? "Your deck" : `${state.playerNames[i as 0 | 1]}'s deck`;
+        actions.push({
+          type: "makeChoice",
+          description: `Look at top of ${label}`,
+        });
+      }
+    }
+    return actions;
+  },
+  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
+    const pi = choice.playerIndex;
+    // choiceIndex 0 = your deck, 1 = opponent's deck (if both available)
+    const availableDecks: number[] = [];
+    for (let i = 0; i < state.players.length; i++) {
+      if (state.players[i].deck.length > 0) availableDecks.push(i);
+    }
+    const targetIdx = availableDecks[choiceIndex] ?? 1 - pi;
+    const target = state.players[targetIdx];
+    if (target.deck.length > 0) {
+      const topCard = target.deck[0];
+      const def = getCardDef(topCard.defId);
+      const whose = targetIdx === pi ? "own" : "opponent's";
+      log.push(`Scouting Raider: Looks at top of ${whose} deck.`);
+      log.push(`  → ${def ? cardName(def) : "unknown card"}`);
+    }
+  },
+  aiDecide() {
+    return 1; // AI always looks at opponent's deck
+  },
+});
+
 registerPendingChoice("space-park-scry", {
   getActions(choice) {
     const def = getCardDef(choice.cards[0].defId);
@@ -3120,15 +3213,20 @@ registerPendingChoice("boomer-search", {
 });
 
 registerPendingChoice("zarek-etb", {
-  getActions(choice) {
+  getActions(choice, state) {
     const actions: ValidAction[] = [];
     for (let i = 0; i < choice.cards.length; i++) {
-      const def = getCardDef(choice.cards[i].defId);
+      const card = choice.cards[i];
+      const def = getCardDef(card.defId);
       if (def) {
+        const ownerIndex = state.players.findIndex(
+          (p) => findUnitInAnyZone(p, card.instanceId) !== null,
+        );
         actions.push({
           type: "makeChoice",
           description: `Defeat ${cardName(def)}`,
           cardDefId: def.id,
+          ownerIndex: ownerIndex >= 0 ? ownerIndex : undefined,
         });
       }
     }
@@ -3163,53 +3261,6 @@ registerPendingChoice("zarek-etb", {
           bestScore = score;
           bestIdx = i;
         }
-      }
-    }
-    return bestIdx;
-  },
-});
-
-registerPendingChoice("astral-queen-second", {
-  getActions(choice) {
-    const actions: ValidAction[] = [];
-    for (let i = 0; i < choice.cards.length; i++) {
-      const def = getCardDef(choice.cards[i].defId);
-      if (def) {
-        actions.push({
-          type: "makeChoice",
-          description: `Exhaust ${cardName(def)}`,
-          cardDefId: def.id,
-        });
-      }
-    }
-    return actions;
-  },
-  resolve(choice, choiceIndex, state, _player, _playerIndex, log) {
-    const chosenCard = choice.cards[choiceIndex];
-    if (!chosenCard) return;
-    for (const p of state.players) {
-      const found = findUnitInAnyZone(p, chosenCard.instanceId);
-      if (found) {
-        found.stack.exhausted = true;
-        const def = getCardDef(found.stack.cards[0].defId);
-        if (def) log.push(`Astral Queen: ${cardName(def)} also exhausted.`);
-        break;
-      }
-    }
-  },
-  aiDecide(choice, choiceActions, state, playerIndex) {
-    const oppIdx = 1 - playerIndex;
-    let bestIdx = 0;
-    let bestScore = -1;
-    for (let i = 0; i < choiceActions.length; i++) {
-      const card = choice.cards[i];
-      const isOpp = card && !!findUnitInAnyZone(state.players[oppIdx], card.instanceId);
-      const defId = choiceActions[i].cardDefId;
-      const def = defId ? getCardDef(defId) : undefined;
-      const score = (def?.power ?? 0) + (isOpp ? 100 : 0);
-      if (score > bestScore) {
-        bestScore = score;
-        bestIdx = i;
       }
     }
     return bestIdx;

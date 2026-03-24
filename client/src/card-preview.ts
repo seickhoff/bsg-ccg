@@ -31,6 +31,7 @@ export interface CardRuntimeInfo {
   exhausted?: boolean;
   stackSize?: number;
   effectImmunity?: "power" | "all";
+  cylonThreatMod?: number; // temporary cylon threat modifier (Gaeta Brilliant)
 }
 
 let registry: CardRegistry | null = null;
@@ -167,10 +168,28 @@ function renderCardContent(c: CardDef, rt: CardRuntimeInfo | null): string {
         );
       powerHtml = `<div class="card-pv-detail">Power: <span class="card-pv-power-buffed">${total}</span> <span class="card-pv-power-detail">(${parts.join(", ")})</span></div>`;
     } else {
-      powerHtml = `<div class="card-pv-detail">Power: ${basePower} · Mystic: ${c.mysticValue ?? 0} · CT: ${c.cylonThreat ?? 0}</div>`;
+      const ctBase = c.cylonThreat ?? 0;
+      const ctMod = rt?.cylonThreatMod ?? 0;
+      let ctHtml: string;
+      if (ctMod !== 0) {
+        const ctTotal = Math.max(0, ctBase + ctMod);
+        ctHtml = `Cylon Threat: <span class="card-pv-power-buffed">${ctTotal}</span> <span class="card-pv-power-detail">(base ${ctBase}, ${ctMod > 0 ? "+" : ""}${ctMod} <span class="card-pv-scope">this turn</span>)</span>`;
+      } else {
+        ctHtml = `Cylon Threat: ${ctBase}`;
+      }
+      powerHtml = `<div class="card-pv-detail">Power: ${basePower} · Mystic: ${c.mysticValue ?? 0} · ${ctHtml}</div>`;
     }
     if (buff !== 0) {
-      powerHtml += `<div class="card-pv-detail">Mystic: ${c.mysticValue ?? 0} · CT: ${c.cylonThreat ?? 0}</div>`;
+      const ctBase = c.cylonThreat ?? 0;
+      const ctMod = rt?.cylonThreatMod ?? 0;
+      let ctHtml: string;
+      if (ctMod !== 0) {
+        const ctTotal = Math.max(0, ctBase + ctMod);
+        ctHtml = `Cylon Threat: <span class="card-pv-power-buffed">${ctTotal}</span> <span class="card-pv-power-detail">(base ${ctBase}, ${ctMod > 0 ? "+" : ""}${ctMod} <span class="card-pv-scope">this turn</span>)</span>`;
+      } else {
+        ctHtml = `Cylon Threat: ${ctBase}`;
+      }
+      powerHtml += `<div class="card-pv-detail">Mystic: ${c.mysticValue ?? 0} · ${ctHtml}</div>`;
     }
   }
 

@@ -415,7 +415,7 @@ function renderPreview(): string {
     const maxed = copiesByName(c) >= 4;
     details = `
       <div class="db-pv-detail">${c.type} · ${costStr(c.cost)}</div>
-      ${c.power != null ? `<div class="db-pv-detail">Power: ${c.power} · Mystic: ${c.mysticValue ?? 0} · CT: ${c.cylonThreat ?? 0}</div>` : ""}
+      ${c.power != null ? `<div class="db-pv-detail">Power: ${c.power} · Mystic: ${c.mysticValue ?? 0} · Cylon Threat: ${c.cylonThreat ?? 0}</div>` : ""}
       ${c.resource ? `<div class="db-pv-detail">Resource: ${c.resource}</div>` : ""}
       ${c.traits?.length ? `<div class="db-pv-detail">Traits: ${c.traits.join(", ")}</div>` : ""}
       ${c.keywords?.length ? `<div class="db-pv-detail">Keywords: ${c.keywords.join(", ")}</div>` : ""}

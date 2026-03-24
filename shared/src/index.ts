@@ -31,11 +31,12 @@ export type PendingChoiceType =
   | "blockading-threat"
   | "blockading-player"
   // unit-abilities
+  | "scouting-raider-deck"
+  | "nuclear-raider-target"
   | "space-park-scry"
   | "mining-ship-dig"
   | "boomer-search"
   | "zarek-etb"
-  | "astral-queen-second"
   | "tyrol-etb-choice"
   | "tyrol-chief-choice"
   | "six-seductress"
@@ -246,7 +247,8 @@ export interface ChallengeState {
 
 export interface CylonThreatCard {
   card: CardInstance;
-  power: number; // the Cylon threat value of the revealed card
+  power: number; // the Cylon threat value of the revealed card (after modifiers)
+  basePower: number; // the raw Cylon threat value before modifiers
   ownerIndex: number; // which player's deck it came from
 }
 
@@ -358,11 +360,14 @@ export interface PlayerGameView {
   phaseKeywordGrants?: Record<string, Keyword[]>;
   turnKeywordGrants?: Record<string, Keyword[]>;
   passivePowerBuffs?: Record<string, number>; // instanceId → passive power modifier (Apollo CAG, Starbuck Hotshot, auras, etc.)
+  cylonThreatMods?: Record<string, number>; // instanceId → temporary cylon threat modifier (Gaeta Brilliant)
   effectImmunity?: Record<string, "power" | "all">; // instanceId → immunity type
   choicePrompt?: string; // context-specific header for pending choice UI
   choiceType?: PendingChoiceType; // type of pending choice, for client-side conditional rendering
   extraActionsRemaining?: number; // extra actions left (e.g. Number Six Agent Provocateur)
   extraActionsTotal?: number; // total extra actions granted this turn
+  costReduction?: { persuasion?: number; logistics?: number; security?: number }; // Refinery Ship
+  cylonThreatGlobalMod?: number; // Galactica Defender: -1 to all Cylon threat power
 }
 
 // --- Game Actions (client → server) ---
@@ -384,6 +389,7 @@ export type GameAction =
       type: "playAbility";
       sourceInstanceId: string;
       targetInstanceId?: string;
+      targetInstanceIds?: string[];
       abilityIndex?: number;
     }
   | {
@@ -432,8 +438,10 @@ export interface ValidAction {
   linkTargetIds?: string[]; // valid link attachment targets for missions
   abilityIndex?: number; // for dual-ability cards (e.g. Baltar VP: 0 or 1)
   targetPrompt?: string; // custom prompt for target selection
+  multiTargetCount?: number; // use multi-select (checkboxes) for this many targets
   accept?: boolean; // sniperAccept: whether defender accepts defense
   challengeAs?: "personnel" | "ship"; // strafeChoice: which type to challenge as
+  ownerIndex?: number; // player index that owns this card (for grouping choices by player)
 }
 
 // --- WebSocket Messages ---

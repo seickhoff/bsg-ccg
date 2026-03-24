@@ -47,6 +47,27 @@ __bsg_send({
 });
 ```
 
+### Mining Ship (opponent) — "You pick which goes to bottom"
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG1-102"] },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-159"],
+      influence: 10,
+      deck: ["BSG1-098", "BSG1-099", "BSG1-100", "BSG1-101"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI commits Mining Ship on their turn — you choose which of 2 revealed cards goes to bottom
+```
+
 ### Gideon, Rebellious Transport — "Commit: Commit target ship"
 
 ```js
@@ -121,14 +142,20 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-001", hand: [], alert: ["BSG1-156"], deck: ["BSG1-098", "BSG1-099"] },
+    player0: {
+      baseId: "BSG1-001",
+      hand: [],
+      alert: ["BSG1-156"],
+      discard: ["BSG1-103"],
+      deck: ["BSG1-098", "BSG1-099"],
+    },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// First put a Cylon card in your discard (e.g. via challenge), then use ability
+// BSG1-103 (Boomer, Cylon) is pre-loaded in discard — use ability to recover her
 ```
 
 ### Astral Queen, Platform for Revolution — "Commit+Exhaust: Exhaust 2 personnel"
@@ -137,14 +164,14 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-133"] },
-    player1: { baseId: "BSG1-007", alert: ["BSG1-098", "BSG1-100"], influence: 10 },
+    player0: { baseId: "BSG1-004", hand: [], alert: ["BSG2-133", "BSG1-100"] },
+    player1: { baseId: "BSG1-007", alert: ["BSG1-098", "BSG1-100", "BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// Exhaust two of opponent's personnel
+// Multi-select: check 2 personnel in the modal, then confirm to exhaust both
 ```
 
 ### Refinery Ship — "Commit+Exhaust: Extra action + cost reduction"
@@ -153,14 +180,20 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-001", hand: ["BSG1-098", "BSG1-099"], alert: ["BSG2-164"] },
+    player0: {
+      baseId: "BSG1-001",
+      hand: ["BSG1-098", "BSG1-099"],
+      alert: ["BSG2-164"],
+      assets: ["BSG1-162"],
+    },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// Use ability — get extra action and next card costs 1 less
+// Use ability, then play BSG1-098 (logistics 3→2 with reduction).
+// Base + 1 asset = 2 logistics — exactly enough with cost reduction, not enough without.
 ```
 
 ---
@@ -259,6 +292,32 @@ __bsg_send({
 // Challenge player 1, Billy defends, then player 1 uses Cloud 9 to end the challenge
 ```
 
+### Cloud 9, Transport Hub (you defend) — "Use Cloud 9 to end challenge"
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG2-136", "BSG1-102"],
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-098"],
+      influence: 10,
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI challenges with Apollo — defend with Billy, then use Cloud 9 to end the challenge
+```
+
 ---
 
 ## Passive Power Modifiers
@@ -350,7 +409,7 @@ __bsg_send({
     player0: {
       baseId: "BSG1-004",
       hand: [],
-      alert: ["BSG2-137", "BSG1-115"],
+      alert: ["BSG2-137", "BSG1-117"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
     },
     player1: {
@@ -458,7 +517,7 @@ __bsg_send({
     player0: {
       baseId: "BSG1-001",
       hand: [],
-      alert: ["BSG1-153", "BSG1-098"],
+      alert: ["BSG1-153", "BSG1-098", "BSG1-103"],
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
     },
     player1: {
@@ -472,7 +531,8 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// Challenge with Viper 762 — trigger offers to commit Apollo (Pilot) for +3 power
+// Challenge with Viper 762 — pick which Pilot to commit for +3 power, or decline
+// BSG1-098 = Apollo (Pilot), BSG1-103 = Boomer (Pilot)
 ```
 
 ### Scouting Raider — "ETB: Look at top card of target deck"
@@ -485,6 +545,7 @@ __bsg_send({
       baseId: "BSG1-007",
       hand: ["BSG1-171"],
       alert: [],
+      assets: [{ id: "BSG1-150", supplyCards: 3 }],
       deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
     },
     player1: {
@@ -498,7 +559,7 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// Play Scouting Raider (costs security 5 — need supply cards or enough resources)
+// Play Scouting Raider from hand (costs security 5 — base + asset with 3 supply cards covers it)
 ```
 
 ### Skirmishing Raider — "On challenge end: Sacrifice self"
@@ -560,6 +621,34 @@ __bsg_send({
   type: "debugSetup",
   scenario: {
     player0: {
+      baseId: "BSG1-004",
+      hand: [],
+      alert: ["BSG1-158"],
+      assets: ["BSG1-162", "BSG1-167"],
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG2-153"],
+      influence: 10,
+      deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+    },
+    phase: "execution",
+    turn: 3,
+    activePlayerIndex: 1,
+  },
+});
+// AI challenges with Nuclear-Armed Raider — defend with Luxury Liner (power 1, will lose).
+// On win, Raider defeats one of your assets (Passenger Cruiser or Raptor 563).
+```
+
+### Nuclear-Armed Raider (you attack) — "Pick asset to defeat"
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
       baseId: "BSG1-007",
       hand: [],
       alert: ["BSG2-153"],
@@ -567,7 +656,8 @@ __bsg_send({
     },
     player1: {
       baseId: "BSG1-004",
-      alert: ["BSG1-174"],
+      alert: ["BSG1-158"],
+      assets: ["BSG1-162", "BSG1-167"],
       influence: 10,
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
     },
@@ -576,7 +666,7 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// Challenge and win — triggers asset destruction on opponent
+// Challenge with Raider (power 2) vs Luxury Liner (power 1) — you win, pick asset to defeat.
 ```
 
 ---
@@ -592,13 +682,13 @@ __bsg_send({
     player0: {
       baseId: "BSG1-007",
       hand: [],
-      alert: ["BSG2-148", "BSG1-157"],
+      alert: ["BSG2-148", "BSG1-157", "BSG1-172", "BSG1-171"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-101", "BSG1-102"],
     },
     player1: {
       baseId: "BSG1-004",
-      alert: ["BSG1-157"],
-      deck: ["BSG1-103", "BSG1-098", "BSG1-099"],
+      alert: [],
+      deck: ["BSG1-157", "BSG1-103", "BSG1-098"],
       influence: 10,
     },
     phase: "execution",
@@ -606,7 +696,8 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// BSG1-157 = Hunting Raider (Cylon threat) — pass to Cylon phase, threats reduced by 1
+// Threat level 13 (3+3+4+3) > fleet defense 11 (6+5). Pass to reach Cylon phase.
+// Galactica Defender reduces all threat power by 1 — look for "(base X)" on threat cards.
 ```
 
 ### Colonial Viper 1104 — "+2 power during Cylon phase"
@@ -618,13 +709,13 @@ __bsg_send({
     player0: {
       baseId: "BSG1-001",
       hand: [],
-      alert: ["BSG2-142", "BSG1-157"],
+      alert: ["BSG2-142", "BSG1-157", "BSG1-172", "BSG1-171"],
       deck: ["BSG1-098", "BSG1-099", "BSG1-101", "BSG1-102"],
     },
     player1: {
       baseId: "BSG1-004",
-      alert: ["BSG1-157"],
-      deck: ["BSG1-103", "BSG1-098", "BSG1-099"],
+      alert: [],
+      deck: ["BSG1-157", "BSG1-103", "BSG1-098"],
       influence: 10,
     },
     phase: "execution",
@@ -632,7 +723,8 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// Pass to Cylon phase — Viper 1104 challenges threats at power 4 (2+2)
+// Threat 13 (3+3+4+3) > fleet 9 (4+5). Pass to Cylon phase.
+// Viper 1104 challenges threats at power 4 (2 base + 2 Cylon phase bonus).
 ```
 
 ---
@@ -645,14 +737,26 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: ["BSG1-098", "BSG1-099"], alert: ["BSG1-174"] },
-    player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
+    player0: {
+      baseId: "BSG1-004",
+      hand: ["BSG1-098", "BSG1-103"],
+      alert: ["BSG1-174"],
+      assets: ["BSG1-162", "BSG1-167"],
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// Play a card from hand — when you spend resources, Supply Freighter offers to generate logistics
+// Play BSG1-098 (logistics 3) — 2 logistics assets + Supply Freighter trigger = 3 logistics
+// BSG1-103 (logistics 3) also playable with freighter. Select both logistics assets, freighter covers the 3rd.
 ```
 
 ### Ordnance Freighter — "On resource spend: Commit to generate security"
@@ -661,13 +765,26 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: ["BSG1-098", "BSG1-099"], alert: ["BSG1-161"] },
-    player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
+    player0: {
+      baseId: "BSG1-004",
+      hand: ["BSG1-099", "BSG1-105"],
+      alert: ["BSG1-161"],
+      assets: ["BSG1-147", "BSG1-149"],
+      deck: ["BSG1-098", "BSG1-100", "BSG1-101"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
+// Play BSG1-099 (security 3) — 2 security assets + Ordnance Freighter trigger = 3 security
+// BSG1-105 (security 3) also playable with freighter.
 ```
 
 ### Troop Freighter — "On resource spend: Commit to generate persuasion"
@@ -676,13 +793,26 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-007", hand: ["BSG1-098", "BSG1-099"], alert: ["BSG1-175"] },
-    player1: { baseId: "BSG1-004", alert: ["BSG1-102"], influence: 10 },
+    player0: {
+      baseId: "BSG1-007",
+      hand: ["BSG1-101", "BSG1-102"],
+      alert: ["BSG1-175"],
+      assets: ["BSG1-158", "BSG1-165"],
+      deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-100"],
+      influence: 10,
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
+// Play BSG1-101 (persuasion 3) — 2 persuasion assets + Troop Freighter trigger = 3 persuasion
+// BSG1-102 (persuasion 2) also playable — 2 assets alone cover it, no freighter needed (contrast).
 ```
 
 ---
@@ -705,6 +835,7 @@ __bsg_send({
       baseId: "BSG1-001",
       hand: ["BSG2-161"],
       alert: [],
+      assets: ["BSG1-162", "BSG1-167"],
       influence: 10,
       deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
     },
@@ -713,8 +844,7 @@ __bsg_send({
     activePlayerIndex: 0,
   },
 });
-// Challenge with a ship — player 1 can flash play Raptor 432 from hand to defend
-// Note: Player 1 needs enough logistics resources (3) to pay for it
+// Challenge with a ship — player 1 flash plays Raptor 432 (logistics 3: base + 2 assets)
 ```
 
 ### Olympic Carrier — "Sacrifice for 2 Cylon mission requirements"
@@ -723,14 +853,25 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-001", hand: [], alert: ["BSG2-154", "BSG1-056"] },
-    player1: { baseId: "BSG1-004", alert: ["BSG1-102"], influence: 10 },
+    player0: {
+      baseId: "BSG1-001",
+      hand: [],
+      alert: ["BSG2-154", "BSG1-056"],
+      deck: ["BSG1-098", "BSG1-099", "BSG1-100"],
+    },
+    player1: {
+      baseId: "BSG1-004",
+      alert: ["BSG1-102"],
+      influence: 10,
+      deck: ["BSG1-099", "BSG1-100", "BSG1-101"],
+    },
     phase: "execution",
     turn: 3,
     activePlayerIndex: 0,
   },
 });
-// When resolving a Cylon mission, sacrifice Olympic Carrier to meet 2 requirements
+// Accused (Cylon mission) requires 1 Civilian — you have none, but Olympic Carrier covers it.
+// Click "Resolve Accused" → select no units → Olympic Carrier auto-sacrifices to meet the requirement.
 ```
 
 ---

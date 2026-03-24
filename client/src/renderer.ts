@@ -41,6 +41,7 @@ let onResetGame: (() => void) | null = null;
 let playerName = "YOU";
 let currentLog: LogItem[] = [];
 let currentPlayerIndex = 0;
+let currentCylonThreatGlobalMod = 0;
 let savedModalPosition: { top: number; left: number } | null = null;
 let boardZoomPercent = parseInt(localStorage.getItem("boardZoomPercent") ?? "0", 10); // 0–100 in 5% steps
 let savedBoardScrollTop = 0;
@@ -149,6 +150,8 @@ function buildRuntimeInfo(instanceId: string, state: PlayerGameView): CardRuntim
     grantedKeywords.push({ value: t, scope: "turn" });
   if (grantedKeywords.length) rt.grantedKeywords = grantedKeywords;
 
+  const threatMod = state.cylonThreatMods?.[instanceId] ?? 0;
+  if (threatMod) rt.cylonThreatMod = threatMod;
   if (stack.exhausted) rt.exhausted = true;
   if (stack.cards.length > 1) rt.stackSize = stack.cards.length;
   const immunity = state.effectImmunity?.[instanceId];
@@ -233,8 +236,10 @@ function resourceBadgeHtml(defId: string): string {
 }
 
 function makeChoiceBadgeHtml(defId: string, state: PlayerGameView): string {
-  // If it matches a resource stack, show stack resource type + size
-  const stack = state.you.zones.resourceStacks.find((s) => s.topCard.defId === defId);
+  // If it matches a resource stack (yours or opponent's), show stack resource type + size
+  const stack =
+    state.you.zones.resourceStacks.find((s) => s.topCard.defId === defId) ??
+    state.opponent.zones.resourceStacks.find((s) => s.topCard.defId === defId);
   if (stack) {
     const resName = getResourceName(stack.topCard.defId);
     const total = 1 + stack.supplyCards.length;
@@ -433,6 +438,7 @@ export function renderGame(
   const opponentName = state.playerNames[1 - state.you.playerIndex];
   currentLog = log;
   currentPlayerIndex = state.you.playerIndex;
+  currentCylonThreatGlobalMod = state.cylonThreatGlobalMod ?? 0;
 
   // Preserve play-area scroll position across re-renders
   const prevBoards = container.querySelector(".boards");
@@ -470,7 +476,7 @@ export function renderGame(
       <div class="boards">
         <div class="opponent-board">
           <div class="board-label">${escapeHtml(opponentName.toUpperCase())}</div>
-          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs)}
+          ${renderOpponentZones(state.opponent, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs, state.cylonThreatMods)}
         </div>
 
         <div class="divider"></div>
@@ -613,6 +619,8 @@ const CHALLENGE_KEYWORDS = [
   "declines to defend",
   "flash plays",
   "during challenge",
+  "wins!",
+  "Undefended!",
 ];
 
 function extractChallengeLogEntries(): { text: string; isSub: boolean }[] {
@@ -991,6 +999,7 @@ function showPlayerActionModal(
     if (a.type === "pass" || a.type === "challengePass") return "zzz_pass"; // sort last
     if (a.type === "challenge") return "zz_challenge";
     if (a.type === "sacrificeFromStack") return "zy_sacrifice";
+    if (a.type === "makeChoice") return "zx_other";
     if (!a.cardDefId) return "zx_other";
     if (baseDefs[a.cardDefId]) return "aa_base";
     const def = cardDefs[a.cardDefId];
@@ -1010,8 +1019,10 @@ function showPlayerActionModal(
     zx_other: "",
   };
 
+  const hasOwnerGroups = displayActions.some((a) => a.ownerIndex !== undefined);
+
   let buttonsHtml: string;
-  if (isExecution && displayActions.length > 0) {
+  if (isExecution && displayActions.length > 0 && !hasOwnerGroups) {
     // Group actions by card type, preserving original indices for data-action-index
     const groups = new Map<string, { action: ValidAction; origIdx: number }[]>();
     for (let i = 0; i < validActions.length; i++) {
@@ -1055,32 +1066,58 @@ function showPlayerActionModal(
     }
     buttonsHtml = parts.join("");
   } else {
-    buttonsHtml = displayActions
-      .map((a, _di) => {
-        // Find original index in validActions for data-action-index
-        const i = validActions.indexOf(a);
-        const disabledClass = a.disabled ? " action-modal-btn--disabled" : "";
-        const thumbHtml = getActionThumbHtml(a);
-        // Add resource badge for deploy-to-resource actions or resource stack choices
-        let badge = "";
-        if (a.type === "strafeChoice" && a.selectableInstanceIds?.length === 1) {
-          badge = powerBadgeHtml(
-            a.selectableInstanceIds[0],
-            state.you.zones,
-            state.passivePowerBuffs,
-          );
-        } else if (a.type === "playToResource" && a.cardDefId) {
-          badge = resourceBadgeHtml(a.cardDefId);
-        } else if (a.type === "makeChoice" && a.cardDefId) {
-          badge = makeChoiceBadgeHtml(a.cardDefId, state);
+    function renderActionBtn(a: ValidAction): string {
+      const i = validActions.indexOf(a);
+      const disabledClass = a.disabled ? " action-modal-btn--disabled" : "";
+      const thumbHtml = getActionThumbHtml(a);
+      let badge = "";
+      if (a.type === "strafeChoice" && a.selectableInstanceIds?.length === 1) {
+        badge = powerBadgeHtml(
+          a.selectableInstanceIds[0],
+          state.you.zones,
+          state.passivePowerBuffs,
+        );
+      } else if (a.type === "playToResource" && a.cardDefId) {
+        badge = resourceBadgeHtml(a.cardDefId);
+      } else if (a.type === "makeChoice" && a.cardDefId) {
+        badge = makeChoiceBadgeHtml(a.cardDefId, state);
+      }
+      const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
+      if (thumbHtml) {
+        return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${labelHtml}</button>${thumbHtml}</div>`;
+      }
+      return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${labelHtml}</button>`;
+    }
+
+    if (hasOwnerGroups) {
+      const parts: string[] = [];
+      const grouped = new Map<number | "none", ValidAction[]>();
+      for (const a of displayActions) {
+        const key = a.ownerIndex ?? ("none" as const);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(a);
+      }
+      // Show your units first, then opponent's
+      const sortedKeys = [...grouped.keys()].sort((a, b) => {
+        if (a === "none") return 1;
+        if (b === "none") return -1;
+        // Put the choosing player's own units second (opponent first = more useful target)
+        const aIsYou = a === state.you.playerIndex ? 1 : 0;
+        const bIsYou = b === state.you.playerIndex ? 1 : 0;
+        return aIsYou - bIsYou;
+      });
+      for (const key of sortedKeys) {
+        const label =
+          key === "none" ? "" : escapeHtml(state.playerNames[key as 0 | 1] ?? `Player ${key}`);
+        if (label) parts.push(`<div class="action-group-label">${label}</div>`);
+        for (const a of grouped.get(key)!) {
+          parts.push(renderActionBtn(a));
         }
-        const labelHtml = escapeHtml(a.description) + (badge ? ` ${badge}` : "");
-        if (thumbHtml) {
-          return `<div class="action-row${a.disabled ? " action-row--disabled" : ""}"><button class="action-modal-btn action-modal-btn--with-thumb${disabledClass}" data-action-index="${i}">${labelHtml}</button>${thumbHtml}</div>`;
-        }
-        return `<button class="action-modal-btn${disabledClass}" data-action-index="${i}">${labelHtml}</button>`;
-      })
-      .join("");
+      }
+      buttonsHtml = parts.join("");
+    } else {
+      buttonsHtml = displayActions.map((a) => renderActionBtn(a)).join("");
+    }
   }
 
   // Cylon phase status summary
@@ -1251,10 +1288,13 @@ function showSelectModal(
     selectGroup?: string;
   }[],
   onConfirm: (selectedValue: string) => void,
+  maxSelections?: number,
 ): void {
   dismissPlayerActionModal();
 
+  const isMulti = (maxSelections ?? 1) > 1;
   let selectedValue: string | null = null;
+  const selectedValues: Set<string> = new Set();
 
   // Separate selectable items from action buttons (like Cancel)
   const selectables = items.filter((b) => b.selectValue != null);
@@ -1282,7 +1322,8 @@ function showSelectModal(
       const thumbHtml = image
         ? `<img src="${image}" alt="" class="select-row-thumb${isBase ? " card-clip-landscape" : ""}" data-def-id="${item.cardDefId}" />`
         : "";
-      rowsHtml += `<div class="select-row" data-select-value="${escapeHtml(item.selectValue!)}">${thumbHtml}<span class="select-row-label">${escapeHtml(item.label)}</span><span class="select-row-radio"></span></div>`;
+      const indicator = isMulti ? "checkbox" : "radio";
+      rowsHtml += `<div class="select-row" data-select-value="${escapeHtml(item.selectValue!)}">${thumbHtml}<span class="select-row-label">${escapeHtml(item.label)}</span><span class="select-row-${indicator}"></span></div>`;
     }
   }
 
@@ -1322,13 +1363,25 @@ function showSelectModal(
     row.addEventListener("click", () => {
       const val = (row as HTMLElement).dataset.selectValue;
       if (!val) return;
-      // Deselect previous
-      overlay
-        .querySelectorAll(".select-row--selected")
-        .forEach((r) => r.classList.remove("select-row--selected"));
-      row.classList.add("select-row--selected");
-      selectedValue = val;
-      confirmBtn.disabled = false;
+      if (isMulti) {
+        // Toggle checkbox selection
+        if (selectedValues.has(val)) {
+          selectedValues.delete(val);
+          row.classList.remove("select-row--selected");
+        } else if (selectedValues.size < maxSelections!) {
+          selectedValues.add(val);
+          row.classList.add("select-row--selected");
+        }
+        confirmBtn.disabled = selectedValues.size !== maxSelections!;
+      } else {
+        // Single-select radio behavior
+        overlay
+          .querySelectorAll(".select-row--selected")
+          .forEach((r) => r.classList.remove("select-row--selected"));
+        row.classList.add("select-row--selected");
+        selectedValue = val;
+        confirmBtn.disabled = false;
+      }
     });
   });
 
@@ -1343,7 +1396,9 @@ function showSelectModal(
 
   // Confirm button
   confirmBtn.addEventListener("click", () => {
-    if (selectedValue != null) {
+    if (isMulti && selectedValues.size > 0) {
+      onConfirm([...selectedValues].join(","));
+    } else if (selectedValue != null) {
       onConfirm(selectedValue);
     }
   });
@@ -1392,6 +1447,7 @@ function renderOpponentZones(
   traitRemovals?: Record<string, Trait[]>,
   effectImmunity?: Record<string, "power" | "all">,
   passivePowerBuffs?: Record<string, number>,
+  cylonThreatMods?: Record<string, number>,
 ): string {
   return `
     <div class="zone resource-zone">
@@ -1404,14 +1460,14 @@ function renderOpponentZones(
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity, passivePowerBuffs)).join("")}
+        ${opp.zones.reserve.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity, passivePowerBuffs, cylonThreatMods)).join("")}
         ${opp.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity, passivePowerBuffs)).join("")}
+        ${opp.zones.alert.map((stack) => renderUnitStack(stack, false, challenge, traitGrants, keywordGrants, traitRemovals, effectImmunity, passivePowerBuffs, cylonThreatMods)).join("")}
         ${opp.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1423,14 +1479,14 @@ function renderYourZones(state: PlayerGameView, validActions: ValidAction[]): st
     <div class="zone alert-zone">
       <div class="zone-label">Alert</div>
       <div class="zone-cards">
-        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs)).join("")}
+        ${state.you.zones.alert.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs, state.cylonThreatMods)).join("")}
         ${state.you.zones.alert.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
     <div class="zone reserve-zone">
       <div class="zone-label">Reserve</div>
       <div class="zone-cards">
-        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs)).join("")}
+        ${state.you.zones.reserve.map((stack) => renderUnitStack(stack, true, state.challenge, state.traitGrants, state.keywordGrants, state.traitRemovals, state.effectImmunity, state.passivePowerBuffs, state.cylonThreatMods)).join("")}
         ${state.you.zones.reserve.length === 0 ? '<div class="empty-zone">empty</div>' : ""}
       </div>
     </div>
@@ -1480,6 +1536,16 @@ function buildResourceSummaryHtml(stacks: ResourceStack[]): string {
     })
     .join("");
   return badges ? `<span class="header-res-badges">${badges}</span>` : "";
+}
+
+const FREIGHTER_ABILITIES: Record<string, string> = {
+  "supply-freighter": "logistics",
+  "ordnance-freighter": "security",
+  "troop-freighter": "persuasion",
+};
+
+function getFreighterResource(abilityId?: string): string | undefined {
+  return abilityId ? FREIGHTER_ABILITIES[abilityId] : undefined;
 }
 
 function getResourceName(defId: string): string {
@@ -1569,6 +1635,7 @@ function renderUnitStack(
   traitRemovals?: Record<string, Trait[]>,
   effectImmunity?: Record<string, "power" | "all">,
   passivePowerBuffs?: Record<string, number>,
+  cylonThreatMods?: Record<string, number>,
 ): string {
   const topCard = stack.cards[0];
   if (!topCard) return "";
@@ -1616,6 +1683,17 @@ function renderUnitStack(
   const immunityBadge = immunity
     ? `<div class="immunity-badge" title="${immunity === "all" ? "Immune to all effects" : "Immune to power changes"}">${immunity === "all" ? "IMMUNE" : "PWR IMMUNE"}</div>`
     : "";
+  const perCardThreatMod = cylonThreatMods?.[topCard.instanceId] ?? 0;
+  const totalThreatMod = perCardThreatMod;
+  const threatModBadge =
+    totalThreatMod !== 0
+      ? `<div class="threat-mod-badge" title="Cylon threat ${totalThreatMod > 0 ? "+" : ""}${totalThreatMod}">THREAT ${totalThreatMod > 0 ? "+" : ""}${totalThreatMod}</div>`
+      : "";
+
+  const modBadges = [traitBadge, traitRemovalBadge, keywordBadge, immunityBadge, threatModBadge]
+    .filter(Boolean)
+    .join("");
+  const modBadgesHtml = modBadges ? `<div class="mod-badges">${modBadges}</div>` : "";
 
   if (image) {
     const displayImage = stack.exhausted ? "images/cards/bsgbetback-portrait.jpg" : image;
@@ -1626,10 +1704,7 @@ function renderUnitStack(
         ${typeClass !== "mission" ? `<div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>` : ""}
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
-        ${traitBadge}
-        ${traitRemovalBadge}
-        ${keywordBadge}
-        ${immunityBadge}
+        ${modBadgesHtml}
       </div>
     `;
   }
@@ -1641,15 +1716,13 @@ function renderUnitStack(
         ${typeClass !== "mission" ? `<div class="unit-power-badge${buffClass}"><span class="unit-power-badge-inner">${totalPower}</span></div>` : ""}
         ${stackSize > 1 ? `<div class="unit-stack-badge">x${stackSize}</div>` : ""}
         ${linkedBadge}
-        ${traitBadge}
-        ${traitRemovalBadge}
-        ${keywordBadge}
-        ${immunityBadge}
+        ${modBadgesHtml}
       </div>
     `;
   }
 
-  const cylonThreat = getCardCylonThreat(topCard.defId);
+  const baseCylonThreat = getCardCylonThreat(topCard.defId);
+  const cylonThreat = Math.max(0, baseCylonThreat + totalThreatMod);
   return `
     <div class="card unit-card ${typeClass}" data-instance-id="${topCard.instanceId}" data-def-id="${topCard.defId}">
       <div class="card-name">${escapeHtml(name)}</div>
@@ -1659,10 +1732,7 @@ function renderUnitStack(
       </div>
       ${stackSize > 1 ? `<div class="card-stack-count">x${stackSize}</div>` : ""}
       ${linkedBadge}
-      ${traitBadge}
-      ${traitRemovalBadge}
-      ${keywordBadge}
-      ${immunityBadge}
+      ${modBadgesHtml}
     </div>
   `;
 }
@@ -1702,7 +1772,7 @@ function renderCylonThreats(threats: CylonThreatCard[]): string {
             <div class="threat-card-info">
               <div class="card-name">${escapeHtml(name)}</div>
               ${redText ? `<div class="threat-red-text">${escapeHtml(redText)}</div>` : ""}
-              <div class="threat-power">${t.power}</div>
+              <div class="threat-power">${t.power}${t.power !== t.basePower ? ` <span class="threat-mod">(base ${t.basePower})</span>` : ""}</div>
             </div>
           </div>
         `;
@@ -1912,12 +1982,23 @@ function handleActionClick(
       const card = state.you.hand[cardIdx];
       const def = card ? cardDefs[card.defId] : null;
       const targets = action.selectableInstanceIds;
-      const cost = def?.cost ?? null;
+      const rawCost = def?.cost ?? null;
+      // Apply Refinery Ship cost reduction
+      let cost = rawCost;
+      if (rawCost && state.costReduction) {
+        const reduced: Record<string, number> = {};
+        for (const [rt, amt] of Object.entries(rawCost) as [string, number][]) {
+          const red = (state.costReduction as Record<string, number>)[rt] ?? 0;
+          const eff = Math.max(0, amt - red);
+          if (eff > 0) reduced[rt] = eff;
+        }
+        cost = Object.keys(reduced).length > 0 ? (reduced as typeof rawCost) : null;
+      }
       const needsStackPicker = cost && hasResourceChoice(cost, state.you.zones.resourceStacks);
 
       if (needsStackPicker && targets && targets.length > 0) {
         // Both stack selection AND target selection needed — stack picker first
-        showResourceStackPicker(cardIdx, cost, state, validActions, container, (stackIndices) => {
+        showResourceStackPicker(cardIdx, cost!, state, validActions, container, (stackIndices) => {
           const cardLabel = def ? getCardName(card.defId) : "event";
           enterSelectModeInstance(
             container,
@@ -1937,7 +2018,7 @@ function handleActionClick(
         });
       } else if (needsStackPicker) {
         // Only stack selection needed
-        showResourceStackPicker(cardIdx, cost, state, validActions, container, (stackIndices) => {
+        showResourceStackPicker(cardIdx, cost!, state, validActions, container, (stackIndices) => {
           onAction!({ type: "playCard", cardIndex: cardIdx, selectedStackIndices: stackIndices });
         });
       } else if (targets && targets.length > 0) {
@@ -2119,20 +2200,31 @@ function handleActionClick(
         const targets = action.selectableInstanceIds ?? [];
         if (targets.length > 0) {
           const abilityIdx = action.abilityIndex;
+          const multiCount = action.multiTargetCount;
           enterSelectModeInstance(
             container,
             action.targetPrompt ?? "Select target for ability",
             targets,
             (targetId) => {
-              onAction!({
-                type: "playAbility",
-                sourceInstanceId: action.sourceInstanceId!,
-                targetInstanceId: targetId,
-                abilityIndex: abilityIdx,
-              });
+              if (multiCount && targetId.includes(",")) {
+                onAction!({
+                  type: "playAbility",
+                  sourceInstanceId: action.sourceInstanceId!,
+                  targetInstanceIds: targetId.split(","),
+                  abilityIndex: abilityIdx,
+                });
+              } else {
+                onAction!({
+                  type: "playAbility",
+                  sourceInstanceId: action.sourceInstanceId!,
+                  targetInstanceId: targetId,
+                  abilityIndex: abilityIdx,
+                });
+              }
             },
             validActions,
             state,
+            multiCount,
           );
         } else {
           onAction({
@@ -2335,7 +2427,10 @@ function handleActionClick(
       // Agro Ship / Flattop: use triggered ability, optionally select target
       const targets = action.selectableInstanceIds ?? [];
       if (targets.length <= 1) {
-        onAction({ type: "useTriggeredAbility", targetInstanceId: targets[0] });
+        onAction({
+          type: "useTriggeredAbility",
+          targetInstanceId: action.targetInstanceId ?? targets[0],
+        });
       } else {
         enterSelectModeInstance(
           container,
@@ -2464,6 +2559,7 @@ function enterSelectModeInstance(
   callback: (id: string) => void,
   validActions?: ValidAction[],
   state?: PlayerGameView,
+  maxSelections?: number,
 ): void {
   // Build selectable rows from instance IDs, grouped by owner
   const buttons: {
@@ -2543,7 +2639,14 @@ function enterSelectModeInstance(
       }
     }
 
-    const name = defId ? getCardName(defId) : instId;
+    const playerMatch = instId.match(/^player-(\d+)$/);
+    let name: string;
+    if (playerMatch && state) {
+      const idx = parseInt(playerMatch[1], 10);
+      name = idx === state.you.playerIndex ? "Yourself" : state.playerNames[idx as 0 | 1];
+    } else {
+      name = defId ? getCardName(defId) : instId;
+    }
     let group = "";
     if (isYours !== null) {
       group = isYours ? "Your cards" : "Opponent cards";
@@ -2570,9 +2673,14 @@ function enterSelectModeInstance(
     },
   });
 
-  showSelectModal(prompt, buttons, (value) => {
-    callback(value);
-  });
+  showSelectModal(
+    prompt,
+    buttons,
+    (value) => {
+      callback(value);
+    },
+    maxSelections,
+  );
 }
 
 function setupHandScrollIndicators(container: HTMLElement): void {
@@ -2896,6 +3004,8 @@ function showResourceStackPicker(
     let totalExcess = 0;
     const excessParts: string[] = [];
 
+    const anyStackSelected = currentSelected.size > 0;
+
     for (const [resType, amount] of costTypes) {
       let provided = 0;
       for (const idx of currentSelected) {
@@ -2903,6 +3013,15 @@ function showResourceStackPicker(
         if (!stack) continue;
         if (getResourceName(stack.topCard.defId) === resType) {
           provided += 1 + stack.supplyCards.length;
+        }
+      }
+      // Count alert freighter bonuses (trigger when any stack is spent)
+      if (provided < amount && anyStackSelected) {
+        for (const stack of state.you.zones.alert) {
+          const fDef = cardDefs[stack.cards[0]?.defId];
+          if (fDef && getFreighterResource(fDef.abilityId) === resType) {
+            provided += 1;
+          }
         }
       }
       const met = provided >= amount;

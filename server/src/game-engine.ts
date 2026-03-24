@@ -26,6 +26,7 @@ import {
   getDefenderSelector,
   getUndefendedEffect,
 } from "./keyword-rules.js";
+import { unitHasTrait } from "./trait-rules.js";
 import {
   getBaseAbilityActions,
   resolveBaseAbilityEffect,
@@ -750,11 +751,17 @@ export function getPlayerView(state: GameState, playerIndex: number): PlayerGame
     phaseKeywordGrants: { ...you.temporaryKeywordGrants, ...opp.temporaryKeywordGrants },
     turnKeywordGrants: { ...you.turnKeywordGrants, ...opp.turnKeywordGrants },
     passivePowerBuffs: computeAllPassivePowerBuffs(state),
+    cylonThreatMods: {
+      ...you.temporaryCylonThreatMods,
+      ...opp.temporaryCylonThreatMods,
+    },
     effectImmunity: state.effectImmunity,
     choicePrompt: state.pendingChoice?.prompt,
     choiceType: state.pendingChoice?.type,
     extraActionsRemaining: you.extraActionsRemaining,
     extraActionsTotal: you.extraActionsTotal,
+    costReduction: you.costReduction,
+    cylonThreatGlobalMod: computeCylonThreatBonus(state) || undefined,
   };
 }
 
@@ -988,9 +995,21 @@ export function getValidActions(
           if (isMission(def)) {
             // Check if mission requirements are met
             if (canResolveMission(player, def, bases)) {
+              // Check if Olympic Carrier sacrifice is needed
+              let ocNote = "";
+              if (def.traits?.includes("Cylon")) {
+                const oc = findOlympicCarrier(player);
+                if (oc) {
+                  // Temporarily remove to test if needed
+                  const [ocStack] = player.zones.alert.splice(oc.index, 1);
+                  const canWithout = canResolveMission(player, def, bases);
+                  player.zones.alert.splice(oc.index, 0, ocStack);
+                  if (!canWithout) ocNote = " (sacrifices Olympic Carrier)";
+                }
+              }
               const missionAction: ValidAction = {
                 type: "resolveMission",
-                description: `Resolve ${cardName(def)}: ${def.abilityText}`,
+                description: `Resolve ${cardName(def)}${ocNote}: ${def.abilityText}`,
                 cardDefId: def.id,
                 selectableInstanceIds: [topCard.instanceId],
               };
@@ -1076,7 +1095,27 @@ function getChallengeActions(
   // Pending triggered ability (Agro Ship / Flattop / Tigh XO) — before defender selection
   if (challenge.pendingTrigger) {
     if (playerIndex === challenge.pendingTrigger.playerIndex) {
-      if (isChallengePendingTriggerAbility(challenge.pendingTrigger.abilityId)) {
+      if (challenge.pendingTrigger.abilityId === "viper762-pilot") {
+        // Viper 762: offer to commit a Pilot for +3 power
+        const challengerId = challenge.pendingTrigger.sourceInstanceId!;
+        for (const stack of player.zones.alert) {
+          const tc = stack.cards[0];
+          if (tc?.faceUp && tc.instanceId !== challengerId) {
+            const uDef = getCardDef(tc.defId);
+            if (
+              uDef?.type === "personnel" &&
+              unitHasTrait(state, tc.instanceId, uDef, "Pilot" as import("@bsg/shared").Trait)
+            ) {
+              actions.push({
+                type: "useTriggeredAbility",
+                description: `Commit ${cardName(uDef)} (+3 power)`,
+                cardDefId: uDef.id,
+                targetInstanceId: tc.instanceId,
+              });
+            }
+          }
+        }
+      } else if (isChallengePendingTriggerAbility(challenge.pendingTrigger.abilityId)) {
         // Tigh XO: offer to ready from reserve
         const sourceId = challenge.pendingTrigger.sourceInstanceId!;
         const tighDef = findCardDefByInstanceId(state, sourceId);
@@ -1758,7 +1797,7 @@ export function applyAction(
 
     // --- Execution phase: play ability ---
     case "playAbility": {
-      const { sourceInstanceId, targetInstanceId } = action;
+      const { sourceInstanceId, targetInstanceId, targetInstanceIds } = action;
 
       // Check if it's the base ability
       const baseStack = player.zones.resourceStacks[0];
@@ -1853,6 +1892,7 @@ export function applyAction(
             targetInstanceId,
             log,
             action.abilityIndex,
+            targetInstanceIds,
           );
 
           resetConsecutivePasses(s);
@@ -1990,8 +2030,12 @@ export function applyAction(
 
       resolveMissionEffect(s, playerIndex, def, log, action.targetInstanceId);
 
-      // Remove mission from alert — destination depends on category
-      const [missionStack] = player.zones.alert.splice(found.index, 1);
+      // Remove mission from alert — re-find in case Olympic Carrier sacrifice shifted indices
+      const missionIdx = player.zones.alert.findIndex(
+        (st) => st.cards[0]?.instanceId === action.missionInstanceId,
+      );
+      if (missionIdx < 0) break;
+      const [missionStack] = player.zones.alert.splice(missionIdx, 1);
       const missionCard = missionStack.cards[0];
       const category = def.abilityId ? getMissionCategory(def.abilityId) : "one-shot";
 
@@ -2099,27 +2143,32 @@ export function applyAction(
       // Fire onChallengeInit triggers (e.g., Viper 762: commit Pilot for +3)
       fireOnChallengeInit(s, playerIndex, challengerInstanceId, log);
 
-      // Check for Agro Ship / Flattop trigger on the defending player
-      const defenderIdx = 1 - playerIndex;
-      const trigger = getOnChallengedTrigger(s, defenderIdx, bases);
-      if (trigger) {
-        s.challenge.pendingTrigger = { abilityId: trigger.abilityId, playerIndex: defenderIdx };
-        s.challenge.waitingForDefender = false; // trigger resolves first
-        s.activePlayerIndex = defenderIdx;
+      // If attacker trigger is pending (Viper 762), defer defender triggers
+      if (s.challenge.pendingTrigger) {
+        s.challenge.waitingForDefender = false;
       } else {
-        // Check for Tigh XO on defending player (readies from reserve when challenged)
-        const tigh = findReserveTighXO(s.players[defenderIdx]);
-        if (tigh) {
-          s.challenge.pendingTrigger = {
-            abilityId: "tigh-xo",
-            playerIndex: defenderIdx,
-            sourceInstanceId: tigh.instanceId,
-          };
-          s.challenge.waitingForDefender = false;
+        // Check for Agro Ship / Flattop trigger on the defending player
+        const defenderIdx = 1 - playerIndex;
+        const trigger = getOnChallengedTrigger(s, defenderIdx, bases);
+        if (trigger) {
+          s.challenge.pendingTrigger = { abilityId: trigger.abilityId, playerIndex: defenderIdx };
+          s.challenge.waitingForDefender = false; // trigger resolves first
           s.activePlayerIndex = defenderIdx;
         } else {
-          // Who picks the defender: Sniper → challenger, otherwise → defending player
-          s.activePlayerIndex = selector === "challenger" ? playerIndex : 1 - playerIndex;
+          // Check for Tigh XO on defending player (readies from reserve when challenged)
+          const tigh = findReserveTighXO(s.players[defenderIdx]);
+          if (tigh) {
+            s.challenge.pendingTrigger = {
+              abilityId: "tigh-xo",
+              playerIndex: defenderIdx,
+              sourceInstanceId: tigh.instanceId,
+            };
+            s.challenge.waitingForDefender = false;
+            s.activePlayerIndex = defenderIdx;
+          } else {
+            // Who picks the defender: Sniper → challenger, otherwise → defending player
+            s.activePlayerIndex = selector === "challenger" ? playerIndex : 1 - playerIndex;
+          }
         }
       }
       break;
@@ -2168,28 +2217,34 @@ export function applyAction(
       player.consecutivePasses = 0;
 
       // Fire onChallengeInit triggers
-      const ch = s.challenge!;
       fireOnChallengeInit(s, playerIndex, strafeChallengerId, log);
 
-      // Check for Agro Ship / Flattop trigger on the defending player
-      const strafeDefenderIdx = 1 - playerIndex;
-      const strafeTrigger = getOnChallengedTrigger(s, strafeDefenderIdx, bases);
-      if (strafeTrigger) {
-        ch.pendingTrigger = { abilityId: strafeTrigger.abilityId, playerIndex: strafeDefenderIdx };
-        ch.waitingForDefender = false;
-        s.activePlayerIndex = strafeDefenderIdx;
+      // If attacker trigger is pending (Viper 762), defer defender triggers
+      if (s.challenge!.pendingTrigger) {
+        s.challenge!.waitingForDefender = false;
       } else {
-        const tigh = findReserveTighXO(s.players[strafeDefenderIdx]);
-        if (tigh) {
-          ch.pendingTrigger = {
-            abilityId: "tigh-xo",
+        const strafeDefenderIdx = 1 - playerIndex;
+        const strafeTrigger = getOnChallengedTrigger(s, strafeDefenderIdx, bases);
+        if (strafeTrigger) {
+          s.challenge!.pendingTrigger = {
+            abilityId: strafeTrigger.abilityId,
             playerIndex: strafeDefenderIdx,
-            sourceInstanceId: tigh.instanceId,
           };
-          ch.waitingForDefender = false;
+          s.challenge!.waitingForDefender = false;
           s.activePlayerIndex = strafeDefenderIdx;
         } else {
-          s.activePlayerIndex = strafeSelector === "challenger" ? playerIndex : 1 - playerIndex;
+          const tigh = findReserveTighXO(s.players[strafeDefenderIdx]);
+          if (tigh) {
+            s.challenge!.pendingTrigger = {
+              abilityId: "tigh-xo",
+              playerIndex: strafeDefenderIdx,
+              sourceInstanceId: tigh.instanceId,
+            };
+            s.challenge!.waitingForDefender = false;
+            s.activePlayerIndex = strafeDefenderIdx;
+          } else {
+            s.activePlayerIndex = strafeSelector === "challenger" ? playerIndex : 1 - playerIndex;
+          }
         }
       }
       break;
@@ -2385,6 +2440,19 @@ export function applyAction(
       const triggerPlayerIdx = s.challenge.pendingTrigger.playerIndex;
       const triggerPlayer = s.players[triggerPlayerIdx];
 
+      if (triggerAbilityId === "viper762-pilot") {
+        // Viper 762: commit chosen Pilot for +3 power
+        if (action.targetInstanceId) {
+          commitUnit(triggerPlayer, action.targetInstanceId, log);
+          s.challenge.challengerPowerBuff = (s.challenge.challengerPowerBuff ?? 0) + 3;
+          log.push("Viper 762 gets +3 power.");
+        }
+        // Clear attacker trigger, then check defender-side triggers
+        s.challenge.pendingTrigger = undefined;
+        proceedToDefenderTriggers(s, bases);
+        break;
+      }
+
       if (triggerAbilityId === "tigh-xo") {
         // Tigh XO: ready from reserve
         const sourceId = s.challenge.pendingTrigger.sourceInstanceId!;
@@ -2440,13 +2508,16 @@ export function applyAction(
     // --- Triggered ability: decline ---
     case "declineTrigger": {
       if (!s.challenge?.pendingTrigger) break;
-      const isBaseTrigger = s.challenge.pendingTrigger.abilityId !== "tigh-xo";
+      const declinedAbility = s.challenge.pendingTrigger.abilityId;
       const declineTriggerPlayerIdx = s.challenge.pendingTrigger.playerIndex;
       log.push(`${pLabel} declines to use triggered ability.`);
       s.challenge.pendingTrigger = undefined;
 
-      // If base trigger was declined, check for Tigh XO chain
-      if (isBaseTrigger) {
+      if (declinedAbility === "viper762-pilot") {
+        // Attacker declined Viper 762 — proceed to defender triggers
+        proceedToDefenderTriggers(s, bases);
+      } else if (declinedAbility !== "tigh-xo") {
+        // Base trigger declined — check for Tigh XO chain
         const tigh = findReserveTighXO(s.players[declineTriggerPlayerIdx]);
         if (tigh) {
           s.challenge.pendingTrigger = {
@@ -2457,13 +2528,19 @@ export function applyAction(
           s.activePlayerIndex = declineTriggerPlayerIdx;
           break;
         }
+        s.challenge.waitingForDefender = true;
+        s.activePlayerIndex =
+          s.challenge.defenderSelector === "challenger"
+            ? s.challenge.challengerPlayerIndex
+            : s.challenge.defenderPlayerIndex;
+      } else {
+        // Tigh XO declined
+        s.challenge.waitingForDefender = true;
+        s.activePlayerIndex =
+          s.challenge.defenderSelector === "challenger"
+            ? s.challenge.challengerPlayerIndex
+            : s.challenge.defenderPlayerIndex;
       }
-
-      s.challenge.waitingForDefender = true;
-      s.activePlayerIndex =
-        s.challenge.defenderSelector === "challenger"
-          ? s.challenge.challengerPlayerIndex
-          : s.challenge.defenderPlayerIndex;
       break;
     }
 
@@ -2806,10 +2883,12 @@ function startCylonPhase(s: GameState, log: LogItem[], bases: Record<string, Bas
   for (let i = 0; i < s.players.length; i++) {
     const card = revealTopCard(s.players[i], log, s.playerNames[i as 0 | 1]);
     const def = getCardDef(card.defId);
-    const threatPower = (def.cylonThreat ?? 0) + doralBonus;
+    const baseThreatPower = def.cylonThreat ?? 0;
+    const threatPower = baseThreatPower + doralBonus;
     s.cylonThreats.push({
       card,
       power: threatPower,
+      basePower: baseThreatPower,
       ownerIndex: i,
     });
     log.push(
@@ -4001,6 +4080,35 @@ function getPendingChoiceActions(state: GameState): ValidAction[] {
 function advanceChallengeEffectTurn(s: GameState): void {
   if (!s.challenge) return;
   s.activePlayerIndex = (s.activePlayerIndex + 1) % s.players.length;
+}
+
+/** After an attacker trigger resolves/declines, check defender-side triggers before defender selection. */
+function proceedToDefenderTriggers(s: GameState, bases: Record<string, BaseCardDef>): void {
+  if (!s.challenge) return;
+  const defenderIdx = s.challenge.defenderPlayerIndex;
+  const trigger = getOnChallengedTrigger(s, defenderIdx, bases);
+  if (trigger) {
+    s.challenge.pendingTrigger = { abilityId: trigger.abilityId, playerIndex: defenderIdx };
+    s.challenge.waitingForDefender = false;
+    s.activePlayerIndex = defenderIdx;
+  } else {
+    const tigh = findReserveTighXO(s.players[defenderIdx]);
+    if (tigh) {
+      s.challenge.pendingTrigger = {
+        abilityId: "tigh-xo",
+        playerIndex: defenderIdx,
+        sourceInstanceId: tigh.instanceId,
+      };
+      s.challenge.waitingForDefender = false;
+      s.activePlayerIndex = defenderIdx;
+    } else {
+      s.challenge.waitingForDefender = true;
+      s.activePlayerIndex =
+        s.challenge.defenderSelector === "challenger"
+          ? s.challenge.challengerPlayerIndex
+          : s.challenge.defenderPlayerIndex;
+    }
+  }
 }
 
 // ============================================================

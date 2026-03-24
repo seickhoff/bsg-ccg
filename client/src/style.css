@@ -493,10 +493,19 @@ body {
   line-height: 1;
 }
 
-.trait-grant-badge {
+.mod-badges {
   position: absolute;
   top: 2px;
   left: 3px;
+  right: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.trait-grant-badge {
   background: rgba(180, 40, 40, 0.9);
   color: #fff;
   font-size: 0.45rem;
@@ -506,13 +515,9 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.3px;
   line-height: 1;
-  pointer-events: none;
 }
 
 .keyword-grant-badge {
-  position: absolute;
-  top: 14px;
-  left: 3px;
   background: rgba(40, 120, 180, 0.9);
   color: #fff;
   font-size: 0.45rem;
@@ -522,13 +527,9 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.3px;
   line-height: 1;
-  pointer-events: none;
 }
 
 .trait-removal-badge {
-  position: absolute;
-  top: 14px;
-  left: 3px;
   background: rgba(120, 120, 120, 0.9);
   color: #fff;
   font-size: 0.45rem;
@@ -539,14 +540,22 @@ body {
   text-decoration: line-through;
   letter-spacing: 0.3px;
   line-height: 1;
-  pointer-events: none;
 }
 
 .immunity-badge {
-  position: absolute;
-  bottom: 18px;
-  left: 3px;
   background: rgba(200, 160, 40, 0.9);
+  color: #fff;
+  font-size: 0.45rem;
+  font-weight: 700;
+  padding: 1px 3px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1;
+}
+
+.threat-mod-badge {
+  background: rgba(180, 40, 40, 0.9);
   color: #fff;
   font-size: 0.45rem;
   font-weight: 700;
@@ -1185,6 +1194,33 @@ body {
   background: #f0c040;
 }
 
+.select-row-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid #555;
+  flex-shrink: 0;
+  position: relative;
+  transition: border-color 0.12s;
+}
+
+.select-row--selected .select-row-checkbox {
+  border-color: #f0c040;
+  background: #f0c040;
+}
+
+.select-row--selected .select-row-checkbox::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1a1a1a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .select-confirm-btn {
   background: #f0c040 !important;
   color: #1a1a1a !important;
@@ -1300,6 +1336,12 @@ body {
   font-size: 1rem;
   font-weight: 900;
   color: #f44336;
+}
+
+.threat-mod {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #aaa;
 }
 
 /* Cylon status summary in action modal */

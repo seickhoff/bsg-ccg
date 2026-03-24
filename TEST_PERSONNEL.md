@@ -1109,8 +1109,6 @@ __bsg_send({
 // Colonial One base (1 persuasion) + 2 supply cards = 3 persuasion. Play Billy (cost 3 persuasion) — should gain 1 influence
 ```
 
-TODO - start here
-
 ### Boomer, Raptor Pilot — "ETB: Draw a card"
 
 ```js
@@ -1139,7 +1137,7 @@ __bsg_send({
 __bsg_send({
   type: "debugSetup",
   scenario: {
-    player0: { baseId: "BSG1-004", hand: ["BSG1-139"], alert: [] },
+    player0: { baseId: "BSG1-002", hand: ["BSG1-139"], alert: [], baseSupplyCards: 4 },
     player1: { baseId: "BSG1-007", alert: ["BSG1-102"], influence: 10 },
     phase: "execution",
     turn: 3,

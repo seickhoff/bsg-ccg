@@ -824,6 +824,27 @@ function resolveAction(
           const preferredTarget = isNegative ? opponentIndex : playerIndex;
           targetId = `player-${action.selectablePlayerIndices.includes(preferredTarget) ? preferredTarget : action.selectablePlayerIndices[0]}`;
         }
+        // Multi-target: pick N targets (prefer opponent's units)
+        if (action.multiTargetCount && action.multiTargetCount > 1) {
+          const oppIdx = 1 - playerIndex;
+          const oppUnits = new Set<string>();
+          for (const s of state.players[oppIdx].zones.alert) {
+            if (s.cards[0]) oppUnits.add(s.cards[0].instanceId);
+          }
+          const selectable = action.selectableInstanceIds;
+          // Sort opponent units first
+          const sorted = [...selectable].sort((a, b) => {
+            const aOpp = oppUnits.has(a) ? 0 : 1;
+            const bOpp = oppUnits.has(b) ? 0 : 1;
+            return aOpp - bOpp;
+          });
+          return {
+            type: "playAbility",
+            sourceInstanceId: action.selectableInstanceIds[0],
+            targetInstanceIds: sorted.slice(0, action.multiTargetCount),
+            abilityIndex: action.abilityIndex,
+          };
+        }
         return {
           type: "playAbility",
           sourceInstanceId: action.selectableInstanceIds[0],
