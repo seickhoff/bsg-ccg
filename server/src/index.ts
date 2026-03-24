@@ -193,6 +193,14 @@ function assignWsToRoom(ws: WebSocket, room: GameRoom, playerIdx: number): void 
 function sendToPlayer(ws: WebSocket, msg: ServerMessage): void {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(msg));
+  } else {
+    const roomId = wsRoomMap.get(ws)?.id;
+    const pIdx = wsPlayerIndex.get(ws);
+    console.warn(
+      `[WS] Dropped ${msg.type} — readyState=${ws.readyState}` +
+        (roomId ? ` room=${roomId}` : "") +
+        (pIdx !== undefined ? ` player=${pIdx}` : ""),
+    );
   }
 }
 
@@ -200,6 +208,12 @@ function sendToPlayer(ws: WebSocket, msg: ServerMessage): void {
 function broadcastGameState(room: GameRoom): void {
   if (!room.gameState) return;
   room.lastActivityMs = Date.now();
+
+  // Keep game-state player names in sync with room player names
+  for (let i = 0; i < 2; i++) {
+    const name = room.players[i].name;
+    if (name) room.gameState.playerNames[i as 0 | 1] = name;
+  }
 
   const newLogEntries = room.gameState.log.slice(room.lastBroadcastLogLen);
   room.lastBroadcastLogLen = room.gameState.log.length;
@@ -656,6 +670,9 @@ wss.on("connection", (ws) => {
 
               if (reconnectedIdx >= 0) {
                 assignWsToRoom(ws, existing, reconnectedIdx);
+                if (msg.playerName) {
+                  existing.players[reconnectedIdx].name = msg.playerName;
+                }
               } else {
                 // Spectator reconnect
                 assignWsToRoom(ws, existing, -1);
@@ -757,6 +774,22 @@ wss.on("connection", (ws) => {
           const room = wsRoomMap.get(ws);
           if (room?.continueResolve) {
             room.continueResolve();
+          }
+          break;
+        }
+
+        case "resync": {
+          const room = wsRoomMap.get(ws);
+          if (!room?.gameState) break;
+          console.log(`[WS] Resync requested in ${room.id}`);
+          // Unstick any pending waitForContinue
+          if (room.continueResolve) {
+            console.warn(`[WS] Resync resolved stuck continueResolve in ${room.id}`);
+            room.continueResolve();
+          } else {
+            // Just re-send current state
+            room.lastBroadcastLogLen = 0;
+            broadcastGameState(room);
           }
           break;
         }
@@ -947,11 +980,18 @@ wss.on("connection", (ws) => {
 
   ws.on("close", (code: number, reason: Buffer) => {
     const reasonStr = reason.toString() || "none";
-    console.log(`WebSocket closed (code: ${code}, reason: ${reasonStr})`);
     const room = wsRoomMap.get(ws);
+    const pIdx = wsPlayerIndex.get(ws);
+    const phase = room?.gameState?.phase;
+    const hasChallenge = !!room?.gameState?.challenge;
+    const hasPendingContinue = !!room?.continueResolve;
+    console.log(
+      `[WS] Close code=${code} reason=${reasonStr}` +
+        (room ? ` room=${room.id} player=${pIdx} phase=${phase}` : "") +
+        (hasChallenge ? " challenge=active" : "") +
+        (hasPendingContinue ? " pendingContinue=true" : ""),
+    );
     if (room) {
-      const pIdx = wsPlayerIndex.get(ws);
-
       // Remove from player slot or spectator list
       if (pIdx !== undefined && pIdx >= 0) {
         room.players[pIdx].ws = null;
@@ -962,8 +1002,6 @@ wss.on("connection", (ws) => {
 
       wsRoomMap.delete(ws);
       wsPlayerIndex.delete(ws);
-
-      console.log(`Player disconnected from ${room.id}`);
 
       // Check if any humans are still connected
       const anyConnected = room.players.some((s) => s.ws !== null) || room.spectators.length > 0;
@@ -983,7 +1021,6 @@ wss.on("connection", (ws) => {
         roomCleanupTimers.set(room.id, timer);
       }
     }
-    console.log("Client disconnected");
   });
 });
 

@@ -37,6 +37,7 @@ let cardDefs: Record<string, CardDef> = {};
 let baseDefs: Record<string, BaseCardDef> = {};
 let onAction: ((action: GameAction) => void) | null = null;
 let onContinue: (() => void) | null = null;
+let onResync: (() => void) | null = null;
 let onResetGame: (() => void) | null = null;
 let playerName = "YOU";
 let currentLog: LogItem[] = [];
@@ -64,6 +65,10 @@ export function setActionHandler(handler: (action: GameAction) => void): void {
 
 export function setContinueHandler(handler: () => void): void {
   onContinue = handler;
+}
+
+export function setResyncHandler(handler: () => void): void {
+  onResync = handler;
 }
 
 export function setResetGameHandler(handler: () => void): void {
@@ -490,8 +495,7 @@ export function renderGame(
       ${state.cylonThreats.length > 0 ? renderCylonThreats(state.cylonThreats) : ""}
 
       <div class="hand-area">
-        <div class="hand-label">HAND (${state.you.hand.length} cards) | Deck: ${state.you.deckCount} | <span class="discard-link" id="your-discard-btn">Discard: ${state.you.discardCount}</span></div>
-        <div class="hand-label opp-info">Opponent — Hand: ${state.opponent.handCount} | Deck: ${state.opponent.deckCount} | <span class="discard-link" id="opp-discard-btn">Discard: ${state.opponent.discardCount}</span></div>
+        <div class="hand-label">Hand: ${state.you.hand.length} | Deck: ${state.you.deckCount} | <span class="discard-link" id="your-discard-btn">Disc: ${state.you.discardCount}</span> · Opp Hand: ${state.opponent.handCount} | Deck: ${state.opponent.deckCount} | <span class="discard-link" id="opp-discard-btn">Disc: ${state.opponent.discardCount}</span></div>
         <div class="hand-cards-wrapper">
           <div class="hand-scroll-hint hand-scroll-hint--left" id="hand-scroll-left">&#x2039;</div>
           <div class="hand-cards" id="hand-cards">
@@ -1850,7 +1854,7 @@ function renderActions(
     if (aiActing) {
       return '<div class="no-actions ai-acting"><div class="spinner-small"></div> Opponent is acting...</div>';
     }
-    return '<div class="no-actions">Waiting for opponent...</div>';
+    return '<div class="no-actions">Waiting for opponent... <button class="resync-btn">Resync</button></div>';
   }
 
   // Action buttons are now shown in the player action modal
@@ -1936,6 +1940,11 @@ function attachEventListeners(
   // Log button
   container.querySelector("#log-btn")?.addEventListener("click", () => {
     showLogModal();
+  });
+
+  // Resync button (shown when stuck waiting)
+  container.querySelector(".resync-btn")?.addEventListener("click", () => {
+    onResync?.();
   });
 
   // New Game button

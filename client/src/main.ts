@@ -12,6 +12,7 @@ import {
   setCardRegistry,
   setActionHandler,
   setContinueHandler,
+  setResyncHandler,
   setResetGameHandler,
   setPlayerName,
 } from "./renderer.js";
@@ -86,6 +87,7 @@ function newGame(): void {
 
 setActionHandler(sendAction);
 setContinueHandler(() => sendMessage({ type: "continue" }));
+setResyncHandler(() => sendMessage({ type: "resync" }));
 setResetGameHandler(newGame);
 
 function handleDeckSubmit(submission: DeckSubmission): void {
@@ -213,6 +215,21 @@ function renderSplash(): void {
   if (nameInput.value) nameInput.select();
 }
 
+// --- Reconnecting Banner ---
+
+function showReconnectingBanner(): void {
+  if (document.getElementById("reconnecting-banner")) return;
+  const banner = document.createElement("div");
+  banner.id = "reconnecting-banner";
+  banner.className = "reconnecting-banner";
+  banner.innerHTML = '<div class="spinner-small"></div> Reconnecting...';
+  document.body.appendChild(banner);
+}
+
+function hideReconnectingBanner(): void {
+  document.getElementById("reconnecting-banner")?.remove();
+}
+
 // --- WebSocket Connection ---
 
 function connect(): void {
@@ -239,16 +256,18 @@ function connect(): void {
       pendingJoin = null;
     } else if (currentRoomId) {
       // Reconnecting to existing room (tab refresh / background reconnect)
-      sendMessage({ type: "joinGame", roomId: currentRoomId });
+      const savedName = localStorage.getItem("bsg-player-name") || "Commander";
+      sendMessage({ type: "joinGame", roomId: currentRoomId, playerName: savedName });
     } else {
       // Fallback: vs-ai
-      sendMessage({ type: "joinGame", mode: "vs-ai" });
+      const fallbackName = localStorage.getItem("bsg-player-name") || "Commander";
+      sendMessage({ type: "joinGame", mode: "vs-ai", playerName: fallbackName });
     }
   });
 
   ws.addEventListener("close", (event) => {
     console.log(
-      `Disconnected (code: ${event.code}, reason: ${event.reason || "none"}, clean: ${event.wasClean})`,
+      `[WS] Disconnected code=${event.code} reason=${event.reason || "none"} clean=${event.wasClean} room=${currentRoomId}`,
     );
     if (intentionalDisconnect) {
       intentionalDisconnect = false;
@@ -259,12 +278,12 @@ function connect(): void {
     const delay = Math.min(500 * Math.pow(1.5, reconnectAttempts), 5000);
     reconnectAttempts++;
 
-    // Silent reconnect — game UI stays untouched
+    showReconnectingBanner();
     reconnectTimer = setTimeout(connect, delay);
   });
 
-  ws.addEventListener("error", (event) => {
-    console.error("WebSocket error:", event);
+  ws.addEventListener("error", () => {
+    console.error(`[WS] Error — readyState=${ws?.readyState} room=${currentRoomId}`);
   });
 
   ws.addEventListener("message", (event) => {
@@ -317,6 +336,7 @@ function connect(): void {
         break;
 
       case "gameState":
+        hideReconnectingBanner();
         try {
           fullLog.push(...msg.log);
           renderGame(app, msg.state, msg.validActions, fullLog, msg.aiActing, msg.notification);

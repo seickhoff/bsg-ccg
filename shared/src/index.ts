@@ -482,6 +482,7 @@ export type ClientMessage =
   | { type: "submitDeck"; baseId: string; deckCardIds: string[] }
   | { type: "action"; action: GameAction }
   | { type: "continue" }
+  | { type: "resync" }
   | { type: "resetGame" }
   | { type: "debugSetup"; scenario: DebugScenario };
 

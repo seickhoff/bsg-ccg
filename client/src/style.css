@@ -1525,6 +1525,10 @@ body {
   flex-shrink: 0;
 }
 
+.actions-bar:not(:has(*)) {
+  display: none;
+}
+
 .action-btn {
   padding: 0.3rem 0.75rem;
   border: 1px solid #444;
