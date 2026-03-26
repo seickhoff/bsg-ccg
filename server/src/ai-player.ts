@@ -17,9 +17,19 @@ import { dispatchAIDecidePendingChoice } from "./pending-choice-registry.js";
 // Pure function: given game state + valid actions, returns a GameAction.
 // ============================================================
 
-/** Classify the effect an ability has on its target. */
+/** Classify the effect an ability has on its target.
+ *  Checks what happens to the TARGET — costs like "commit a unit you control" are ignored.
+ */
 function classifyEffect(abilityText: string): "buff" | "debuff" | "neutral" {
   const text = abilityText.toLowerCase();
+  // Check what happens to the "target" specifically — power changes on the target take priority
+  // because cost phrases like "commit a unit you control" aren't the effect on the target
+  if (/target.*\+\d+\s*power/.test(text) || /target.*gets\s+\+/.test(text)) {
+    return "buff";
+  }
+  if (/target.*\-\d+\s*power/.test(text) || /target.*gets\s+\-/.test(text)) {
+    return "debuff";
+  }
   // Debuff: harmful to the target
   if (
     text.includes("defeat") ||
@@ -195,27 +205,78 @@ function decideResourcePlay(
     return { type: "passResource" };
   }
 
-  // Prefer playing an asset that matches our base resource
+  // Pick the best card to play as a resource (prefer matching base resource, then any resource card)
+  let bestCardIdx = -1;
   for (const idx of deployAction.selectableCardIndices) {
     const card = player.hand[idx];
     if (!card) continue;
     const def = registry.cards[card.defId];
     if (def?.resource === baseDef?.resource) {
-      return { type: "playToResource", cardIndex: idx, asSupply: false };
+      bestCardIdx = idx;
+      break; // perfect match
+    }
+    if (def?.resource && bestCardIdx < 0) {
+      bestCardIdx = idx;
     }
   }
 
-  // Any card with a resource as an asset
-  for (const idx of deployAction.selectableCardIndices) {
-    const card = player.hand[idx];
-    if (!card) continue;
-    const def = registry.cards[card.defId];
-    if (def?.resource) {
-      return { type: "playToResource", cardIndex: idx, asSupply: false };
+  // Decide: play as asset (new stack) or supply (grow an existing stack)
+  // Target stack sizes per resource type: 1, 2, 4 — binary encoding for efficient spending
+  if (bestCardIdx >= 0) {
+    const card = player.hand[bestCardIdx];
+    const def = card ? registry.cards[card.defId] : null;
+    const resType = def?.resource;
+
+    if (resType && deployAction.selectableStackIndices?.length) {
+      // Get current stack sizes for this resource type
+      const stacksOfType: { index: number; size: number }[] = [];
+      for (const stackIdx of deployAction.selectableStackIndices) {
+        const stack = player.zones.resourceStacks[stackIdx];
+        if (!stack) continue;
+        const stackBase = registry.bases[stack.topCard.defId];
+        const stackRes = stackBase
+          ? stackBase.resource
+          : registry.cards[stack.topCard.defId]?.resource;
+        if (stackRes === resType) {
+          stacksOfType.push({ index: stackIdx, size: 1 + stack.supplyCards.length });
+        }
+      }
+
+      // Target pattern: [4, 2, 1] — find the first target size we haven't reached
+      const targets = [4, 2, 1];
+      const sizes = stacksOfType.map((s) => s.size).sort((a, b) => b - a);
+
+      let supplyTarget: { index: number; size: number } | null = null;
+      for (const target of targets) {
+        // Check if we have a stack at or above this target size
+        const hasTarget = sizes.some((s) => s >= target);
+        if (!hasTarget) {
+          // Find the largest stack below this target to grow
+          const candidate = stacksOfType
+            .filter((s) => s.size < target)
+            .sort((a, b) => b.size - a.size)[0];
+          if (candidate) {
+            supplyTarget = candidate;
+            break;
+          }
+        }
+      }
+
+      if (supplyTarget) {
+        return {
+          type: "playToResource",
+          cardIndex: bestCardIdx,
+          asSupply: true,
+          targetStackIndex: supplyTarget.index,
+        };
+      }
     }
+
+    // No supply needed — play as new asset
+    return { type: "playToResource", cardIndex: bestCardIdx, asSupply: false };
   }
 
-  // Fall back to supply card under first stack
+  // No resource card available — play any card as supply under best stack
   if (deployAction.selectableStackIndices?.length) {
     return {
       type: "playToResource",
@@ -244,9 +305,25 @@ function decideExecution(
     if (bestPlay) return bestPlay;
   }
 
-  // Priority 2: Resolve a mission if possible
-  const missionAction = actions.find((a) => a.type === "resolveMission");
-  if (missionAction) {
+  // Priority 2: Resolve a mission if possible (skip dangerous or self-harmful missions)
+  const missionActions = actions.filter((a) => a.type === "resolveMission");
+  for (const missionAction of missionActions) {
+    const mDefId = missionAction.cardDefId;
+    const mDef = mDefId ? registry.cards[mDefId] : null;
+    if (mDef) {
+      const effect = classifyMissionEffect(mDef.abilityText);
+      if (effect === "neutral" && isNeutralMissionDangerous(mDef.abilityText, player)) {
+        continue; // skip — would kill us or leave us too vulnerable
+      }
+      // Skip harm-target missions if we can only target ourselves
+      if (effect === "harm-target" && missionAction.missionTargetIds?.length) {
+        const oppIdx = 1 - playerIndex;
+        const hasOppTarget = missionAction.missionTargetIds.some((id) =>
+          isOpponentUnit(state, oppIdx, id),
+        );
+        if (!hasOppTarget) continue;
+      }
+    }
     return resolveAction(missionAction, state, playerIndex, registry);
   }
 
@@ -422,8 +499,13 @@ function decideChallengeEffects(
     if (buffOwn) {
       return resolveAction(buffOwn, state, playerIndex, registry);
     }
-    // Only use player-targeting base abilities if they help us (e.g. skip Galactica self-damage)
+    // Only use base abilities that target our own unit (never buff the opponent)
+    const oppUnitId = isChallenger
+      ? state.challenge?.defenderInstanceId
+      : state.challenge?.challengerInstanceId;
     const beneficial = baseAbilityActions.find((a) => {
+      // Never target the opponent's unit with a buff
+      if (a.targetInstanceId && a.targetInstanceId === oppUnitId) return false;
       if (!a.cardDefId) return false;
       const baseDef = registry.bases[a.cardDefId];
       if (!baseDef) return false;
@@ -551,6 +633,119 @@ function isOpponentUnit(state: GameState, oppIdx: number, instanceId: string): b
     for (const stack of zone) {
       if (stack.cards[0]?.instanceId === instanceId) return true;
     }
+  }
+  return false;
+}
+
+/**
+ * Analyze what traits/types the AI's unresolved missions need.
+ * Returns a list of trait/type requirements from missions in hand and alert.
+ */
+function getMissionNeeds(player: PlayerState, registry: CardRegistry): string[] {
+  const needs: string[] = [];
+  // Check missions in hand
+  for (const card of player.hand) {
+    const def = registry.cards[card.defId];
+    if (def?.type !== "mission" || !def.resolveText) continue;
+    const match = def.resolveText.match(/Resolve:\s*(.+)/);
+    if (!match) continue;
+    const parts = match[1].replace(/\.$/, "").split(/\s+and\s+/);
+    for (const part of parts) {
+      const m = part.trim().match(/^\d+\s+(.+?)s?$/);
+      if (m) needs.push(m[1].toLowerCase());
+    }
+  }
+  // Check missions already in alert (waiting to be resolved)
+  for (const stack of player.zones.alert) {
+    const top = stack.cards[0];
+    if (!top?.faceUp) continue;
+    const def = registry.cards[top.defId];
+    if (def?.type !== "mission" || !def.resolveText) continue;
+    const match = def.resolveText.match(/Resolve:\s*(.+)/);
+    if (!match) continue;
+    const parts = match[1].replace(/\.$/, "").split(/\s+and\s+/);
+    for (const part of parts) {
+      const m = part.trim().match(/^\d+\s+(.+?)s?$/);
+      if (m) needs.push(m[1].toLowerCase());
+    }
+  }
+  return needs;
+}
+
+/**
+ * Check if a unit def satisfies any of the mission needs.
+ */
+function unitSatisfiesMissionNeed(def: CardDef, needs: string[]): boolean {
+  for (const need of needs) {
+    if (need === "ship" || need === "ships") {
+      if (def.type === "ship") return true;
+    } else if (need === "personnel") {
+      if (def.type === "personnel") return true;
+    } else if (need === "unit" || need === "units") {
+      if (def.type === "personnel" || def.type === "ship") return true;
+    } else if (need.includes("cylon")) {
+      if (def.traits?.includes("Cylon")) return true;
+    } else if (need.includes("civilian")) {
+      if (def.traits?.includes("Civilian")) return true;
+    } else {
+      // Trait match: "officer" → "Officer", "pilot" → "Pilot", etc.
+      const traitName = need.charAt(0).toUpperCase() + need.slice(1).replace(/s$/, "");
+      if (def.traits?.some((t) => t === traitName)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Classify a mission's resolve effect for AI decision-making.
+ * - "harm-target": hurts a specific target (use on opponent)
+ * - "neutral": affects all players equally (ok unless it would kill us)
+ * - "benefit-self": benefits the resolver (always good)
+ */
+function classifyMissionEffect(abilityText: string): "harm-target" | "neutral" | "benefit-self" {
+  const text = abilityText.toLowerCase();
+  // Neutral: affects all players equally
+  if (text.includes("each player") || text.includes("all player")) {
+    return "neutral";
+  }
+  // Missions that harm a specific target
+  if (
+    text.includes("target") &&
+    (text.includes("loses") ||
+      text.includes("lose") ||
+      text.includes("defeat") ||
+      text.includes("sacrifice") ||
+      text.includes("commit") ||
+      text.includes("exhaust") ||
+      text.includes("on top of") ||
+      (text.includes("into") && text.includes("deck")) ||
+      (text.includes("return") && text.includes("hand")) ||
+      text.includes("discard") ||
+      text.includes("gains the cylon trait"))
+  ) {
+    return "harm-target";
+  }
+  return "benefit-self";
+}
+
+/**
+ * Check if resolving a neutral mission would be dangerous for the AI.
+ * E.g., "each player loses 2 influence" when AI has <= 2 influence.
+ */
+function isNeutralMissionDangerous(abilityText: string, player: PlayerState): boolean {
+  const text = abilityText.toLowerCase();
+  // Check for influence loss patterns: "each player loses X influence", "lose X influence"
+  const lossMatch = text.match(/(?:lose|loses)\s+(\d+)\s+influence/);
+  if (lossMatch) {
+    const loss = parseInt(lossMatch[1]);
+    if (player.influence <= loss) return true;
+  }
+  // Check for sacrifice patterns when AI has few units
+  if (text.includes("sacrifice") && (text.includes("personnel") || text.includes("unit"))) {
+    const unitCount = [...player.zones.alert, ...player.zones.reserve].filter(
+      (s) => s.cards[0]?.faceUp,
+    ).length;
+    if (unitCount <= 1) return true;
   }
   return false;
 }
@@ -722,6 +917,13 @@ function pickBestCardToPlay(
       if (def.type === "personnel" || def.type === "ship") score += 10;
       // Prefer higher power
       if (def.power) score += def.power * 3;
+      // Boost units that satisfy mission requirements (deploy toward resolving missions)
+      if (def.type === "personnel" || def.type === "ship") {
+        const needs = getMissionNeeds(player, registry);
+        if (needs.length > 0 && unitSatisfiesMissionNeed(def, needs)) {
+          score += 6; // significant boost to prioritize mission-enabling units
+        }
+      }
       // Prefer missions (free to play) — persistent/link are higher value
       if (def.type === "mission") {
         const cat = def.abilityId ? getMissionCategory(def.abilityId) : "one-shot";
@@ -729,7 +931,7 @@ function pickBestCardToPlay(
       }
       // Events scored by abilityId
       if (def.type === "event") {
-        score += scoreExecutionEvent(def, state, playerIndex);
+        score += scoreExecutionEvent(def, state, playerIndex, registry);
         // If event needs a target but none available, skip it
         if (def.abilityId) {
           const targets = getEventTargets(def.abilityId, state, playerIndex, "execution");
@@ -745,7 +947,7 @@ function pickBestCardToPlay(
     }
   }
 
-  if (bestIndex >= 0) {
+  if (bestIndex >= 0 && bestScore > 0) {
     const card = player.hand[bestIndex];
     const def = card ? registry.cards[card.defId] : null;
     // For events with targets, pick the best target
@@ -956,9 +1158,36 @@ function resolveAction(
 
     case "resolveMission":
       if (action.selectableInstanceIds?.length) {
+        // Pick a target for missions that require one
+        let missionTarget: string | undefined;
+        if (action.missionTargetIds?.length) {
+          const oppIdx = 1 - playerIndex;
+          const missionDefId = action.cardDefId;
+          const missionDef = missionDefId ? registry.cards[missionDefId] : null;
+          const effect = missionDef ? classifyMissionEffect(missionDef.abilityText) : "harm-target";
+
+          if (effect === "harm-target") {
+            // Target opponent's units for harmful missions
+            const oppTarget = action.missionTargetIds.find((id) =>
+              isOpponentUnit(state, oppIdx, id),
+            );
+            // Prefer opponent target; fallback to first (caller pre-filters dangerous cases)
+            missionTarget = oppTarget ?? action.missionTargetIds[0];
+          } else if (effect === "neutral") {
+            // Neutral effects affect all players — just pick first valid target
+            missionTarget = action.missionTargetIds[0];
+          } else {
+            // Beneficial — target own units
+            const ownTarget = action.missionTargetIds.find((id) =>
+              isOwnUnit(state, playerIndex, id),
+            );
+            missionTarget = ownTarget ?? action.missionTargetIds[0];
+          }
+        }
         return {
           type: "resolveMission",
           missionInstanceId: action.selectableInstanceIds[0],
+          targetInstanceId: missionTarget,
           unitInstanceIds: [],
         };
       }
@@ -1123,7 +1352,30 @@ function opponentHasUnits(state: GameState, playerIndex: number): boolean {
   );
 }
 
-function scoreExecutionEvent(def: CardDef, state: GameState, playerIndex: number): number {
+function opponentHasPersonnel(
+  state: GameState,
+  playerIndex: number,
+  registry: CardRegistry,
+): boolean {
+  const opp = state.players[1 - playerIndex];
+  for (const zone of [opp.zones.alert, opp.zones.reserve]) {
+    for (const stack of zone) {
+      if (stack.exhausted) continue;
+      const top = stack.cards[0];
+      if (!top) continue;
+      const def = registry.cards[top.defId];
+      if (def?.type === "personnel") return true;
+    }
+  }
+  return false;
+}
+
+function scoreExecutionEvent(
+  def: CardDef,
+  state: GameState,
+  playerIndex: number,
+  registry?: CardRegistry,
+): number {
   const id = def.abilityId;
   if (!id) return 1;
 
@@ -1136,6 +1388,20 @@ function scoreExecutionEvent(def: CardDef, state: GameState, playerIndex: number
     "still-no-contact",
   ];
   if (needsOpponentUnits.includes(id) && !opponentHasUnits(state, playerIndex)) return 0;
+
+  // Don't waste events that need opponent personnel when they have none
+  const needsOpponentPersonnel: string[] = [
+    "military-coup",
+    "distraction",
+    "under-arrest",
+    "stranded",
+  ];
+  if (
+    needsOpponentPersonnel.includes(id) &&
+    registry &&
+    !opponentHasPersonnel(state, playerIndex, registry)
+  )
+    return 0;
 
   // Removal / defeat events — very strong
   if (
