@@ -682,8 +682,40 @@ wss.on("connection", (ws) => {
               sendToPlayer(ws, { type: "joined", roomId: existing.id });
               sendToPlayer(ws, { type: "cardRegistry", registry });
               if (existing.gameState) {
+                // Unstick any pending waitForContinue (human is back to click Continue)
+                if (existing.continueResolve) {
+                  console.warn(`[WS] Reconnect resolved stuck continueResolve in ${existing.id}`);
+                  existing.continueResolve();
+                }
                 existing.lastBroadcastLogLen = 0;
                 broadcastGameState(existing);
+                // Restart stalled AI loop if needed
+                if (
+                  !existing.aiProcessing &&
+                  !existing.continueResolve &&
+                  existing.gameState.phase !== "gameOver"
+                ) {
+                  const aiNeedsToAct = existing.players.some((slot, i) => {
+                    if (slot.type !== "ai") return false;
+                    if (!canPlayerAct(existing.gameState!, i)) return false;
+                    try {
+                      return getValidActions(existing.gameState!, i, bases).length > 0;
+                    } catch {
+                      return false;
+                    }
+                  });
+                  if (aiNeedsToAct) {
+                    console.warn(`[WS] Reconnect restarting stalled AI loop in ${existing.id}`);
+                    const gen = existing.gameGeneration;
+                    processAITurns(existing).catch((err) => {
+                      console.error(`AI processing error in ${existing.id}:`, err);
+                      if (existing.gameGeneration === gen) {
+                        existing.aiProcessing = false;
+                        broadcastGameState(existing);
+                      }
+                    });
+                  }
+                }
               } else if (reconnectedIdx >= 0 && existing.players[reconnectedIdx].type === "human") {
                 sendToPlayer(ws, { type: "deckRequired" });
               }
@@ -786,10 +818,33 @@ wss.on("connection", (ws) => {
           if (room.continueResolve) {
             console.warn(`[WS] Resync resolved stuck continueResolve in ${room.id}`);
             room.continueResolve();
-          } else {
-            // Just re-send current state
-            room.lastBroadcastLogLen = 0;
-            broadcastGameState(room);
+          }
+          // Always re-send current state so the client gets a fresh view
+          room.lastBroadcastLogLen = 0;
+          broadcastGameState(room);
+
+          // If the AI loop isn't running but an AI player should act, restart it
+          if (!room.aiProcessing && !room.continueResolve && room.gameState.phase !== "gameOver") {
+            const aiNeedsToAct = room.players.some((slot, i) => {
+              if (slot.type !== "ai") return false;
+              if (!canPlayerAct(room.gameState!, i)) return false;
+              try {
+                return getValidActions(room.gameState!, i, bases).length > 0;
+              } catch {
+                return false;
+              }
+            });
+            if (aiNeedsToAct) {
+              console.warn(`[WS] Resync restarting stalled AI loop in ${room.id}`);
+              const gen = room.gameGeneration;
+              processAITurns(room).catch((err) => {
+                console.error(`AI processing error in ${room.id}:`, err);
+                if (room.gameGeneration === gen) {
+                  room.aiProcessing = false;
+                  broadcastGameState(room);
+                }
+              });
+            }
           }
           break;
         }

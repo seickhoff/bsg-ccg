@@ -87,7 +87,10 @@ function newGame(): void {
 
 setActionHandler(sendAction);
 setContinueHandler(() => sendMessage({ type: "continue" }));
-setResyncHandler(() => sendMessage({ type: "resync" }));
+setResyncHandler(() => {
+  fullLog = []; // Clear log before resync — server will re-send full log
+  sendMessage({ type: "resync" });
+});
 setResetGameHandler(newGame);
 
 function handleDeckSubmit(submission: DeckSubmission): void {
@@ -358,6 +361,15 @@ function connect(): void {
     }
   });
 }
+
+// --- Debug: Ctrl+Shift+D to simulate WS disconnect ---
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.shiftKey && e.key === "D" && ws) {
+    console.warn("[DEBUG] Simulating WS disconnect");
+    ws.close();
+    ws = null; // prevent auto-reconnect so you can manually hit Resync
+  }
+});
 
 // --- Reconnect when tab regains focus (background tabs kill sockets) ---
 document.addEventListener("visibilitychange", () => {

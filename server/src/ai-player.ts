@@ -17,6 +17,47 @@ import { dispatchAIDecidePendingChoice } from "./pending-choice-registry.js";
 // Pure function: given game state + valid actions, returns a GameAction.
 // ============================================================
 
+/** Classify the effect an ability has on its target. */
+function classifyEffect(abilityText: string): "buff" | "debuff" | "neutral" {
+  const text = abilityText.toLowerCase();
+  // Debuff: harmful to the target
+  if (
+    text.includes("defeat") ||
+    text.includes("commit") ||
+    text.includes("exhaust") ||
+    text.includes("loses") ||
+    text.includes("lose") ||
+    text.includes("discard") ||
+    text.includes("destroy") ||
+    /\-\d+\s*power/.test(text)
+  ) {
+    return "debuff";
+  }
+  // Buff: beneficial to the target
+  if (
+    text.includes("ready") ||
+    text.includes("restore") ||
+    text.includes("draw") ||
+    text.includes("gain") ||
+    text.includes("search") ||
+    /\+\d+\s*power/.test(text)
+  ) {
+    return "buff";
+  }
+  return "neutral";
+}
+
+/** Check if a unit instanceId belongs to the given player. */
+function isOwnUnit(state: GameState, playerIndex: number, instanceId: string): boolean {
+  const player = state.players[playerIndex];
+  for (const zone of [player.zones.alert, player.zones.reserve]) {
+    for (const stack of zone) {
+      if (stack.cards[0]?.instanceId === instanceId) return true;
+    }
+  }
+  return false;
+}
+
 /** Compute optimal stack selection (minimize waste) for a given cost. */
 function computeOptimalStacksAI(
   player: PlayerState,
@@ -402,16 +443,34 @@ function decideChallengeEffects(
     (a) => a.type === "playAbility" && a.cardDefId && !registry.bases[a.cardDefId],
   );
   if (unitAbilityActions.length > 0) {
-    // Prefer abilities that target our own challenger/defender for buffs
     const ownUnitId2 = isChallenger
       ? state.challenge?.challengerInstanceId
       : state.challenge?.defenderInstanceId;
-    const buffOwn2 = unitAbilityActions.find((a) => a.targetInstanceId === ownUnitId2);
-    if (buffOwn2) {
-      return resolveAction(buffOwn2, state, playerIndex, registry);
+    const oppUnitId2 = isChallenger
+      ? state.challenge?.defenderInstanceId
+      : state.challenge?.challengerInstanceId;
+
+    for (const ua of unitAbilityActions) {
+      const uaDefId = ua.cardDefId;
+      if (!uaDefId) continue;
+      const uaDef = registry.cards[uaDefId];
+      if (!uaDef) continue;
+      const effect = classifyEffect(uaDef.abilityText);
+
+      // Buff targeting own challenge unit — good
+      if (effect === "buff" && ua.targetInstanceId === ownUnitId2) {
+        return resolveAction(ua, state, playerIndex, registry);
+      }
+      // Debuff targeting opponent's challenge unit — good
+      if (effect === "debuff" && ua.targetInstanceId === oppUnitId2) {
+        return resolveAction(ua, state, playerIndex, registry);
+      }
+      // Neutral — use it
+      if (effect === "neutral") {
+        return resolveAction(ua, state, playerIndex, registry);
+      }
     }
-    // Use other unit abilities (debuffs, etc.)
-    return resolveAction(unitAbilityActions[0], state, playerIndex, registry);
+    // No safe unit ability to use — fall through to events
   }
 
   // Priority 3: Play events during challenge — score by abilityId
@@ -582,21 +641,21 @@ function decideCylonPhase(
 /** Pick the best ability action to use during execution phase. */
 function pickBestAbilityAction(
   abilityActions: ValidAction[],
-  _state: GameState,
-  _playerIndex: number,
+  state: GameState,
+  playerIndex: number,
   registry: CardRegistry,
 ): ValidAction | null {
-  // Score each ability action
   let bestAction: ValidAction | null = null;
   let bestScore = 0;
+  const oppIdx = 1 - playerIndex;
 
   for (const action of abilityActions) {
     const defId = action.cardDefId;
     if (!defId) continue;
-    const def = registry.cards[defId];
+    const def = registry.cards[defId] ?? registry.bases[defId];
     if (!def) continue;
 
-    let score = 1; // Base score for having an ability
+    let score = 1;
     const text = def.abilityText.toLowerCase();
 
     // High value: draw cards, gain influence, defeat opponent units
@@ -612,6 +671,22 @@ function pickBestAbilityAction(
 
     // Lower value: complex or situational
     if (text.includes("sacrifice")) score -= 2;
+
+    // Target-safety check: ensure we don't debuff own units or buff opponent units
+    if (score > 0 && action.selectableInstanceIds?.length) {
+      const effect = classifyEffect(def.abilityText);
+      if (effect === "debuff") {
+        const hasOppTarget = action.selectableInstanceIds.some((id) =>
+          isOpponentUnit(state, oppIdx, id),
+        );
+        if (!hasOppTarget) score = -1;
+      } else if (effect === "buff") {
+        const hasOwnTarget = action.selectableInstanceIds.some((id) =>
+          isOwnUnit(state, playerIndex, id),
+        );
+        if (!hasOwnTarget) score = -1;
+      }
+    }
 
     if (score > bestScore) {
       bestScore = score;
@@ -806,53 +881,78 @@ function resolveAction(
       }
       return { type: "passResource" };
 
-    case "playAbility":
-      if (action.selectableInstanceIds?.length) {
-        // Player-targeting base abilities: pick opponent for negative effects, self for positive
-        let targetId = action.targetInstanceId;
-        if (!targetId && action.selectablePlayerIndices?.length) {
-          const opponentIndex = playerIndex === 0 ? 1 : 0;
-          const defId = action.cardDefId;
-          const text = defId
-            ? (
-                registry.bases[defId]?.abilityText ??
-                registry.cards[defId]?.abilityText ??
-                ""
-              ).toLowerCase()
-            : "";
-          const isNegative = text.includes("loses") || text.includes("lose");
-          const preferredTarget = isNegative ? opponentIndex : playerIndex;
-          targetId = `player-${action.selectablePlayerIndices.includes(preferredTarget) ? preferredTarget : action.selectablePlayerIndices[0]}`;
+    case "playAbility": {
+      if (!action.selectableInstanceIds?.length) return { type: "pass" };
+      const abDefId = action.cardDefId;
+      const abText = abDefId
+        ? (registry.bases[abDefId]?.abilityText ?? registry.cards[abDefId]?.abilityText ?? "")
+        : "";
+      const abEffect = classifyEffect(abText);
+      const abOppIdx = 1 - playerIndex;
+
+      // Player-targeting base abilities: pick opponent for negative effects, self for positive
+      let targetId = action.targetInstanceId;
+      if (!targetId && action.selectablePlayerIndices?.length) {
+        const isNegative = abEffect === "debuff";
+        const preferredTarget = isNegative ? abOppIdx : playerIndex;
+        targetId = `player-${action.selectablePlayerIndices.includes(preferredTarget) ? preferredTarget : action.selectablePlayerIndices[0]}`;
+      }
+
+      // Multi-target: sort targets based on effect type
+      if (action.multiTargetCount && action.multiTargetCount > 1) {
+        const ownUnits = new Set<string>();
+        for (const s of state.players[playerIndex].zones.alert) {
+          if (s.cards[0]) ownUnits.add(s.cards[0].instanceId);
         }
-        // Multi-target: pick N targets (prefer opponent's units)
-        if (action.multiTargetCount && action.multiTargetCount > 1) {
-          const oppIdx = 1 - playerIndex;
-          const oppUnits = new Set<string>();
-          for (const s of state.players[oppIdx].zones.alert) {
-            if (s.cards[0]) oppUnits.add(s.cards[0].instanceId);
+        const oppUnits = new Set<string>();
+        for (const s of state.players[abOppIdx].zones.alert) {
+          if (s.cards[0]) oppUnits.add(s.cards[0].instanceId);
+        }
+        const selectable = action.selectableInstanceIds;
+        const sorted = [...selectable].sort((a, b) => {
+          if (abEffect === "buff") {
+            // Own units first for buffs
+            const aOwn = ownUnits.has(a) ? 0 : 1;
+            const bOwn = ownUnits.has(b) ? 0 : 1;
+            return aOwn - bOwn;
           }
-          const selectable = action.selectableInstanceIds;
-          // Sort opponent units first
-          const sorted = [...selectable].sort((a, b) => {
-            const aOpp = oppUnits.has(a) ? 0 : 1;
-            const bOpp = oppUnits.has(b) ? 0 : 1;
-            return aOpp - bOpp;
-          });
-          return {
-            type: "playAbility",
-            sourceInstanceId: action.selectableInstanceIds[0],
-            targetInstanceIds: sorted.slice(0, action.multiTargetCount),
-            abilityIndex: action.abilityIndex,
-          };
-        }
+          // Opponent units first for debuffs/neutral
+          const aOpp = oppUnits.has(a) ? 0 : 1;
+          const bOpp = oppUnits.has(b) ? 0 : 1;
+          return aOpp - bOpp;
+        });
         return {
           type: "playAbility",
           sourceInstanceId: action.selectableInstanceIds[0],
-          targetInstanceId: targetId,
+          targetInstanceIds: sorted.slice(0, action.multiTargetCount),
           abilityIndex: action.abilityIndex,
         };
       }
-      return { type: "pass" };
+
+      // Single-target: if no target yet, pick based on effect type
+      if (!targetId && action.selectableInstanceIds.length > 1) {
+        if (abEffect === "debuff") {
+          const oppTarget = action.selectableInstanceIds.find((id) =>
+            isOpponentUnit(state, abOppIdx, id),
+          );
+          if (oppTarget) targetId = oppTarget;
+          else return { type: "pass" };
+        } else if (abEffect === "buff") {
+          const ownTarget = action.selectableInstanceIds.find((id) =>
+            isOwnUnit(state, playerIndex, id),
+          );
+          if (ownTarget) targetId = ownTarget;
+          else return { type: "pass" };
+        }
+      }
+
+      return {
+        type: "playAbility",
+        sourceInstanceId: action.selectableInstanceIds[0],
+        targetInstanceId: targetId,
+        abilityIndex: action.abilityIndex,
+      };
+    }
 
     case "resolveMission":
       if (action.selectableInstanceIds?.length) {
@@ -945,13 +1045,9 @@ function pickEventTarget(
   if (targets.length === 1) return targets[0];
 
   const player = state.players[playerIndex];
-  const abilityText = def.abilityText?.toLowerCase() ?? "";
-  const isBuff = abilityText.includes("+") && abilityText.includes("power");
-  const isDebuff =
-    abilityText.includes("defeat") ||
-    abilityText.includes("commit") ||
-    abilityText.includes("exhaust") ||
-    (abilityText.includes("-") && abilityText.includes("power"));
+  const effect = classifyEffect(def.abilityText ?? "");
+  const isBuff = effect === "buff";
+  const isDebuff = effect === "debuff";
 
   // During a challenge, prefer our own challenger/defender for buffs, opponent's for debuffs
   if (state.challenge) {

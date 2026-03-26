@@ -179,24 +179,30 @@ function getAllUnits(state: GameState): {
   for (let pi = 0; pi < state.players.length; pi++) {
     const p = state.players[pi];
     for (const stack of p.zones.alert) {
-      if (stack.cards[0])
-        results.push({
-          player: p,
-          playerIndex: pi,
-          stack,
-          zone: "alert",
-          instanceId: stack.cards[0].instanceId,
-        });
+      if (stack.cards[0]) {
+        const def = cardRegistry[stack.cards[0].defId];
+        if (def && (def.type === "personnel" || def.type === "ship"))
+          results.push({
+            player: p,
+            playerIndex: pi,
+            stack,
+            zone: "alert",
+            instanceId: stack.cards[0].instanceId,
+          });
+      }
     }
     for (const stack of p.zones.reserve) {
-      if (stack.cards[0])
-        results.push({
-          player: p,
-          playerIndex: pi,
-          stack,
-          zone: "reserve",
-          instanceId: stack.cards[0].instanceId,
-        });
+      if (stack.cards[0]) {
+        const def = cardRegistry[stack.cards[0].defId];
+        if (def && (def.type === "personnel" || def.type === "ship"))
+          results.push({
+            player: p,
+            playerIndex: pi,
+            stack,
+            zone: "reserve",
+            instanceId: stack.cards[0].instanceId,
+          });
+      }
     }
   }
   return results;

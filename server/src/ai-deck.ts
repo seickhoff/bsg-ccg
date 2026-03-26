@@ -12,73 +12,102 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+/** Random integer in [min, max] inclusive */
+function randRange(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+const ALL_RESOURCES: ResourceType[] = ["persuasion", "logistics", "security"];
+
 /**
  * Build a valid 60-card AI deck.
  * Strategy:
- *   1. Pick a random base
- *   2. Prioritize units (personnel/ships) that produce the base's resource type (~32 cards)
- *   3. Fill remaining slots with events and missions (~28 cards)
+ *   1. Pick a random base (determines primary resource)
+ *   2. ~50% chance of a secondary resource for a dual-resource deck
+ *   3. Fill 4 pools: personnel (19-21), ships (19-21), events (8-11), missions (8-11)
  *   4. Max 4 copies of any card name
  */
 export function buildAIDeck(registry: CardRegistry): DeckSubmission {
   const baseIds = Object.keys(registry.bases);
   const baseId = pickRandom(baseIds);
   const base = registry.bases[baseId];
-  const baseResource = base.resource;
+  const primaryResource = base.resource;
+
+  // ~50% chance of dual-resource deck
+  const secondaryResource: ResourceType | null =
+    Math.random() < 0.5 ? pickRandom(ALL_RESOURCES.filter((r) => r !== primaryResource)) : null;
 
   const allCards = Object.values(registry.cards);
 
-  // Separate cards by type
-  const units = allCards.filter((c) => c.type === "personnel" || c.type === "ship");
-  const nonUnits = allCards.filter((c) => c.type === "event" || c.type === "mission");
+  // Separate cards into 4 pools
+  const personnel = allCards.filter((c) => c.type === "personnel");
+  const ships = allCards.filter((c) => c.type === "ship");
+  const events = allCards.filter((c) => c.type === "event");
+  const missions = allCards.filter((c) => c.type === "mission");
 
-  // Score units: prefer those matching the base's resource
-  const scoredUnits = units.map((card) => ({
-    card,
-    score: scoreCard(card, baseResource),
-  }));
-  scoredUnits.sort((a, b) => b.score - a.score);
+  // Score and sort each pool
+  const scoreAndSort = (cards: CardDef[]) => {
+    const scored = cards.map((card) => ({
+      card,
+      score: scoreCard(card, primaryResource, secondaryResource),
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored;
+  };
 
-  // Score non-units: prefer cheaper events, and missions
-  const scoredNonUnits = nonUnits.map((card) => ({
-    card,
-    score: scoreCard(card, baseResource),
-  }));
-  scoredNonUnits.sort((a, b) => b.score - a.score);
+  const scoredPersonnel = scoreAndSort(personnel);
+  const scoredShips = scoreAndSort(ships);
+  const scoredEvents = scoreAndSort(events);
+  const scoredMissions = scoreAndSort(missions);
 
   const deckCardIds: string[] = [];
   const nameCounts = new Map<string, number>();
   const TARGET_SIZE = 60;
-  const TARGET_UNITS = 34;
 
-  // Add units first
-  addCards(scoredUnits, deckCardIds, nameCounts, TARGET_UNITS);
+  // Pick target counts within ranges
+  const targetPersonnel = randRange(19, 21);
+  const targetShips = randRange(19, 21);
+  const targetEvents = randRange(8, 11);
+  const targetMissions = randRange(8, 11);
 
-  // Fill rest with non-units
-  const remaining = TARGET_SIZE - deckCardIds.length;
-  addCards(scoredNonUnits, deckCardIds, nameCounts, remaining);
+  addCards(scoredPersonnel, deckCardIds, nameCounts, targetPersonnel);
+  addCards(scoredShips, deckCardIds, nameCounts, targetShips);
+  addCards(scoredEvents, deckCardIds, nameCounts, targetEvents);
+  addCards(scoredMissions, deckCardIds, nameCounts, targetMissions);
 
-  // If still under 60 (unlikely), add any remaining cards
+  // If under 60, fill from any remaining cards
   if (deckCardIds.length < TARGET_SIZE) {
-    const allScored = allCards.map((card) => ({ card, score: 0 }));
-    shuffle(allScored);
+    const allScored = allCards.map((card) => ({
+      card,
+      score: scoreCard(card, primaryResource, secondaryResource),
+    }));
+    allScored.sort((a, b) => b.score - a.score);
     addCards(allScored, deckCardIds, nameCounts, TARGET_SIZE - deckCardIds.length);
   }
 
   return { baseId, deckCardIds };
 }
 
-function scoreCard(card: CardDef, baseResource: ResourceType): number {
+function scoreCard(
+  card: CardDef,
+  primaryResource: ResourceType,
+  secondaryResource: ResourceType | null,
+): number {
   let score = 0;
 
-  // Strongly prefer cards that produce the base's resource
-  if (card.resource === baseResource) score += 10;
+  // Strongly prefer cards that produce the primary resource
+  if (card.resource === primaryResource) score += 10;
+  else if (secondaryResource && card.resource === secondaryResource) score += 6;
 
-  // Prefer cards with costs in the base's resource (easier to pay)
+  // Prefer cards with costs matching our resources (easier to pay)
   if (card.cost) {
     const costEntries = Object.entries(card.cost) as [ResourceType, number][];
-    const matchingCost = costEntries.every(([res]) => res === baseResource);
-    if (matchingCost) score += 5;
+    const allMatchPrimary = costEntries.every(([res]) => res === primaryResource);
+    const allMatchEither = costEntries.every(
+      ([res]) => res === primaryResource || res === secondaryResource,
+    );
+    if (allMatchPrimary) score += 5;
+    else if (secondaryResource && allMatchEither) score += 3;
   }
 
   // Prefer higher power units
@@ -110,7 +139,7 @@ function addCards(
     if (added >= count) break;
     const name = cardName(card);
     const current = nameCounts.get(name) ?? 0;
-    // Add up to 4 copies
+    if (current >= 4) continue;
     const toAdd = Math.min(4 - current, count - added);
     for (let i = 0; i < toAdd; i++) {
       deckCardIds.push(card.id);
