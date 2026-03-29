@@ -135,7 +135,7 @@ function findUnitsInZone(
 
 // --- Colonial One: target player +1 influence ---
 registerBaseAbility("colonial-one", {
-  usableIn: ["execution", "challenge"],
+  usableIn: ["execution", "challenge", "cylon-challenge"],
   getTargets(state) {
     const targets: string[] = [];
     for (let i = 0; i < state.players.length; i++) {
@@ -160,7 +160,7 @@ registerBaseAbility("colonial-one", {
 
 // --- Galactica: target player -1 influence ---
 registerBaseAbility("galactica", {
-  usableIn: ["execution", "challenge"],
+  usableIn: ["execution", "challenge", "cylon-challenge"],
   getTargets(state) {
     const targets: string[] = [];
     for (let i = 0; i < state.players.length; i++) {
@@ -178,7 +178,7 @@ registerBaseAbility("galactica", {
 
 // --- Celestra: deck manipulation ---
 registerBaseAbility("celestra", {
-  usableIn: ["execution", "challenge"],
+  usableIn: ["execution", "challenge", "cylon-challenge"],
   getTargets: () => null,
   resolve(state, playerIndex, _target, log) {
     const player = state.players[playerIndex];
@@ -245,7 +245,7 @@ registerBaseAbility("ragnar-anchorage", {
 
 // --- Battlestar Galactica: +2 to challenging unit ---
 registerBaseAbility("battlestar-galactica", {
-  usableIn: ["challenge"],
+  usableIn: ["challenge", "cylon-challenge"],
   getTargets(state, playerIndex) {
     if (!state.challenge) return [];
     if (state.challenge.challengerPlayerIndex !== playerIndex) return [];

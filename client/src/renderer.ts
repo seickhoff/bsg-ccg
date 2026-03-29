@@ -963,7 +963,7 @@ function showPlayerActionModal(
   } else if (state.phase === "cylon") {
     const hasChallengers = validActions.some((a) => a.type === "challengeCylon");
     headerText = hasChallengers
-      ? "CYLON ATTACK — Send a unit to fight or stand down"
+      ? "CYLON ATTACK — Challenge a threat or stand down"
       : "CYLON ATTACK — No units available";
   } else if (state.phase === "execution") {
     const resSummary = buildResourceSummaryHtml(state.you.zones.resourceStacks);
@@ -1619,8 +1619,7 @@ function getResourceName(defId: string): string {
 }
 
 function renderResourceStack(stack: ResourceStack, isYours: boolean, stackIndex?: number): string {
-  const def = getCardDef(stack.topCard.defId);
-  const name = def?.title ?? stack.topCard.defId;
+  const name = getCardName(stack.topCard.defId);
   const exhaustedClass = stack.exhausted ? "exhausted" : "";
   const isBase = !!baseDefs[stack.topCard.defId];
   const image = isBase
@@ -2447,46 +2446,80 @@ function handleActionClick(
     case "challengeCylon": {
       const units = action.selectableInstanceIds ?? [];
       const threats = action.selectableThreatIndices ?? [];
-      const threatIdx = threats[0] ?? 0;
 
-      const selectItems: {
-        label: string;
-        onClick: () => void;
-        cancel?: boolean;
-        cardDefId?: string;
-        selectValue?: string;
-      }[] = units.map((unitId) => {
-        const stack = findUnitStack(state.you.zones, unitId);
-        const defId = stack?.cards[0]?.defId ?? "";
-        const name = defId ? getCardName(defId) : unitId;
-        const power = stack
-          ? (getCardDef(defId)?.power ?? 0) +
-            (stack.powerBuff ?? 0) +
-            (state.passivePowerBuffs?.[unitId] ?? 0)
-          : 0;
-        return {
-          label: `${name} (${power})`,
-          cardDefId: defId,
-          selectValue: unitId,
-          onClick: () => {},
-        };
-      });
-
-      selectItems.push({
-        label: "Cancel",
-        cancel: true,
-        onClick: () => {
-          restoreActionsBar(container, validActions, state);
-        },
-      });
-
-      showSelectModal("Select unit to challenge Cylon threat", selectItems, (unitId) => {
-        onAction!({
-          type: "challengeCylon",
-          challengerInstanceId: unitId,
-          threatIndex: threatIdx,
+      const pickUnit = (threatIdx: number) => {
+        const selectItems: {
+          label: string;
+          onClick: () => void;
+          cancel?: boolean;
+          cardDefId?: string;
+          selectValue?: string;
+        }[] = units.map((unitId) => {
+          const stack = findUnitStack(state.you.zones, unitId);
+          const defId = stack?.cards[0]?.defId ?? "";
+          const name = defId ? getCardName(defId) : unitId;
+          const power = stack
+            ? (getCardDef(defId)?.power ?? 0) +
+              (stack.powerBuff ?? 0) +
+              (state.passivePowerBuffs?.[unitId] ?? 0)
+            : 0;
+          return {
+            label: `${name} (${power})`,
+            cardDefId: defId,
+            selectValue: unitId,
+            onClick: () => {},
+          };
         });
-      });
+
+        selectItems.push({
+          label: "Cancel",
+          cancel: true,
+          onClick: () => {
+            restoreActionsBar(container, validActions, state);
+          },
+        });
+
+        showSelectModal("Select unit to challenge with", selectItems, (unitId) => {
+          onAction!({
+            type: "challengeCylon",
+            challengerInstanceId: unitId,
+            threatIndex: threatIdx,
+          });
+        });
+      };
+
+      if (threats.length > 1) {
+        // Multiple threats — let player pick which to challenge
+        const threatItems: {
+          label: string;
+          onClick: () => void;
+          cancel?: boolean;
+          cardDefId?: string;
+          selectValue?: string;
+        }[] = threats.map((idx) => {
+          const threat = state.cylonThreats[idx];
+          const name = threat ? getCardName(threat.card.defId) : `Threat ${idx}`;
+          const power = threat?.power ?? 0;
+          return {
+            label: `${name} (power ${power})`,
+            cardDefId: threat?.card.defId,
+            selectValue: String(idx),
+            onClick: () => {},
+          };
+        });
+        threatItems.push({
+          label: "Cancel",
+          cancel: true,
+          onClick: () => {
+            restoreActionsBar(container, validActions, state);
+          },
+        });
+        showSelectModal("Select threat to challenge", threatItems, (idxStr) => {
+          pickUnit(parseInt(idxStr, 10));
+        });
+      } else {
+        pickUnit(threats[0] ?? 0);
+      }
       break;
     }
 
@@ -2871,8 +2904,7 @@ function showResourceStackPicker(
     const nonMatching: StackInfo[] = [];
     state.you.zones.resourceStacks.forEach((stack, i) => {
       if (stack.exhausted) return;
-      const def = cardDefs[stack.topCard.defId] ?? baseDefs[stack.topCard.defId];
-      const name = def?.title ?? stack.topCard.defId;
+      const name = getCardName(stack.topCard.defId);
       const isBase = !!baseDefs[stack.topCard.defId];
       const info: StackInfo = {
         index: i,

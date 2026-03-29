@@ -31,7 +31,12 @@ function toGameAction(va: VA, index?: number): GA {
         type: "playAbility",
         sourceInstanceId: va.sourceInstanceId ?? va.selectableInstanceIds![0],
         targetInstanceId:
-          va.targetInstanceId ?? (va.sourceInstanceId ? va.selectableInstanceIds?.[0] : undefined),
+          va.targetInstanceId ??
+          (va.sourceInstanceId ? va.selectableInstanceIds?.[0] : undefined) ??
+          (va.selectablePlayerIndices?.length
+            ? `player-${va.selectablePlayerIndices[0]}`
+            : undefined),
+        abilityIndex: va.abilityIndex,
       };
     case "playCard":
       return { type: "playCard", cardIndex: va.selectableCardIndices![0] };
@@ -1006,7 +1011,13 @@ header("Starbuck, Resistance Fighter — C+E: Exhaust target resource stack");
   assert(!!ability, "Starbuck sabotage ability available");
 
   if (ability) {
-    const result = applyAction(state, 0, toGameAction(ability), bases);
+    // Target opponent's resource stack (pick last selectable target = opponent's base)
+    const ga = toGameAction(ability);
+    if (ability.selectableInstanceIds && ability.selectableInstanceIds.length > 1) {
+      (ga as Record<string, unknown>).targetInstanceId =
+        ability.selectableInstanceIds[ability.selectableInstanceIds.length - 1];
+    }
+    const result = applyAction(state, 0, ga, bases);
     state = result.state;
     assert(
       state.players[1].zones.resourceStacks[0].exhausted,

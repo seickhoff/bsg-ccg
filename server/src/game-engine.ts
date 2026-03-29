@@ -1069,7 +1069,7 @@ export function getValidActions(
     if (units.length > 0) {
       actions.push({
         type: "challengeCylon",
-        description: "Send a unit to fight",
+        description: "Challenge",
         selectableInstanceIds: units,
         selectableThreatIndices: state.cylonThreats.map((_, i) => i),
       });

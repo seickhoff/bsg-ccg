@@ -11,6 +11,7 @@
     "build": "npm run build -w shared && npm run build -w client && npm run build -w server",
     "dev:client": "npm run dev -w client",
     "dev:server": "npm run dev -w server",
+    "test": "tsx server/src/test-ships.ts && tsx server/src/test-missions.ts && tsx server/src/test-events.ts && tsx server/src/test-personnel.ts && tsx server/src/test-scenario.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

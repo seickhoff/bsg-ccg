@@ -218,6 +218,62 @@ __bsg_send({
 
 ---
 
+## 6. Cylon Challenge — Abilities usable during effects round
+
+P0 has Galactica base (BSG1-007), Apollo Ace Pilot and Crashdown Expert ECO in alert.
+P1 has Centurion Ambusher (BSG1-106) and Dr. Cottle (BSG2-101) to oppose the challenger.
+Cylon threat level exceeds fleet defense, triggering an attack.
+P0 challenges a Cylon threat with Apollo, uses abilities during the effects round.
+P1 (the "Cylon player") then uses abilities to help the threat and hurt the challenger.
+
+```js
+__bsg_send({
+  type: "debugSetup",
+  scenario: {
+    player0: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-098", "BSG1-110", "BSG1-103", "BSG1-099", "BSG1-101"],
+      hand: [],
+      deck: ["BSG1-102", "BSG1-117", "BSG1-118", "BSG1-119"],
+    },
+    player1: {
+      baseId: "BSG1-007",
+      alert: ["BSG1-100", "BSG1-103", "BSG1-099", "BSG1-106", "BSG2-101"],
+      deck: ["BSG1-101", "BSG1-102", "BSG1-117", "BSG1-118"],
+    },
+    phase: "cylon",
+    turn: 3,
+    activePlayerIndex: 0,
+  },
+});
+// P0 alert: BSG1-098 = Apollo, Ace Pilot (power 2, threat 2)
+//           BSG1-110 = Crashdown, Expert ECO (power 1, threat 2, abilityId: crashdown-buff)
+//           BSG1-103 = Boomer, Hell Of A Pilot (Cylon, threat 2)
+//           BSG1-099 = Apollo, CAG (threat 1)
+//           BSG1-101 = Billy, Presidential Aide (threat 0)
+// P1 alert: BSG1-100 = Apollo, Political Liaison (threat 0)
+//           BSG1-103 = Boomer (threat 2), BSG1-099 = Apollo CAG (threat 1)
+//           BSG1-106 = Centurion Ambusher (power 3, threat 3, abilityId: centurion-ambush)
+//           BSG2-101 = Dr. Cottle, Bearer of Bad News (power 1, threat 1, abilityId: cottle-debuff)
+// Threat level = P0(2+2+2+1+0) + P1(0+2+1+3+1) = 7+7 = 14 > fleet defense 12 → attack
+//
+// Steps:
+//   1. Cylon phase begins, 2 threats revealed from each player's deck top
+//   2. P0 sends a unit (e.g. Apollo, Ace Pilot) to challenge a Cylon threat
+//   3. Challenge enters step 2 (effects round) — P0 is active
+//   4. P0 sees Crashdown's commit ability and Galactica base exhaust ability
+//   5. P0 exhausts Galactica base during the Cylon challenge
+//   6. P0 passes — turn advances to P1 (the "Cylon player")
+//   7. P1 uses Centurion Ambusher: target Cylon threat gets +2 power (making it harder)
+//   8. P1 uses Dr. Cottle: target challenger (Apollo) gets -2 power (weakening challenger)
+//   9. Both pass, challenge resolves
+//
+// Verifies: opponent (Cylon player) can play abilities to help the threat / hurt the challenger.
+// Previously broken: base abilities were missing "cylon-challenge" from usableIn arrays.
+```
+
+---
+
 ## Card ID Quick Reference
 
 | ID       | Card                      | Type      | Keywords | Traits         | Power | Cylon Threat |
@@ -228,6 +284,7 @@ __bsg_send({
 | BSG1-103 | Boomer, Hell Of A Pilot   | Personnel | —        | Cylon, Pilot   | 2     | 2            |
 | BSG1-105 | Boomer, Saboteur          | Personnel | —        | Cylon, Pilot   | 4     | 4            |
 | BSG1-106 | Centurion Ambusher        | Personnel | —        | Cylon, Machine | 2     | 3            |
+| BSG1-110 | Crashdown, Expert ECO     | Personnel | —        | Officer        | 1     | 2            |
 | BSG1-108 | Centurion Slayer          | Personnel | Sniper   | Cylon, Machine | 2     | 2            |
 | BSG1-138 | Starbuck, Sharpshooter    | Personnel | Sniper   | Officer        | 4     | 3            |
 | BSG1-146 | Colonial Shuttle          | Ship      | —        | Transport      | 1     | 0            |
@@ -240,5 +297,5 @@ __bsg_send({
 
 | ID       | Base         | Power |
 | -------- | ------------ | ----- |
-| BSG1-004 | Colonial One | 3     |
-| BSG1-007 | Galactica    | 4     |
+| BSG1-004 | Colonial One | 5     |
+| BSG1-007 | Galactica    | 6     |

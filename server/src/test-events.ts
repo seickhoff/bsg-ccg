@@ -28,8 +28,14 @@ function toGameAction(va: VA, index?: number): GA {
     case "playAbility":
       return {
         type: "playAbility",
-        sourceInstanceId: va.selectableInstanceIds![0],
-        targetInstanceId: va.targetInstanceId,
+        sourceInstanceId: va.sourceInstanceId ?? va.selectableInstanceIds![0],
+        targetInstanceId:
+          va.targetInstanceId ??
+          (va.sourceInstanceId ? va.selectableInstanceIds?.[0] : undefined) ??
+          (va.selectablePlayerIndices?.length
+            ? `player-${va.selectablePlayerIndices[0]}`
+            : undefined),
+        abilityIndex: va.abilityIndex,
       };
     case "playCard":
       return {
@@ -549,11 +555,20 @@ header("Angry — Defeat target personnel");
   addSupply(state, 0, 2); // 3 security total
 
   const oppAlertBefore = state.players[1].zones.alert.length;
-  const { state: s, played } = playEvent(state, 0, "angry", {
+  let { state: s, played } = playEvent(state, 0, "angry", {
     targetDefId: "BSG1-102",
     targetPlayerIndex: 1,
   });
   assert(played, "Angry playable");
+  // Resolve first pending choice: commit+exhaust own personnel (only one option)
+  s = resolvePendingChoice(s);
+  // Resolve second pending choice: defeat target — find Billy (BSG1-102) in the choice list
+  if (s.pendingChoice) {
+    const billyIdx = s.pendingChoice.cards.findIndex(
+      (c: { defId: string }) => c.defId === "BSG1-102",
+    );
+    s = resolvePendingChoice(s, billyIdx >= 0 ? billyIdx : 0);
+  }
   // Own personnel should be committed+exhausted
   const ownReserve = s.players[0].zones.reserve.find((u) => u.cards[0].defId === "BSG1-098");
   assert(!!ownReserve && ownReserve.exhausted, "Own personnel committed and exhausted");
@@ -1003,9 +1018,10 @@ header("Crackdown — Opponent discards a card");
   );
 
   const oppHandBefore = state.players[1].hand.length;
-  const { state: s, played } = playEvent(state, 0, "crackdown");
+  let { state: s, played } = playEvent(state, 0, "crackdown");
   assert(played, "Crackdown playable");
-  // With only 1 card in hand, auto-discards
+  // Resolve pending choice (opponent chooses card to discard)
+  s = resolvePendingChoice(s);
   assert(s.players[1].hand.length === 0, "Opponent's card discarded");
   assert(s.players[1].discard.length > 0, "Card went to discard");
   printLog(s);
@@ -1998,8 +2014,11 @@ header("Hangar Deck Fire — Opponent sacrifice");
   });
 
   // Opponent has ship but no supply — must sacrifice ship
-  const { state: s, played } = playEvent(state, 0, "hangar deck fire");
+  let { state: s, played } = playEvent(state, 0, "hangar deck fire");
   assert(played, "Hangar Deck Fire playable");
+  // Resolve pending choice (opponent chooses sacrifice)
+  s = resolvePendingChoice(s);
+  s = resolvePendingChoice(s);
   // Ship should be sacrificed (only option)
   assert(s.players[1].zones.alert.length === 0, "Opponent's ship sacrificed");
   printLog(s);
@@ -2031,8 +2050,11 @@ header("Still No Contact — Opponent personnel");
   );
   addSupply(state, 0, 1);
 
-  const { state: s, played } = playEvent(state, 0, "still no contact");
+  let { state: s, played } = playEvent(state, 0, "still no contact");
   assert(played, "Still No Contact playable");
+  // Resolve pending choice (opponent chooses commit or sacrifice)
+  s = resolvePendingChoice(s);
+  s = resolvePendingChoice(s);
   // Should commit the alert personnel
   assert(s.players[1].zones.reserve.length > 0, "Opponent personnel committed");
   printLog(s);
@@ -2067,8 +2089,11 @@ header("Them or Us — Sacrifice ship, defeat personnel");
     registry,
   );
 
-  const { state: s, played } = playEvent(state, 0, "them or us");
+  let { state: s, played } = playEvent(state, 0, "them or us");
   assert(played, "Them or Us playable");
+  // Resolve pending choices (choose ship to sacrifice, then defeat target)
+  s = resolvePendingChoice(s);
+  s = resolvePendingChoice(s);
   // Own ship should be sacrificed
   const hasShip = s.players[0].zones.alert.some((u) => u.cards[0].defId === "BSG1-146");
   assert(!hasShip, "Own ship sacrificed");
@@ -2102,11 +2127,13 @@ header("Painful Recovery — Cylon to deck, commit+exhaust target");
     registry,
   );
 
-  const { state: s, played } = playEvent(state, 0, "painful recovery", {
-    targetDefId: "BSG1-102",
-    targetPlayerIndex: 1,
+  let { state: s, played } = playEvent(state, 0, "painful recovery", {
+    targetDefId: "BSG1-103",
+    targetPlayerIndex: 0,
   });
   assert(played, "Painful Recovery playable");
+  // Resolve pending choice (choose personnel to commit+exhaust)
+  s = resolvePendingChoice(s);
   // Cylon should be put on top of deck
   assert(s.players[0].deck[0]?.defId === "BSG1-103", "Cylon put on top of deck");
   assert(
@@ -2149,8 +2176,10 @@ header("Concentrated Firepower — +X based on supply cards");
   );
   addSupply(state, 0, 3); // 3 supply cards = +3 power, also provides 4 security total
 
-  const { state: s, played } = playEvent(state, 0, "concentrated firepower");
+  let { state: s, played } = playEvent(state, 0, "concentrated firepower");
   assert(played, "Concentrated Firepower playable");
+  // Resolve pending choice (choose resource stack)
+  s = resolvePendingChoice(s);
   assert(
     logContains(s, "concentrated firepower") && logContains(s, "+3 power"),
     "Gives +3 power (3 supply cards)",
@@ -2471,11 +2500,14 @@ header("Distraction — Commit personnel, commit+exhaust target");
   );
   addSupply(state, 0, 1);
 
-  const { state: s, played } = playEvent(state, 0, "distraction", {
+  let { state: s, played } = playEvent(state, 0, "distraction", {
     targetDefId: "BSG1-102",
     targetPlayerIndex: 1,
   });
   assert(played, "Distraction playable");
+  // Resolve pending choices (choose own personnel to commit, then commit+exhaust target)
+  s = resolvePendingChoice(s);
+  s = resolvePendingChoice(s);
   // Own personnel committed to reserve
   assert(
     s.players[0].zones.reserve.some((u) => u.cards[0].defId === "BSG1-098"),
@@ -2512,8 +2544,11 @@ header("Military Coup — Exhaust own, exhaust opponent's");
     registry,
   );
 
-  const { state: s, played } = playEvent(state, 0, "military coup");
+  let { state: s, played } = playEvent(state, 0, "military coup");
   assert(played, "Military Coup playable");
+  // Resolve pending choices (choose own personnel, then choose opponent's)
+  s = resolvePendingChoice(s);
+  s = resolvePendingChoice(s);
   // Own personnel exhausted
   const own = [...s.players[0].zones.alert, ...s.players[0].zones.reserve].find(
     (u) => u.cards[0].defId === "BSG1-098",
@@ -2595,8 +2630,10 @@ header("Advanced Planning — Top 5 deck manipulation");
   );
 
   const deckBefore = state.players[0].deck.length;
-  const { state: s, played } = playEvent(state, 0, "advanced planning");
+  let { state: s, played } = playEvent(state, 0, "advanced planning");
   assert(played, "Advanced Planning playable");
+  // Resolve pending choice (choose which card to keep on top)
+  s = resolvePendingChoice(s);
   assert(s.players[0].deck.length === deckBefore, "Deck size unchanged");
   assert(logContains(s, "advanced planning"), "Advanced Planning resolved");
   printLog(s);

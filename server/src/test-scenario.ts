@@ -221,7 +221,9 @@ header("Galactica — Exhaust: opponent loses 1 influence");
   const ability = findAbility(getValidActions(state, 0, bases), "galactica");
   assert(!!ability, "Galactica ability is available");
 
-  const result = applyAction(state, 0, toGameAction(ability!), bases);
+  // Target opponent (player-1) — Galactica allows targeting any player
+  const ga = { ...toGameAction(ability!), targetInstanceId: "player-1" };
+  const result = applyAction(state, 0, ga as GA, bases);
   state = result.state;
 
   assert(
@@ -732,7 +734,8 @@ header("I.H.T. Colonial One — Trigger: reduce influence loss by 2");
   const ability = findAbility(getValidActions(state, 0, bases), "galactica");
   assert(!!ability, "Galactica ability available");
 
-  const result = applyAction(state, 0, toGameAction(ability!), bases);
+  const ga = { ...toGameAction(ability!), targetInstanceId: "player-1" };
+  const result = applyAction(state, 0, ga as GA, bases);
   state = result.state;
 
   // I.H.T. reduces loss by 2, so 1 - 2 = 0 net loss
@@ -767,7 +770,8 @@ header("I.H.T. Colonial One — Already exhausted, no reduction");
   const oppBefore = state.players[1].influence;
 
   const ability = findAbility(getValidActions(state, 0, bases), "galactica");
-  const result = applyAction(state, 0, toGameAction(ability!), bases);
+  const ga = { ...toGameAction(ability!), targetInstanceId: "player-1" };
+  const result = applyAction(state, 0, ga as GA, bases);
   state = result.state;
 
   assert(
@@ -934,6 +938,168 @@ header("Flattop — No trigger (no ships in reserve)");
   const defenderActions = getValidActions(state, 1, bases);
   const flatTrigger = findAction(defenderActions, "useTriggeredAbility", "flattop");
   assert(!flatTrigger, "Flattop trigger NOT available (no ships in reserve, only personnel)");
+}
+
+// --- Cylon challenge: abilities during effects round ---
+
+header("Cylon challenge — unit and base abilities available during effects round");
+{
+  // Setup: Apollo (BSG1-098) as challenger, Crashdown (BSG1-110) with commit buff ability.
+  // Need lots of alert units to push cylon threat level above fleet defense.
+  // BSG1-103 (Boomer Cylon Pilot) has cylonThreat 4, others ~2.
+  // Fleet defense = base0.power + base1.power = 6 + 6 = 12.
+  // Need threat > 12.  Each unit: ~2-4 threat. 7 units needed.
+  let state = createDebugGame(
+    {
+      player0: {
+        baseId: "BSG1-007", // Galactica (power 6)
+        alert: ["BSG1-098", "BSG1-110", "BSG1-103", "BSG1-099", "BSG1-101"],
+        hand: [],
+        deck: ["BSG1-102", "BSG1-117", "BSG1-118", "BSG1-119"],
+      },
+      player1: {
+        baseId: "BSG1-007", // Galactica (power 6)
+        alert: ["BSG1-100", "BSG1-103", "BSG1-099", "BSG1-106", "BSG2-101"],
+        // BSG1-106 = Centurion Ambusher (commit: target Cylon threat +2 power)
+        // BSG2-101 = Dr. Cottle, Bearer of Bad News (commit: target personnel -2 power)
+        deck: ["BSG1-101", "BSG1-102", "BSG1-117", "BSG1-118"],
+      },
+      phase: "cylon",
+      turn: 3,
+      activePlayerIndex: 0,
+    },
+    registry,
+  );
+
+  console.log(`  Cylon threats: ${state.cylonThreats.length}`);
+  console.log(`  Phase: ${state.phase}`);
+
+  if (state.cylonThreats.length > 0) {
+    const cylonActions = getValidActions(state, 0, bases);
+    const challengeAction = findAction(cylonActions, "challengeCylon");
+    assert(!!challengeAction, "challengeCylon action available");
+
+    if (challengeAction) {
+      // Challenge with Apollo (first alert unit)
+      const apolloId = state.players[0].zones.alert[0].cards[0].instanceId;
+      const result = applyAction(
+        state,
+        0,
+        { type: "challengeCylon", challengerInstanceId: apolloId, threatIndex: 0 },
+        bases,
+      );
+      state = result.state;
+
+      assert(!!state.challenge, "Challenge created");
+      assert(state.challenge!.step === 2, "Challenge at step 2 (effects round)");
+      assert(state.challenge!.isCylonChallenge === true, "Challenge is Cylon challenge");
+      assert(state.activePlayerIndex === 0, "Challenger is active player");
+
+      // Check valid actions for player 0 during step 2
+      const effectsActions = getValidActions(state, 0, bases);
+      console.log(
+        `  Effects round actions: ${effectsActions.map((a) => `${a.type}(${a.description})`).join(", ")}`,
+      );
+
+      const crashdownAbility = findAbility(effectsActions, "crashdown");
+      assert(!!crashdownAbility, "Crashdown unit ability available during Cylon challenge");
+
+      const baseAbility = findAbility(effectsActions, "galactica");
+      assert(!!baseAbility, "Galactica base ability available during Cylon challenge");
+
+      const passAction = findAction(effectsActions, "challengePass");
+      assert(!!passAction, "challengePass available");
+
+      const abilityActions = effectsActions.filter((a) => a.type === "playAbility");
+      console.log(`  Total ability actions: ${abilityActions.length}`);
+
+      // Test using the Galactica base ability to hurt opponent
+      if (baseAbility) {
+        const r2 = applyAction(state, 0, toGameAction(baseAbility), bases);
+        state = r2.state;
+        assert(
+          state.players[0].zones.resourceStacks[0].exhausted,
+          "Galactica base exhausted after use in Cylon challenge",
+        );
+      }
+
+      // After P0 uses base ability, advanceChallengeEffectTurn moves to P1
+      assert(state.activePlayerIndex === 1, "After P0 uses ability, P1 (Cylon player) is active");
+      assert(!!state.challenge, "Challenge still active");
+
+      // Check P1's available abilities during the effects round
+      const p1Actions = getValidActions(state, 1, bases);
+      console.log(
+        `  P1 effects round actions: ${p1Actions.map((a) => `${a.type}(${a.description})`).join(", ")}`,
+      );
+
+      // P1 should have Centurion Ambusher ability (buff the Cylon threat)
+      const centurionAbility = findAbility(p1Actions, "centurion");
+      assert(!!centurionAbility, "Centurion Ambusher ability available for Cylon player");
+
+      // P1 should have Dr. Cottle ability (debuff the challenger)
+      const cottleAbility = findAbility(p1Actions, "cottle");
+      assert(!!cottleAbility, "Dr. Cottle debuff ability available for Cylon player");
+
+      // Record threat power before opponent abilities
+      const threatPowerBefore = state.cylonThreats[0]?.power ?? 0;
+      const challengerBuffBefore = (state.challenge as any)?.challengerPowerBuff ?? 0;
+
+      // P1 uses Centurion Ambusher: target Cylon threat gets +2 power
+      if (centurionAbility) {
+        const r3 = applyAction(state, 1, toGameAction(centurionAbility), bases);
+        state = r3.state;
+        assert(
+          state.cylonThreats[0]?.power === threatPowerBefore + 2,
+          `Cylon threat power increased by 2 (${threatPowerBefore} → ${state.cylonThreats[0]?.power})`,
+        );
+        console.log(
+          `  Centurion Ambusher: threat power ${threatPowerBefore} → ${state.cylonThreats[0]?.power}`,
+        );
+      }
+
+      // After centurion-ambush, turn advances to P0. P0 passes to give P1 another turn.
+      assert(state.activePlayerIndex === 0, "Turn returned to P0 after P1 ability");
+      const p0Pass = applyAction(state, 0, { type: "challengePass" }, bases);
+      state = p0Pass.state;
+      assert(state.activePlayerIndex === 1, "P1 active again after P0 pass");
+
+      // P1 uses Dr. Cottle: target challenger (Apollo) gets -2 power
+      if (cottleAbility) {
+        // Re-fetch P1 actions since state changed
+        const p1Actions2 = getValidActions(state, 1, bases);
+        const cottleAbility2 = findAbility(p1Actions2, "cottle");
+        assert(!!cottleAbility2, "Dr. Cottle still available after P0 pass");
+
+        const r4 = applyAction(state, 1, toGameAction(cottleAbility2!), bases);
+        state = r4.state;
+        const challengerBuffAfter = (state.challenge as any)?.challengerPowerBuff ?? 0;
+        assert(
+          challengerBuffAfter === challengerBuffBefore - 2,
+          `Challenger power debuffed by 2 (${challengerBuffBefore} → ${challengerBuffAfter})`,
+        );
+        console.log(
+          `  Dr. Cottle: challenger buff ${challengerBuffBefore} → ${challengerBuffAfter}`,
+        );
+      }
+
+      // After cottle, turn advances to P0. Both pass to resolve.
+      assert(state.activePlayerIndex === 0, "Turn returned to P0 after Cottle");
+      const p0Pass2 = applyAction(state, 0, { type: "challengePass" }, bases);
+      state = p0Pass2.state;
+      // P1's turn — P1 passes too
+      if (state.challenge) {
+        const p1Pass = applyAction(state, 1, { type: "challengePass" }, bases);
+        state = p1Pass.state;
+      }
+      // Challenge should be resolved now (both passed consecutively)
+      assert(!state.challenge, "Challenge resolved after both players pass");
+      console.log(`  Challenge resolved. P0 influence: ${state.players[0].influence}`);
+    }
+  } else {
+    console.log("  SKIP: No cylon threats — threat level too low");
+  }
+  printLog(state);
 }
 
 // ============================================================

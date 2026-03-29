@@ -485,6 +485,41 @@ function decideChallengeEffects(
   registry: CardRegistry,
 ): GameAction {
   const isChallenger = state.challenge?.challengerPlayerIndex === playerIndex;
+  const isCylonPlayer = state.challenge?.isCylonChallenge && !isChallenger;
+
+  // --- Cylon player: oppose the challenger ---
+  // The Cylon player wants to buff the threat and debuff the challenger.
+  if (isCylonPlayer) {
+    const challengerId = state.challenge?.challengerInstanceId;
+    const allAbilities = actions.filter((a) => a.type === "playAbility");
+
+    for (const ua of allAbilities) {
+      const uaDefId = ua.cardDefId;
+      if (!uaDefId) continue;
+      const uaDef = registry.cards[uaDefId] ?? registry.bases[uaDefId];
+      if (!uaDef) continue;
+      const text = ("abilityText" in uaDef ? uaDef.abilityText : "") ?? "";
+      const effect = classifyEffect(text);
+
+      // Buff targeting a Cylon threat (e.g. centurion-ambush: "threat-0")
+      if (effect === "buff" && ua.targetInstanceId?.startsWith("threat-")) {
+        return resolveAction(ua, state, playerIndex, registry);
+      }
+      // Debuff targeting the challenger (e.g. cottle-debuff: -2 power)
+      if (effect === "debuff" && ua.targetInstanceId === challengerId) {
+        return resolveAction(ua, state, playerIndex, registry);
+      }
+      // Harmful base ability targeting a player (e.g. Galactica: lose influence)
+      // resolveAction picks the opponent for debuffs via selectablePlayerIndices
+      if (registry.bases[uaDefId] && effect === "debuff") {
+        return resolveAction(ua, state, playerIndex, registry);
+      }
+    }
+    // No useful ability found — pass
+    return { type: "challengePass" };
+  }
+
+  // --- Normal challenge / challenger in cylon challenge ---
 
   // Priority 1: Use a base ability that buffs our unit in the challenge
   const baseAbilityActions = actions.filter(
@@ -925,9 +960,20 @@ function pickBestCardToPlay(
         }
       }
       // Prefer missions (free to play) — persistent/link are higher value
+      // But limit to ~2 deployed missions; beyond that, keep in hand or use for resource stacks
       if (def.type === "mission") {
-        const cat = def.abilityId ? getMissionCategory(def.abilityId) : "one-shot";
-        score += cat === "one-shot" ? 5 : 8;
+        const deployedMissionCount = [...player.zones.alert, ...player.zones.reserve].filter(
+          (stack) => {
+            const topDef = registry.cards[stack.cards[0]?.defId];
+            return topDef?.type === "mission";
+          },
+        ).length;
+        if (deployedMissionCount >= 2) {
+          score = -1; // don't deploy more missions, keep for resource stacks or hand
+        } else {
+          const cat = def.abilityId ? getMissionCategory(def.abilityId) : "one-shot";
+          score += cat === "one-shot" ? 5 : 8;
+        }
       }
       // Events scored by abilityId
       if (def.type === "event") {

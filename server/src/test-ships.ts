@@ -29,8 +29,14 @@ function toGameAction(va: VA, index?: number): GA {
     case "playAbility":
       return {
         type: "playAbility",
-        sourceInstanceId: va.selectableInstanceIds![0],
-        targetInstanceId: va.targetInstanceId,
+        sourceInstanceId: va.sourceInstanceId ?? va.selectableInstanceIds![0],
+        targetInstanceId:
+          va.targetInstanceId ??
+          (va.sourceInstanceId ? va.selectableInstanceIds?.[0] : undefined) ??
+          (va.selectablePlayerIndices?.length
+            ? `player-${va.selectablePlayerIndices[0]}`
+            : undefined),
+        abilityIndex: va.abilityIndex,
       };
     case "playCard":
       return { type: "playCard", cardIndex: va.selectableCardIndices![0] };
@@ -564,18 +570,24 @@ header("Doomed Liner — Exhaust: Return target Cylon unit to hand");
     registry,
   );
 
-  // Find the ability targeting Boomer specifically (not Doomed Liner itself, which is also Cylon)
+  // Find the Doomed Liner's return-to-hand ability
   const actions = getValidActions(state, 0, bases);
   const ability = actions.find(
-    (a: VA) =>
-      a.type === "playAbility" &&
-      a.description?.toLowerCase().includes("doomed liner") &&
-      a.description?.toLowerCase().includes("boomer"),
+    (a: VA) => a.type === "playAbility" && a.description?.toLowerCase().includes("doomed liner"),
   );
   assert(!!ability, "Doomed Liner bounce ability available (targeting Boomer)");
 
   if (ability) {
-    const result = applyAction(state, 0, toGameAction(ability), bases);
+    // Pick Boomer (BSG1-103) as target, not Doomed Liner itself
+    const ga = toGameAction(ability);
+    const boomerTarget = ability.selectableInstanceIds?.find((id) => {
+      const stack = state.players[0].zones.alert.find(
+        (s: { cards: Array<{ defId: string }> }) => s.cards[0].defId === "BSG1-103",
+      );
+      return stack && stack.cards[0].instanceId === id;
+    });
+    if (boomerTarget) (ga as Record<string, unknown>).targetInstanceId = boomerTarget;
+    const result = applyAction(state, 0, ga, bases);
     state = result.state;
     const boomerInHand = state.players[0].hand.some(
       (c: { defId: string }) => c.defId === "BSG1-103",
@@ -1163,10 +1175,18 @@ header("Colonial Viper 762 — Triggered: Commit Pilot for +3 power");
   assert(!!challengeAction, "Can challenge with Viper 762");
 
   if (challengeAction) {
-    const result = applyAction(state, 0, toGameAction(challengeAction), bases);
+    let result = applyAction(state, 0, toGameAction(challengeAction), bases);
     state = result.state;
 
-    // Viper 762's trigger auto-fires: commits a Pilot for +3 power
+    // Viper 762's trigger fires: need to accept the triggered ability
+    const triggerAction = getValidActions(state, 0, bases).find(
+      (a: VA) => a.type === "useTriggeredAbility",
+    );
+    if (triggerAction) {
+      result = applyAction(state, 0, toGameAction(triggerAction), bases);
+      state = result.state;
+    }
+
     const logStr = state.log.map((e: LogItem) => (typeof e === "string" ? e : e.msg)).join(" ");
     const pilotCommitted = logStr.includes("committed") && logStr.includes("+3 power");
     assert(pilotCommitted, "Viper 762 auto-triggered: Pilot committed for +3 power");
